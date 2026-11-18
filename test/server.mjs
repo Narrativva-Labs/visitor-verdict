@@ -31,7 +31,8 @@ export async function startServer(port = 0) {
         '/vendor/botd.js': 'node_modules/@fingerprintjs/botd/dist/botd.esm.js', '/src/traffic-class.js': 'src/traffic-class.js'};
       const file = files[url.pathname];
       if (req.method !== 'GET' || !file) { res.writeHead(404).end('Not found'); return; }
-      res.writeHead(200, {'Content-Type': file.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-store'});
+      const policy = url.searchParams.get('worker') === 'none' && file.endsWith('.html') ? {'Content-Security-Policy': "worker-src 'none'"} : {};
+      res.writeHead(200, {...policy, 'Content-Type': file.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-store'});
       res.end(await readFile(path.join(root, file)));
     } catch { res.writeHead(400).end('Bad request'); }
   });

@@ -183,6 +183,160 @@ export async function runContracts() {
       if (agent) assert.equal(f.window.__trafficClass.score, 100);
     }
   });
+  function mouse(f, type, x, y, extra = {}) {
+    if (type === 'click') f.emit('pointerdown', {isTrusted: true, ...extra, pointerType: extra.pointerType === undefined ? 'mouse' : extra.pointerType});
+    f.emit(type, {isTrusted: true, pointerType: 'mouse', detail: 1, clientX: x, clientY: y, ...extra});
+  }
+  await test('TP: single move/click and missing approach counted before navigating pagehide', () => {
+    for (const moves of [0, 1]) {
+      const f = fixture({modify: ({window}) => {window.PointerEvent = function () {};}});
+      if (moves) mouse(f, 'pointermove', 100, 100);
+      mouse(f, 'click', 100, 100); f.emit('pagehide');
+      assert.ok(f.window.__trafficClass.signals.includes('TP'));
+      assert.equal(f.window.__trafficClass.class, 'human'); // TP3 + WG1 cannot classify alone
+    }
+    const f = fixture({modify: ({store}) => store.set('traffic_class', JSON.stringify({timestamps: [9000, 9500]}))});
+    mouse(f, 'click', 100, 100); f.emit('pagehide');
+    assert.equal(f.window.__trafficClass.class, 'suspicious'); // TP + FN + graphics = 3 families
+    const g = fixture({modify: ({document, store}) => {
+      document.createElement = () => ({getContext: () => ({getExtension: () => null})});
+      store.set('traffic_class', JSON.stringify({timestamps: [9000, 9500]}));
+    }});
+    mouse(g, 'click', 100, 100); g.emit('pagehide');
+    assert.equal(g.window.__trafficClass.score, 6);
+    assert.equal(g.window.__trafficClass.class, 'human'); // still needs 3 families
+  });
+  await test('TP: natural approach, rested cursor, repeated same point are exempt', () => {
+    for (const rest of [false, true]) {
+      const f = fixture({modify: ({window}) => {window.PointerEvent = function () {};}});
+      if (!rest) { mouse(f, 'pointermove', 10, 10); mouse(f, 'pointermove', 40, 40); }
+      mouse(f, 'pointermove', 100, 100);
+      if (rest) f.advance(1200);
+      mouse(f, 'click', 100, 100);
+      for (let i = 0; i < 4; i++) { f.advance(200); mouse(f, 'click', 100, 100); }
+      f.emit('pagehide'); assert.ok(!f.window.__trafficClass.signals.includes('TP'));
+    }
+  });
+  await test('TP: distant click, sparse recent approach; ignore touch/pen/keyboard/untrusted', () => {
+    const f = fixture(); mouse(f, 'mousemove', 0, 0); f.advance(1200);
+    mouse(f, 'click', 200, 200); f.emit('pagehide');
+    assert.ok(f.window.__trafficClass.signals.includes('TP'));
+    for (const extra of [{pointerType: 'touch'}, {pointerType: 'pen'}, {detail: 0}, {isTrusted: false}]) {
+      const g = fixture(); mouse(g, 'click', 100, 100, extra); g.emit('pagehide');
+      assert.ok(!g.window.__trafficClass.signals.includes('TP'));
+    }
+  });
+  await test('TP: compatibility mousemove does not double-count pointermove; old click uses pointerdown kind', () => {
+    const f = fixture({modify: ({window}) => {window.PointerEvent = function () {};}});
+    mouse(f, 'pointermove', 100, 100); mouse(f, 'mousemove', 100, 100);
+    mouse(f, 'pointerdown', 100, 100); mouse(f, 'click', 100, 100, {pointerType: undefined});
+    f.emit('pagehide'); assert.ok(f.window.__trafficClass.signals.includes('TP'));
+  });
+  await test('TP requires a fresh explicit trusted mouse pointerdown; mobile/unknown/WebKit clicks ignored', () => {
+    for (const kind of [undefined, '', 'touch', 'pen', 'unknown']) {
+      const f = fixture();
+      f.emit('pointerdown', {isTrusted: true, pointerType: kind});
+      f.emit('click', {isTrusted: true, pointerType: 'mouse', detail: 1, clientX: 200, clientY: 200});
+      f.emit('pagehide'); assert.ok(!f.window.__trafficClass.signals.includes('TP'), String(kind));
+    }
+    for (const pointerType of [undefined, '', 'mouse']) {
+      const f = fixture();
+      f.emit('click', {isTrusted: true, pointerType, detail: 1, clientX: 200, clientY: 200});
+      f.emit('pagehide'); assert.ok(!f.window.__trafficClass.signals.includes('TP'));
+    }
+    const untrusted = fixture();
+    untrusted.emit('pointerdown', {isTrusted: false, pointerType: 'mouse'});
+    untrusted.emit('click', {isTrusted: true, pointerType: 'mouse', detail: 1, clientX: 200, clientY: 200});
+    untrusted.emit('pagehide'); assert.ok(!untrusted.window.__trafficClass.signals.includes('TP'));
+    const f = fixture();
+    f.emit('pointerdown', {isTrusted: true, pointerType: 'mouse'});
+    f.emit('click', {isTrusted: true, pointerType: 'mouse', detail: 0, clientX: 0, clientY: 0});
+    f.emit('click', {isTrusted: true, pointerType: 'mouse', detail: 1, clientX: 200, clientY: 200});
+    f.emit('pagehide'); assert.ok(!f.window.__trafficClass.signals.includes('TP'), 'pointerdown must be consumed');
+  });
+  function fakeWorker(objects) {
+    const record = {terminated: 0, revoked: 0};
+    objects.window.Blob = function (parts) {this.text = parts.join('');};
+    objects.window.URL = {createObjectURL(blob) {record.code = blob.text; return 'blob:test';}, revokeObjectURL() {record.revoked++;}};
+    objects.window.Worker = function () {
+      record.instance = this;
+      this.postMessage = data => {record.input = data;};
+      this.terminate = () => {record.terminated++;};
+    };
+    record.reply = navigator => {
+      const context = {navigator, close() {}, postMessage: data => {record.replyData = data;}};
+      vm.createContext(context); vm.runInContext(record.code, context);
+      context.onmessage({data: record.input});
+      record.instance.onmessage?.({data: record.replyData});
+    };
+    return record;
+  }
+  const workerNav = {userAgent: 'Chrome/140.0 Desktop', languages: ['en'], hardwareConcurrency: 8};
+  await test('WK is zero when main and worker navigator are consistent', () => {
+    let record;
+    const f = fixture({modify: objects => {record = fakeWorker(objects); objects.navigator.webdriver = false;}});
+    record.reply({...workerNav, webdriver: false});
+    f.emit('keydown', {isTrusted: true}); f.advance(8000);
+    assert.equal(record.replyData.m, false); assert.equal(record.replyData.h, false);
+    assert.ok(!f.window.__trafficClass.signals.includes('WK'));
+    assert.equal(f.window.__trafficClass.score, 1); // only fixture's absent WebGL
+    assert.equal(f.window.__trafficClass.class, 'human');
+  });
+  await test('WK: main-only UA switch is soft 2, worker reply boolean-only, cleanup immediate', () => {
+    let record;
+    const f = fixture({modify: objects => {record = fakeWorker(objects); objects.navigator.userAgent += ' UA-Switcher';}});
+    record.reply(workerNav);
+    assert.equal(Object.values(record.replyData).every(v => typeof v === 'boolean'), true);
+    assert.ok(!f.window.__trafficClass.signals.includes('WK'));
+    f.advance(8000); assert.ok(f.window.__trafficClass.signals.includes('WK'));
+    assert.equal(f.window.__trafficClass.score, 5); // WG1 + NI2 + WK2; human
+    assert.equal(f.window.__trafficClass.class, 'human');
+    assert.equal(record.terminated, 1); assert.equal(record.revoked, 1);
+  });
+  await test('WK: exact supported comparisons; absent worker webdriver is unknown', () => {
+    for (const change of [{}, {languages: ['cs']}, {hardwareConcurrency: 4}, {webdriver: true}]) {
+      let record;
+      const f = fixture({modify: objects => {record = fakeWorker(objects); objects.navigator.webdriver = false;}});
+      record.reply({...workerNav, ...change}); f.advance(8000);
+      assert.equal(f.window.__trafficClass.signals.includes('WK'), Object.keys(change).length > 0);
+    }
+  });
+  await test('WK: HeadlessChrome in worker is final hard HL, declaration precedence preserved', () => {
+    for (const declared of [false, true]) {
+      let record;
+      const f = fixture({modify: objects => {record = fakeWorker(objects); if (declared) objects.navigator.userAgent = 'Claude-Agent/1.0';}});
+      record.reply({...workerNav, userAgent: 'HeadlessChrome/140.0'}); f.advance(8000);
+      assert.ok(f.window.__trafficClass.signals.includes('HL'));
+      assert.equal(f.window.__trafficClass.class, declared ? 'declared_agent' : 'automated');
+      assert.equal(f.window.__trafficClass.score, 100);
+    }
+  });
+  await test('WK: CSP constructor/error/timeout/pagehide -> unknown, no delay, URLs revoked', () => {
+    for (const mode of ['constructor', 'error', 'timeout', 'pagehide']) {
+      let record;
+      const f = fixture({modify: objects => {
+        record = fakeWorker(objects);
+        if (mode === 'constructor') objects.window.Worker = function () {throw Error('CSP blocked');};
+      }});
+      if (mode === 'error') record.instance.onerror({preventDefault() {}});
+      if (mode === 'timeout') f.advance(1500);
+      if (mode === 'pagehide') f.emit('pagehide'); else f.advance(8000);
+      assert.equal(f.window.dataLayer.length, 2);
+      assert.ok(!f.window.__trafficClass.signals.includes('WK'));
+      assert.equal(record.revoked, 1);
+      if (mode !== 'constructor') assert.equal(record.terminated, 1);
+    }
+  });
+  await test('WK: late result after early final ignored; production contains only allowed fields', () => {
+    let record;
+    const f = fixture({config: {debug: false}, modify: objects => {record = fakeWorker(objects);}});
+    const late = record.instance.onmessage;
+    f.emit('pagehide'); late({data: {h: true, m: true}});
+    assert.equal(f.window.dataLayer.length, 2);
+    assert.equal(f.window.__trafficClass.class, 'human');
+    assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score']);
+    assert.deepEqual(Object.keys(f.window.__trafficClass).sort(), ['class', 'phase', 'score']);
+  });
   return results;
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {

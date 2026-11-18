@@ -22,8 +22,42 @@ export function flakes(results) {
     const outcomes = runs.map(r => JSON.stringify({status: r.status,
       classes: r.pages?.map(p => [p.initial?.traffic_class, p.final?.traffic_class]),
       signals: r.signals, botd: r.botd}));
-    return {name, runs: runs.length, flaky: new Set(outcomes).size > 1};
+    return {name, runs: runs.length, informational: runs.every(r => r.informational), flaky: new Set(outcomes).size > 1};
   });
 }
 export const cell = value => String(value ?? '—').replaceAll('|', '\\|').replaceAll('\n', ' ');
 export const botdCell = result => result?.status === 'OK' ? `${result.bot} / ${result.botKind || '—'}` : result?.status || '—';
+
+// Human control: approach the target through multiple trusted mouse moves.
+export async function humanClick(page, locator, restMs = 0) {
+  await locator.scrollIntoViewIfNeeded();
+  const box = await locator.boundingBox();
+  if (!box) throw Error('Human click target has no bounding box');
+  await page.mouse.move(24, 100);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, {steps: 20});
+  if (restMs) await sleep(restMs);
+  await page.mouse.down(); await page.mouse.up();
+}
+
+// Native control preflight, on /blank.html before any fixture-specific overrides.
+// WorkerNavigator.webdriver is usually absent; do not patch it to manufacture false.
+export async function cleanPreflight(page) {
+  return page.evaluate(() => new Promise(resolve => {
+    const main = navigator.webdriver === false;
+    let worker, url, timer;
+    function end(result) {
+      clearTimeout(timer); if (worker) worker.terminate(); if (url) URL.revokeObjectURL(url);
+      resolve({mainWebdriverFalse: main, ...result});
+    }
+    try {
+      url = URL.createObjectURL(new Blob([`onmessage=e=>{const a=e.data,n=navigator;
+        postMessage({workerWebdriverNotTrue:n.webdriver!==true,workerWebdriverSupported:typeof n.webdriver==='boolean',
+        consistent:a.ua===n.userAgent&&JSON.stringify(a.la)===JSON.stringify(n.languages)&&a.hc===n.hardwareConcurrency});close();}`], {type: 'text/javascript'}));
+      worker = new Worker(url);
+      worker.onmessage = event => end({status: 'OK', ...event.data});
+      worker.onerror = event => {event.preventDefault(); end({status: 'UNKNOWN'});};
+      timer = setTimeout(() => end({status: 'UNKNOWN'}), 1500);
+      worker.postMessage({ua: navigator.userAgent, la: navigator.languages, hc: navigator.hardwareConcurrency});
+    } catch { end({status: 'UNKNOWN'}); }
+  }));
+}

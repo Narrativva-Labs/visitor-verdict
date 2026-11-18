@@ -27,7 +27,80 @@
   var embedded = /; wv\)|WebView|FBAN|FBAV|Instagram/i.test(ua);
   var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
   var chromium = false, brands = n.userAgentData && n.userAgentData.brands, i;
-  var events = 'mousemove pointerdown touchstart scroll keydown wheel'.split(' ');
+  var events = 'mousemove pointermove pointerdown pointercancel touchstart scroll keydown wheel click'.split(' ');
+  // Bounded transient state only: no trajectories, rates or input objects retained.
+  var move = null, clicked = null, pointerKind = '', teleport = false;
+  var worker = null, workerURL = null, workerTimer, workerMismatch = false, workerHeadless = false;
+  var urlAPI = w.URL || w.webkitURL;
+  function stopWorker() {
+    w.clearTimeout(workerTimer);
+    if (worker) {
+      worker.onmessage = worker.onerror = null;
+      try { worker.terminate(); } catch (ignore) {}
+      worker = null;
+    }
+    if (workerURL) {
+      try { urlAPI.revokeObjectURL(workerURL); } catch (ignore) {}
+      workerURL = null;
+    }
+  }
+  function startWorker() {
+    try {
+      if (!w.Worker || !w.Blob || !urlAPI || !urlAPI.createObjectURL) { return; }
+      // Main values travel only to this local worker; its reply contains booleans.
+      // No OffscreenCanvas probe: avoid another graphics context and its cost.
+      var code = 'onmessage=function(e){var a=e.data,n=navigator,m=false;' +
+        'try{if(a.ua&&n.userAgent&&a.ua!==n.userAgent)m=true;' +
+        'if(typeof a.wd==="boolean"&&typeof n.webdriver==="boolean"&&a.wd!==n.webdriver)m=true;' +
+        'if(a.la&&a.la.length&&n.languages&&n.languages.length&&a.la.join("|")!==Array.prototype.join.call(n.languages,"|"))m=true;' +
+        'if(a.hc>0&&n.hardwareConcurrency>0&&a.hc!==n.hardwareConcurrency)m=true;' +
+        'postMessage({m:m,h:/(?:^|[^A-Za-z0-9_-])HeadlessChrome(?=$|[^A-Za-z0-9_-])/i.test(n.userAgent||"")});' +
+        '}catch(x){postMessage({m:false,h:false});}close();}';
+      workerURL = urlAPI.createObjectURL(new w.Blob([code], {type: 'text/javascript'}));
+      worker = new w.Worker(workerURL);
+      worker.onmessage = function (event) {
+        if (!done && event.data) {
+          workerMismatch = event.data.m === true;
+          workerHeadless = event.data.h === true;
+        }
+        stopWorker();
+      };
+      worker.onerror = function (event) { if (event.preventDefault) { event.preventDefault(); } stopWorker(); };
+      workerTimer = w.setTimeout(stopWorker, Math.min(1500, config.idleMs));
+      worker.postMessage({ua: n.userAgent || '', wd: n.webdriver,
+        la: n.languages ? Array.prototype.slice.call(n.languages) : null, hc: n.hardwareConcurrency});
+    } catch (ignore) { stopWorker(); }
+  }
+  function far(a, x, y) {
+    return (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y) > 1600;
+  }
+  function pointer(event) {
+    if (event.type === 'pointerdown') {
+      pointerKind = event.isTrusted === true && event.pointerType === 'mouse' ? 'mouse' : '';
+      return;
+    }
+    if (/^(touchstart|pointercancel|keydown)$/.test(event.type)) { pointerKind = ''; return; }
+    var mouseDown = false;
+    if (event.type === 'click') { mouseDown = pointerKind === 'mouse'; pointerKind = ''; }
+    if (event.isTrusted !== true) { return; }
+    var movement = event.type === (w.PointerEvent ? 'pointermove' : 'mousemove');
+    if (movement && (!w.PointerEvent || event.pointerType === 'mouse')) {
+      var now = Date.now();
+      if (move && now - move.t <= 1000) {
+        if (move.x === event.clientX && move.y === event.clientY) { return; }
+      }
+      move = {x: event.clientX, y: event.clientY, t: now, previous: move ? move.t : null};
+    }
+    if (event.type === 'click' && event.detail > 0 && mouseDown && (!event.pointerType || event.pointerType === 'mouse') &&
+        typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+      // Repeated clicks at the same point, and a cursor rested there for >1s,
+      // are exempt. A single instantaneous move followed by a click is sparse.
+      if ((!clicked || far(clicked, event.clientX, event.clientY)) &&
+          (!move || far(move, event.clientX, event.clientY) ||
+          (Date.now() - move.t <= 1000 && (move.previous === null || Date.now() - move.previous > 1000)))) { teleport = true; }
+      clicked = {x: event.clientX, y: event.clientY};
+    }
+  }
   function add(code, weight, family) {
     if (signals.indexOf(code) !== -1) { return; }
     signals.push(code);
@@ -154,7 +227,8 @@
   } catch (ignore) { fast = false; }
   function interact(event) {
     if (done || d.visibilityState === 'hidden') { return; }
-    if (event.isTrusted === true) { active = true; }
+    pointer(event);
+    if (event.isTrusted === true && event.type !== 'pointercancel') { active = true; }
     if (/^(mousemove|pointerdown|touchstart)$/.test(event.type) && event.isTrusted === false) { synthetic = true; }
   }
   function exposure() {
@@ -163,7 +237,7 @@
   }
   function finish() {
     if (done) { return; }
-    exposure(); done = true;
+    exposure(); done = true; stopWorker();
     playwright(); geometry();
     for (i = 0; i < events.length; i++) { d.removeEventListener(events[i], interact, true); }
     d.removeEventListener('visibilitychange', visibility); w.removeEventListener('pagehide', finish);
@@ -171,9 +245,14 @@
     if (fast) { add('FN', 3, 'navigation'); }
     if (synthetic && !active) { add('SY', 2, 'interaction'); }
     if (mismatch) { add('NP', 1, 'permissions'); }
+    if (teleport) { add('TP', 3, 'pointer'); }
+    if (workerMismatch) { add('WK', 2, 'worker'); }
+    if (workerHeadless) { add('HL', 100); }
+    move = clicked = null; pointerKind = '';
     publish('final'); signals = []; families = {};
   }
   function visibility() {
+    pointerKind = '';
     if (done) { return; }
     exposure();
     if (d.visibilityState !== 'hidden') {
@@ -183,5 +262,6 @@
   for (i = 0; i < events.length; i++) { d.addEventListener(events[i], interact, true); }
   w.addEventListener('pagehide', finish); d.addEventListener('visibilitychange', visibility);
   initial = publish('initial'); ua = ''; brands = null;
+  startWorker();
   visibility();
 }(window, document, navigator));
