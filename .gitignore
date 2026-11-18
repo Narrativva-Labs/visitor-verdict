@@ -1,2 +1,7 @@
 node_modules/
-test/results/log.jsonl
+.DS_Store
+# local working notes, not published
+AGENTS.md
+CLAUDE.md
+research/prior-art.md
+test/results/
