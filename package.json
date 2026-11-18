@@ -1,0 +1,22 @@
+{
+  "name": "traffic-class",
+  "version": "1.0.0",
+  "description": "Local browser traffic classification for GTM and GA4",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node test/run.mjs",
+    "test:contracts": "node test/contracts.mjs",
+    "serve": "node test/server.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.65.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "terser": "^5.44.0",
+    "acorn": "^8.15.0"
+  }
+}
