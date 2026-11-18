@@ -30,6 +30,7 @@
   var events = 'mousemove pointermove pointerdown pointercancel touchstart scroll keydown wheel click'.split(' ');
   // Bounded transient state only: no trajectories, rates or input objects retained.
   var move = null, clicked = null, pointerKind = '', teleport = false;
+  var tpPages = 0, repeatedTeleport = false, lastStoredClass = '';
   var worker = null, workerURL = null, workerTimer, workerMismatch = false, workerHeadless = false;
   var urlAPI = w.URL || w.webkitURL;
   function stopWorker() {
@@ -97,7 +98,9 @@
       // are exempt. A single instantaneous move followed by a click is sparse.
       if ((!clicked || far(clicked, event.clientX, event.clientY)) &&
           (!move || far(move, event.clientX, event.clientY) ||
-          (Date.now() - move.t <= 1000 && (move.previous === null || Date.now() - move.previous > 1000)))) { teleport = true; }
+          (Date.now() - move.t <= 1000 && (move.previous === null || Date.now() - move.previous > 1000)))) {
+        if (!teleport) { teleport = true; recordTeleport(); }
+      }
       clicked = {x: event.clientX, y: event.clientY};
     }
   }
@@ -133,12 +136,34 @@
       }
     } catch (ignore) {}
   }
+  function boundedTP(value) {
+    return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 255 &&
+      Math.floor(value) === value ? value : 0;
+  }
+  function storedTP() {
+    try {
+      var record = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}');
+      return boundedTP(record && record.tpPages);
+    } catch (ignore) { return 0; }
+  }
   function save(lastClass) {
-    try { w.sessionStorage.setItem('traffic_class', JSON.stringify({timestamps: timestamps, lastClass: lastClass})); return true; } catch (ignore) { return false; }
+    lastStoredClass = lastClass;
+    try {
+      // Preserve a newer same-tab document's counter when this document finalizes.
+      tpPages = Math.max(tpPages, storedTP());
+      w.sessionStorage.setItem('traffic_class', JSON.stringify({timestamps: timestamps, lastClass: lastClass, tpPages: tpPages}));
+      return true;
+    } catch (ignore) { return false; }
+  }
+  function recordTeleport() {
+    // Called once per document, in click capture, before navigation/pagehide.
+    tpPages = Math.min(255, Math.max(tpPages, storedTP()) + 1);
+    if (tpPages >= 2) { repeatedTeleport = true; add('TR', 0); }
+    save(lastStoredClass);
   }
   function publish(phase) {
     var result = declared ? 'declared_agent' : hard ? 'automated' :
-      score >= config.suspiciousThreshold && Object.keys(families).length >= 3 ? 'suspicious' : 'human';
+      repeatedTeleport || (score >= config.suspiciousThreshold && Object.keys(families).length >= 3) ? 'suspicious' : 'human';
     if (phase === 'final' && (initial === 'automated' || initial === 'declared_agent')) { result = initial; }
     var total = hard || declared ? 100 : score;
     var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase, traffic_score: total};
@@ -199,7 +224,9 @@
     }
   } catch (ignore) {}
   try {
-    var saved = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}');
+    var saved = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}') || {};
+    tpPages = boundedTP(saved.tpPages);
+    if (tpPages >= 2) { repeatedTeleport = true; add('TR', 0); }
     if (saved.lastClass === 'automated') { add('CA', 100); }
     var now = Date.now(), list = saved.timestamps, last = -Infinity;
     if (Object.prototype.toString.call(list) === '[object Array]') {

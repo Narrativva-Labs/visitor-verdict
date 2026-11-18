@@ -5,6 +5,7 @@ import {readFile, writeFile, mkdtemp, mkdir, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createRequire} from 'node:module';
+import {connectRealChrome} from './cdp-chrome.mjs';
 import {startServer} from './server.mjs';
 import {options, sleep, botd, botdCell, flakes, cell, humanClick, cleanPreflight} from './support.mjs';
 const {repeat} = options();
@@ -41,6 +42,10 @@ const specs = [
   {name: '32 Stealth headless locator navigation', engine: stealth, mode: 'locator'},
   {name: '33 Headed webdriver-disabled locator navigation', engine: chromium, launch: {headless: false, args: quiet}, mode: 'locator'},
   {...human, name: '34 Worker blocked by CSP', cspWorker: true},
+  {name: '35 Real Chrome over CDP agent', cdp: true, category: 'CDP agent', mode: 'cdp-agent',
+    expectedDescription: 'suspicious from page 2 final; page 3 initial/final'},
+  {name: '35b Real Chrome over CDP with natural approach', cdp: true, human: true, informational: true,
+    category: 'CDP agent with human-like movement', mode: 'cdp-human', expectedDescription: 'human (informational)'},
   {...human, name: 'S28 Stealth bot behaving humanly, rested clicks', engine: stealth, informational: true, category: 'stealth bot behaving humanly', mode: 'rest'},
   {...human, name: 'S15 Stealth bot behaving humanly, rapid navigation', engine: stealth, informational: true, category: 'stealth bot behaving humanly', mode: 'rapid'},
   {...human, name: 'C1 Desktop performance (20 fresh evaluations)', mode: 'performance'},
@@ -75,6 +80,7 @@ async function snapshot(page) {
     initial: window.dataLayer?.find(e => e.traffic_phase === 'initial'),
     finals: window.dataLayer?.filter(e => e.traffic_phase === 'final') || [],
     state: window.__trafficClass,
+    tpPages: (() => {try {return JSON.parse(sessionStorage.getItem('traffic_class') || '{}').tpPages || 0;} catch {return null;}})(),
     cursor: (() => {try {return JSON.parse(sessionStorage.getItem('tc_test_events') || '[]').length;} catch {return null;}})()
   }));
 }
@@ -116,15 +122,19 @@ let server, origin, setupError;
 try { ({server, origin} = await startServer()); } catch (error) { setupError = error; }
 try {
   for (let iteration = 1; iteration <= repeat; iteration++) for (const spec of specs) {
-    const row = {name: spec.name, iteration, category: spec.category || 'bot', informational: !!spec.informational, noteOnly: !!spec.noteOnly, expected: spec.noteOnly ? 'limitation' : spec.informational ? 'not-human-or-human (informational)' : spec.mode === 'csp' ? 'SKIP' : spec.mode?.match(/performance|iframe|double/) ? spec.mode : spec.human ? 'human' : spec.expected || 'not human', pages: [], notes: spec.note ? [spec.note] : []};
-    let browser, context, profileDir;
+    const row = {name: spec.name, iteration, category: spec.category || 'bot', informational: !!spec.informational, noteOnly: !!spec.noteOnly, expected: spec.expectedDescription || (spec.noteOnly ? 'limitation' : spec.informational ? 'not-human-or-human (informational)' : spec.mode === 'csp' ? 'SKIP' : spec.mode?.match(/performance|iframe|double/) ? spec.mode : spec.human ? 'human' : spec.expected || 'not human'), pages: [], notes: spec.note ? [spec.note] : []};
+    let browser, context, profileDir, cdp;
     try {
       if (spec.noteOnly) throw new Skip(spec.note);
       if (spec.mode === 'passive') row.notes.push('One trusted scroll then 12s idle per page; current presence-only interaction model can suppress NI after that scroll. Human required either way.');
       if (spec.mode === 'csp') throw new Skip('CSP blocking inline deliberately deferred as requested.');
       if (setupError) throw new Skip(String(setupError));
       try {
-        if (spec.pdf) {
+        if (spec.cdp) {
+          cdp = await connectRealChrome(chromium);
+          ({browser, context} = cdp);
+          row.notes.push('Spawned separate headed Google Chrome with temporary profile and a nonzero remote-debugging port; no Playwright launch flags, stealth or init-script navigator patches.');
+        } else if (spec.pdf) {
           // Use Chrome's native PDF preference, not a navigator init-script patch.
           profileDir = await mkdtemp(join(tmpdir(), 'traffic-class-pdf-'));
           await mkdir(join(profileDir, 'Default'));
@@ -143,7 +153,7 @@ try {
       context = context || await browser.newContext(contextOptions);
       if (spec.storage) await context.addInitScript(() => Object.defineProperty(window, 'sessionStorage', {get() {throw new DOMException('Blocked for test', 'SecurityError');}}));
       const page = await context.newPage(), entries = await collector(page);
-      if (spec.category === 'clean-human') {
+      if (spec.category === 'clean-human' || spec.cdp) {
         await page.goto(`${origin}/blank.html`);
         row.preflight = await cleanPreflight(page);
         check(row.preflight.mainWebdriverFalse && row.preflight.status === 'OK' && row.preflight.workerWebdriverNotTrue,
@@ -237,6 +247,7 @@ try {
             if (spec.mode === 'rapid') dwell = last ? 12000 : 0;
             if (spec.mode === 'history') dwell = last ? 10000 : j < 3 ? 0 : 2500;
             if (!spec.human && !spec.dwell) dwell = last ? 10000 : 0;
+            if (spec.cdp) dwell = last ? 10000 : 1150;
             if (spec.mode === 'repeat-click') {
               // A stable pagination-like button: several trusted clicks, no new moves.
               await page.evaluate(() => {
@@ -252,12 +263,12 @@ try {
               await page.evaluate(() => { const b = document.createElement('button'); b.id = 'bot-target'; b.textContent = 'Inspect'; document.body.prepend(b); });
               await page.locator('#bot-target').click();
             }
-            await stay(page, spec, dwell);
+            if (spec.cdp) await sleep(dwell); else await stay(page, spec, dwell);
             const before = await snapshot(page), oldPath = new URL(page.url()).pathname;
             check(before.initial, 'Missing synchronous initial classification');
             if (last) {
               check(before.finals.length === 1, `Expected one final, got ${before.finals.length}`);
-              row.pages.push({path: oldPath, initial: before.initial, final: before.finals[0]});
+              row.pages.push({path: oldPath, initial: before.initial, final: before.finals[0], tpPages: before.tpPages});
               break;
             }
             const consoleCursor = entries.length;
@@ -270,21 +281,29 @@ try {
               await page.waitForURL(`${origin}${steps[j]}`);
             } else if (spec.human && !spec.touch) await humanClick(page, page.locator(`a[href="${steps[j]}"]`), spec.mode === 'rest' ? 1600 : 0);
             else if (spec.human && spec.touch) await page.locator(`a[href="${steps[j]}"]`).tap();
-            else if (spec.human || spec.mode === 'locator') await page.locator(`a[href="${steps[j]}"]`).click();
+            else if (spec.human || spec.mode === 'locator' || spec.mode === 'cdp-agent') await page.locator(`a[href="${steps[j]}"]`).click();
             else { await page.evaluate(path => { location.href = path; }, steps[j]); await page.waitForURL(`${origin}${steps[j]}`); }
             await page.waitForLoadState('load');
-            row.pages.push({path: oldPath, initial: before.initial, final: await departure(page, entries, oldPath, before, consoleCursor)});
+            const final = await departure(page, entries, oldPath, before, consoleCursor);
+            const next = await snapshot(page);
+            row.pages.push({path: oldPath, initial: before.initial, final, tpPages: next.tpPages});
           }
         }
         row.botd = await botd(page);
         if (spec.mode === 'double') row.status = 'PASS';
         else row.status = row.pages.every(p => spec.human ? p.initial.traffic_class === 'human' && p.final.traffic_class === 'human' : spec.expected ? p.final.traffic_class === spec.expected : true) && (spec.human || spec.expected || row.pages.at(-1).final.traffic_class !== 'human') ? 'PASS' : 'FAIL';
+        if (spec.mode === 'cdp-agent') {
+          row.status = row.pages[1].final.traffic_class === 'suspicious' &&
+            row.pages[2].initial.traffic_class === 'suspicious' && row.pages[2].final.traffic_class === 'suspicious' ? 'PASS' : 'FAIL';
+          row.notes.push('TP page counters after visits: ' + JSON.stringify(row.pages.map(p => p.tpPages)) + '; page 2 initial can still be human until its teleport click. Missing TP/TR remains an honest detector FAIL.');
+        }
         if (spec.mode === 'idle') {
           row.niByPage = row.pages.map(p => !!p.final.traffic_signals?.includes('NI'));
           row.notes.push('NI observed per page: ' + JSON.stringify(row.niByPage));
           if (!row.niByPage.some(Boolean)) row.notes.push('No NI observed: browser-generated trusted input may suppress inactivity; classification still assessed.');
         }
         if (['rest', 'repeat-click', 'keyboard'].includes(spec.mode)) check(!row.pages.some(p => p.final.traffic_signals.includes('TP')), 'Natural/rested/repeated/keyboard control fired TP');
+        if (['rest', 'repeat-click', 'keyboard'].includes(spec.mode)) check(row.pages.every(p => p.tpPages === 0), 'Human rested/repeated/Enter control increased tpPages');
         if (spec.mode === 'locator') {
           row.tpByPage = row.pages.map(p => !!p.final.traffic_signals?.includes('TP'));
           row.notes.push('TP observed per page: ' + JSON.stringify(row.tpByPage) + '; absence is a detection miss, not a harness error.');
@@ -296,7 +315,7 @@ try {
         if (spec.pdf) check(!row.pages.some(p => p.initial.traffic_signals.includes('PL')), 'PDF-disabled control fired PL');
         if (spec.webgl) check(row.pages.every(p => p.initial.traffic_signals.includes('WG')), 'WebGL-disable fixture did not disable WebGL');
       }
-      if (spec.informational) row.status = 'INFO';
+      if (spec.informational) { row.observedStatus = row.status; row.status = 'INFO'; }
       check(!pageErrors.length, `Page crashed/errored: ${pageErrors.join('; ')}`);
       if (row.status === 'FAIL') row.notes.push('Honest mismatch; existing weights/threshold were not increased to force this fixture. Stealth/normal-browser misses are expected known limits.');
     } catch (error) {
@@ -305,7 +324,7 @@ try {
       row.initial = row.pages.at(-1)?.initial?.traffic_class;
       row.final = row.pages.at(-1)?.final?.traffic_class;
       row.signals = [...new Set(row.pages.flatMap(p => [...(p.initial?.traffic_signals || []), ...(p.final?.traffic_signals || [])]))].sort();
-      if (browser) await browser.close().catch(() => {});
+      if (cdp) await cdp.close().catch(error => { row.status = 'ERROR'; row.notes.push('External Chrome cleanup failed: ' + String(error)); }); else if (browser) await browser.close().catch(() => {});
       if (profileDir) await rm(profileDir, {recursive: true, force: true});
     }
     results.push(row);
@@ -320,7 +339,7 @@ try {
     results.map(r => '| ' + [r.name, r.category, r.iteration, r.expected, r.initial, r.final, r.signals.join(', '), botdCell(r.botd), r.medianMs?.toFixed(3), r.status].map(cell).join(' | ') + ' |').join('\n') +
     '\n\n## Flakiness\n\n' + flakiness.map(f => `- ${f.name}: ${f.flaky ? '**FLAKY**' : repeat < 2 ? 'single run; not assessed' : 'stable'} (${f.runs} runs)`).join('\n') +
     '\n\n## Evidence and limitations\n\n' + results.filter(r => r.notes.length).map(r => `- ${r.name}, run ${r.iteration}: ${r.notes.map(cell).join(' ')}`).join('\n') +
-    '\n\nEvery human page must be initial/final human. BotD runs once per scenario, after our last result, with monitoring off, and only bot/botKind is retained. Benchmark errors are separate from classifier verdicts. Mobile/tablet inputs are emulated. Background requires confirmed hidden visibility; otherwise SKIP. Performance uses 20 fresh iframe windows on a desktop engine; median must be strictly <5ms (includes parse/eval and synchronous probes, excludes setup/cleanup). Timing variability does not alone imply classification flakiness. CSP is deliberately skipped. Reload/back-forward checks forbid FN. BFCache can restore an already-final document; no second final is required. Storage-denied scenarios use console plus intercepted /log requests before forwarding; delivery to the log server is not required. TP=3 (pointer), WK=2 (worker), worker HeadlessChrome adds hard HL=100. Existing caps/threshold stay unchanged. Rapid and stealth bots may remain human; TP does not carry between documents.\n';
+    '\n\nEvery human page must be initial/final human. BotD runs once per scenario, after our last result, with monitoring off, and only bot/botKind is retained. Benchmark errors are separate from classifier verdicts. Mobile/tablet inputs are emulated. Background requires confirmed hidden visibility; otherwise SKIP. Performance uses 20 fresh iframe windows on a desktop engine; median must be strictly <5ms (includes parse/eval and synchronous probes, excludes setup/cleanup). Timing variability does not alone imply classification flakiness. CSP is deliberately skipped. Reload/back-forward checks forbid FN. BFCache can restore an already-final document; no second final is required. Storage-denied scenarios use console plus intercepted /log requests before forwarding; delivery to the log server is not required. TP=3 (pointer), WK=2 (worker), worker HeadlessChrome adds hard HL=100. Existing caps/threshold stay unchanged. Rapid and stealth bots may remain human; TP does not carry as raw input; tpPages/TR carries repeated teleport evidence as a bounded counter.\n';
   await writeFile(new URL('results/report-extended.md', import.meta.url), md);
   if (results.some(r => !r.noteOnly && !['PASS', 'INFO'].includes(r.status) && r.name !== 'C4 Inline-blocking CSP' || r.botd?.status === 'ERROR') || flakiness.some(f => f.flaky && !f.informational)) process.exitCode = 1;
 } finally { if (server) await new Promise(resolve => server.close(resolve)); }

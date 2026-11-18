@@ -2,7 +2,7 @@
 
 A dependency-free ES5 detector for a GTM Custom HTML tag. It classifies each visit as `declared_agent`, `automated`, `suspicious`, or `human`. `human` means insufficient evidence of automation; it is not proof that a person is browsing.
 
-The detector evaluates browser signals locally, creates no identifier or hash, and sends no network requests. Its only persistence is one `sessionStorage` entry (`traffic_class`) with at most 20 pageview timestamps and the last final class. No cookies or localStorage are used. Production output contains only class, phase and numeric score, plus the fixed event name. `debug: true` adds short signal codes. The test site separately POSTs these debug events to its local `/log` sink. Consent gating belongs in GTM.
+The detector evaluates browser signals locally, creates no identifier or hash, and sends no network requests. Its only persistence is one `sessionStorage` entry (`traffic_class`) with at most 20 pageview timestamps, the last final class, and one bounded integer `tpPages` (0–255). No cookies or localStorage are used. Production output contains only class, phase and numeric score, plus the fixed event name. `debug: true` adds short signal codes. The test site separately POSTs these debug events to its local `/log` sink. Consent gating belongs in GTM.
 
 ## Run
 
@@ -24,7 +24,7 @@ npm run serve            # http://127.0.0.1:8787 (PORT is overridable)
 
 `test/results/log.jsonl` appends test-only dataLayer output and is ignored by Git. It contains no scenario identifier or browser attributes. Reports group scenario events in runner memory instead. Only the local test harness makes requests.
 
-Phase 2 revision validation in this sandbox: 28 deterministic contract checks pass, and source/generated output parse as ES5. No browsers were run for this phase. The owner runs browser suites outside the sandbox; their earlier reports do not validate TP/WK. The detector currently minifies to **8,349 bytes**, exceeding the original <5 KB target; build warns about this open issue. Re-run the browser suites before treating the new signals as calibrated.
+Phase 3 validation in this sandbox: 35 deterministic contract checks pass, and source/generated output parse as ES5. No browsers were run for this phase. The owner runs browser suites outside the sandbox; their earlier reports do not validate the new TR rule or CDP scenarios. The detector currently minifies to **8,762 bytes**, exceeding the original <5 KB target; build warns about this open issue. Re-run the browser suites before treating the new signals as calibrated.
 
 ## Configuration and phases
 
@@ -44,7 +44,7 @@ window.trafficClassConfig = {
 
 `agentTokens` is exactly the array in [research section 5](research/agents-and-tells.md), compiled as case-insensitive regex sources with token boundaries. It includes `Claude-Agent`, `Google-Agent`, the documented fetcher/crawler identities, and legacy `Google-NotebookLM` compatibility. It excludes `ChatGPT Agent`, `Google-Extended` and `Applebot-Extended`. Custom patterns replace the array; malformed patterns are ignored, and the same outer boundaries apply. A declared UA is self-identification, not authenticated vendor identity or proof of an interactive agent.
 
-Initial classification is synchronous. Final classification adds behaviour after `idleMs` of **visible** time, pausing while hidden, or immediately on `pagehide`. Final fires once per document. `NI` requires at least **8000 ms** visible exposure regardless of an earlier `pagehide` or a shortened configured observation. Reinserting the script is ignored. BFCache restoration retains the existing document's completed state, adds no timestamp and never produces another final. Reload/back-forward navigation does not append navigation timestamps. SPA route changes do not rerun classification.
+Initial classification is synchronous. Final classification adds behaviour after `idleMs` of **visible** time, pausing while hidden, or immediately on `pagehide`. Final fires once per document. `NI` requires the full configured `idleMs` of visible exposure (default 8000 ms); an early `pagehide` does not manufacture inactivity. Reinserting the script is ignored. BFCache restoration retains the existing document's completed state, adds no timestamp and never produces another final. Reload/back-forward navigation does not append navigation timestamps. SPA route changes do not rerun classification.
 
 Both phases push:
 
@@ -57,7 +57,7 @@ Both phases push:
 
 ## Signals and weights
 
-[Research sections 4–5](research/agents-and-tells.md) take precedence over the earlier AGENTS.md proposals. Suspicious requires **score ≥6 AND at least 3 distinct positive-weight families**. Geometry is capped at 1, graphics at 1, and inactivity/synthetic input at 2. Other positive signals have separate families; zero-weight HC does not count.
+[Research sections 4–5](research/agents-and-tells.md) take precedence over the earlier AGENTS.md proposals. The ordinary suspicious rule requires **score ≥6 AND at least 3 distinct positive-weight families**. The approved TR rule directly yields suspicious for repeated TP documents, independently of that score/family guard; declared/hard classes retain priority. Geometry is capped at 1, graphics at 1, and inactivity/synthetic input at 2. Other positive signals have separate families; zero-weight HC does not count.
 
 | Code | Evidence and safeguards | Weight / family |
 |---|---|---|
@@ -81,6 +81,7 @@ Both phases push:
 | `SY` | Synthetic pointer input occurred, no trusted input of **any** accepted modality | 2 / interaction |
 | `TP` | Click following an explicit trusted mouse pointerdown, without approach, >40px from last move, or only one distinct move in the preceding ~1s; ignores touch/pen, keyboard detail 0 and untrusted events; rested/same-point clicks exempt | 3 / pointer, final only |
 | `WK` | Supported UA, webdriver, languages or positive core-count mismatch between main and dedicated worker; unavailable fields ignored | 2 / worker, final only |
+| `TR` | TP on this document with at least one prior TP document, or initial `tpPages >=2`; never hard automation by itself | 0 / direct suspicious rule; bypasses ordinary score/family guard |
 
 Accepted activity: mousemove/pointermove, pointerdown, touchstart, scroll, keydown, wheel and trusted click. A trusted key or scroll prevents both NI and SY; trusted events can also be generated by automation. NI and SY never add beyond 2 together. Reading quietly scores 2; rapid navigation plus inactivity scores 5 and remains human unless another environment family raises the score to 6. Scenario 7 may legitimately slip through. Weights are research proposals, not empirically tuned results; do not increase them to force that bot to pass.
 
@@ -147,9 +148,9 @@ WK scores 2 because privacy extensions and UA switchers can modify only the main
 
 A worker declaring HeadlessChrome sets hard HL as requested. Consequently, a headless browser disguised as a human control by a main-thread stealth patch can now be automated; this is a conflict in the simulated control, not proof about real users. A genuine main-only UA switcher in headed Chrome should receive at most WK from that difference. Re-run all existing controls to check for additional interactions; no browser false-positive guarantee is established by contracts.
 
-Extended scenarios 28–34 cover rested/repeated clicks, Enter navigation, a main-only UA override, stealth/headed locator clicks and worker-src 'none' across all three documents. Human mouse navigation now approaches the actual link with multiple trusted moves; keyboard/touch controls retain their own input modalities. Bot locator fixtures keep the sparse approach and include a neutral click on the last page before final, since pointer evidence is deliberately not carried between documents. Scenario 22 now stays 10 seconds on every page and reads each real timed final directly before navigation; console/intercepted `/log` and the owner's storage channel remain backups. This verifies both phases under denied storage without claiming reliable early-unload delivery.
+Extended scenarios 28–34 cover rested/repeated clicks, Enter navigation, a main-only UA override, stealth/headed locator clicks and worker-src 'none' across all three documents. Human mouse navigation now approaches the actual link with multiple trusted moves; keyboard/touch controls retain their own input modalities. Bot locator fixtures keep the sparse approach and include a neutral click on the last page before final, while raw pointer input is never carried between documents; phase 3 carries only the approved bounded counter. Scenario 22 now stays 10 seconds on every page and reads each real timed final directly before navigation; console/intercepted `/log` and the owner's storage channel remain backups. This verifies both phases under denied storage without claiming reliable early-unload delivery.
 
-The original scenario 7's DOM `.click()` is untrusted and intentionally cannot trigger TP. New scenario 33 exercises trusted locator clicks with webdriver disabled. TP + FN without a third family still remains human; a pristine browser or an agent moving naturally can still slip through. No weights were increased to force a particular browser fixture to pass.
+The original scenario 7's DOM `.click()` is untrusted and intentionally cannot trigger TP. New scenario 33 exercises trusted locator clicks with webdriver disabled. TP + FN without a third family remains human unless the separate TR session rule applies; a pristine browser or an agent moving naturally can still slip through. No weights were increased to force a particular browser fixture to pass.
 
 
 The owner observed WK on every former stealth-backed human control. Those controls were instrumented simulations and are now separated from clean humans; their observations are not used to lower weights. TP remains 3 and WK 2 pending clean-control results. The main-only UA-switcher scenario 31 intentionally adds its named UA override after a clean native preflight; it is a differential environment fixture, not an untouched navigator baseline. Scenario 22 likewise deliberately denies storage. All other common human navigator probes remain native.
@@ -157,3 +158,23 @@ The owner observed WK on every former stealth-backed human control. Those contro
 Scenario 17 sets the native Chromium PDF preference in a temporary profile and removes that profile after closing the browser. The preference is present in [Chromium's PDF settings source](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/resources/settings/site_settings/pdf_documents_page.html); effective PDF-disabled/empty-plugin values are still verified, and unsupported builds are SKIP. No navigator PDF/plugin getters are patched.
 
 For 14b, NI evidence is recorded per page instead of requiring NI on every page; browser-generated trusted events can suppress NI despite no runner-issued input. For 33, missing TP is recorded as a detector miss, with per-page evidence, rather than throwing a harness ERROR. The ordinary expected nonhuman verdict still produces FAIL when the bot slips through. No browser run was made for this revision; existing reports from the owner's runs are preserved.
+
+
+## Phase 3: repeated teleport documents
+
+Approved by František: the existing `traffic_class` sessionStorage object additionally contains **one integer `tpPages`, 0–255**. A first TP in a document increments it synchronously in click capture, before the browser can navigate. Further clicks, duplicate script loads, final publication and BFCache restoration of that document do not increment again. The count saturates at 255. Older records without it, malformed JSON and invalid, noninteger or out-of-range values default to zero. No URLs, IDs, input traces or counters per URL are created. Distinct means distinct detector documents: a new document at the same URL (including reload) can count again; unique-URL deduplication would require forbidden extra state.
+
+TR is a **classification override, not additional numeric weight**. On a second TP document its final is at least suspicious even with one evidence family and a score below 6. Once `tpPages >=2`, subsequent documents start suspicious even without their own TP. Page 2 initial may still be human when only one earlier TP document exists; its navigating click establishes TR before pagehide final, and page 3 initial then carries it. The existing two-event lifecycle is retained. Declared-agent and hard-automated classes still win. TR alone can never yield automated. The ordinary weights, caps and threshold remain unchanged; class and score must be interpreted together because a TR-only suspicious visit can have score 0.
+
+The counter is stored locally only; even debug output adds just `TR`, never `tpPages`. If storage is blocked, repeated clicks in one document cannot synthesize prior-page history. Saves retain any newer valid same-tab count to avoid stale documents reducing it. This is per-tab session history, not a unique-visitor identifier. Misclassified TP on two genuine human documents can now cause a persistent suspicious carry-over for the tab session; the rested/repeated/Enter contracts and scenarios 28–30 explicitly guard against accumulating that history. No new browser false-positive claim is made without the owner's rerun.
+
+Scenarios **35** and **35b** spawn a separate headed Google Chrome executable from the standard channel-chrome installation, then use `chromium.connectOverCDP` with its default profile context. They use an empty temporary profile, no stealth, no webdriver init patches and no Playwright browser launch flags. A nonzero loopback debugging port avoids the special `--remote-debugging-port=0` webdriver behavior. Only the endpoint announced by that spawned child is used. Startup failure is SKIP; process/profile cleanup is bounded and targets only that child and temporary directory. Set `TRAFFIC_CHROME_EXECUTABLE` if Chrome is installed elsewhere.
+
+35 follows index → page2 → page3 using locator clicks and short waits, requiring page 2 final and page 3 initial/final to be suspicious. Missing TP/TR remains an honest FAIL, not a harness error. 35b uses natural multi-step approaches before clicks and expects human as an informational evasion case, recording its observed PASS/FAIL under INFO. JSON records each visit's counter as test evidence. Clean controls 28–30 additionally require that their visit counters remain zero.
+
+```sh
+node test/contracts.mjs
+node test/run-extended.mjs --repeat 2
+```
+
+The browser command is for the owner outside this sandbox. Existing browser reports were not overwritten for phase 3.

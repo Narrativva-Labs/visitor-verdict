@@ -337,6 +337,104 @@ export async function runContracts() {
     assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score']);
     assert.deepEqual(Object.keys(f.window.__trafficClass).sort(), ['class', 'phase', 'score']);
   });
+  await test('TR: TP writes a bounded counter immediately, once per document, no exported counter', () => {
+    const f = fixture({modify: ({store}) => store.set('traffic_class', JSON.stringify({timestamps: [9000], lastClass: 'human', tpPages: 0}))});
+    mouse(f, 'click', 100, 100);
+    const saved = JSON.parse(f.store.get('traffic_class'));
+    assert.equal(saved.tpPages, 1); assert.equal(saved.lastClass, 'human');
+    assert.equal(f.window.dataLayer.length, 1); // synchronous counter write precedes pagehide
+    for (let i = 0; i < 5; i++) mouse(f, 'click', 300 + i * 100, 200);
+    assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 1);
+    f.emit('pagehide'); assert.equal(f.window.__trafficClass.class, 'human');
+    assert.ok(!f.window.__trafficClass.signals.includes('TR'));
+    assert.ok(!('tpPages' in f.window.__trafficClass));
+    assert.ok(f.window.dataLayer.every(event => !('tpPages' in event)));
+    assert.deepEqual(Object.keys(saved).sort(), ['lastClass', 'timestamps', 'tpPages']);
+  });
+  await test('TR: second TP document final is suspicious; third initial carries suspicious without TP', () => {
+    let stored = null;
+    const classes = [];
+    for (let page = 0; page < 3; page++) {
+      const f = fixture({config: {debug: true, suspiciousThreshold: 999}, modify: ({store}) => {if (stored) store.set('traffic_class', stored);}});
+      classes.push(f.window.__trafficClass.class);
+      if (page < 2) mouse(f, 'click', 100, 100);
+      f.emit('pagehide'); classes.push(f.window.__trafficClass.class);
+      if (page >= 1) {assert.ok(f.window.__trafficClass.signals.includes('TR')); assert.ok(f.window.__trafficClass.score < 6);}
+      stored = f.store.get('traffic_class');
+      assert.equal(JSON.parse(stored).tpPages, Math.min(page + 1, 2));
+    }
+    assert.deepEqual(classes, ['human', 'human', 'human', 'suspicious', 'suspicious', 'suspicious']);
+  });
+  await test('TR: corrupt/missing/noninteger/out-of-range counters reset to zero; 255 saturates', () => {
+    for (const value of [undefined, null, '2', true, -1, 1.5, 256, 1e100, [], {}]) {
+      const f = fixture({modify: ({store}) => store.set('traffic_class', JSON.stringify({tpPages: value}))});
+      assert.equal(f.window.__trafficClass.class, 'human', JSON.stringify(value));
+      assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 0);
+      mouse(f, 'click', 100, 100);
+      assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 1);
+    }
+    for (const value of [254, 255]) {
+      const f = fixture({modify: ({store}) => store.set('traffic_class', JSON.stringify({tpPages: value}))});
+      mouse(f, 'click', 100, 100); f.emit('pagehide');
+      assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 255);
+      assert.equal(f.window.__trafficClass.class, 'suspicious');
+    }
+    for (const raw of ['bad JSON', 'null', '[]', '"bad"']) {
+      const f = fixture({modify: ({store}) => store.set('traffic_class', raw)});
+      mouse(f, 'click', 100, 100); f.emit('pagehide');
+      assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 1);
+      assert.equal(f.window.dataLayer.length, 2);
+    }
+  });
+  await test('TR: inherited count never overrides AG/WD/CA or promotes to automated by itself', () => {
+    for (const expected of ['declared_agent', 'automated', 'carry', 'suspicious']) {
+      const f = fixture({modify: ({store, navigator}) => {
+        store.set('traffic_class', JSON.stringify({tpPages: 2, lastClass: expected === 'carry' ? 'automated' : 'human'}));
+        if (expected === 'declared_agent') navigator.userAgent = 'Claude-Agent/1.0';
+        if (expected === 'automated') navigator.webdriver = true;
+      }});
+      const result = expected === 'carry' ? 'automated' : expected;
+      assert.equal(f.window.__trafficClass.class, result); f.emit('pagehide');
+      assert.equal(f.window.__trafficClass.class, result);
+      assert.ok(f.window.__trafficClass.signals.includes('TR'));
+    }
+  });
+  await test('TR: denied storage degrades to local TP; duplicate/BFCache cannot recount', () => {
+    const blocked = fixture({modify: ({window}) => Object.defineProperty(window, 'sessionStorage', {get() {throw Error('denied');}})});
+    for (let i = 0; i < 5; i++) mouse(blocked, 'click', 100 + i * 100, 100);
+    blocked.emit('pagehide');
+    assert.equal(blocked.window.__trafficClass.class, 'human');
+    assert.ok(!blocked.window.__trafficClass.signals.includes('TR'));
+    const f = fixture(); mouse(f, 'click', 100, 100);
+    vm.runInContext(source, f.context); f.emit('pagehide'); f.emit('pageshow', {persisted: true});
+    vm.runInContext(source, f.context); mouse(f, 'click', 300, 100);
+    assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 1);
+    assert.equal(f.window.dataLayer.length, 2);
+  });
+  await test('TR: final cannot overwrite a newer same-tab counter; TP sees newer prior pages', () => {
+    const f = fixture();
+    f.store.set('traffic_class', JSON.stringify({tpPages: 3})); f.emit('pagehide');
+    assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 3);
+    const g = fixture();
+    g.store.set('traffic_class', JSON.stringify({tpPages: 1})); mouse(g, 'click', 100, 100); g.emit('pagehide');
+    assert.equal(g.window.__trafficClass.class, 'suspicious');
+    assert.equal(JSON.parse(g.store.get('traffic_class')).tpPages, 2);
+  });
+  await test('TR: rested/repeated/Enter controls do not accumulate TP across documents', () => {
+    let stored;
+    for (const mode of ['rest', 'repeat', 'Enter']) {
+      const f = fixture({modify: ({store}) => {if (stored) store.set('traffic_class', stored);}});
+      if (mode === 'Enter') {
+        f.emit('keydown', {isTrusted: true}); mouse(f, 'click', 100, 100, {detail: 0});
+      } else {
+        mouse(f, 'mousemove', 20, 20); mouse(f, 'mousemove', 50, 50); mouse(f, 'mousemove', 100, 100);
+        if (mode === 'rest') f.advance(1500);
+        for (let i = 0; i < (mode === 'repeat' ? 5 : 1); i++) mouse(f, 'click', 100, 100);
+      }
+      f.emit('pagehide'); stored = f.store.get('traffic_class');
+      assert.equal(JSON.parse(stored).tpPages, 0); assert.equal(f.window.__trafficClass.class, 'human');
+    }
+  });
   return results;
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
