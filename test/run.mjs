@@ -2,6 +2,8 @@ import {mkdir, writeFile, readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {startServer} from './server.mjs';
 import {runContracts} from './contracts.mjs';
+import {options, botd, botdCell, flakes} from './support.mjs';
+const {repeat} = options();
 const require = createRequire(import.meta.url);
 let chromium, firefox, webkit, devices = {}, stealth, dependencyError, stealthError;
 try { ({chromium, firefox, webkit, devices} = await import('playwright')); }
@@ -76,15 +78,15 @@ async function humanStay(page, touch, duration) {
   } while (Date.now() < deadline);
 }
 try {
-  for (const scenario of scenarios) {
-    const row = {name: scenario.name, expected: scenario.fetch ? 'no event' : scenario.human ? 'human' : scenario.declared ? 'declared_agent' : 'not human', pages: [], notes: []};
+  for (let iteration = 1; iteration <= repeat; iteration++) for (const scenario of scenarios) {
+    const row = {iteration, name: scenario.name, expected: scenario.fetch ? 'no event' : scenario.human ? 'human' : scenario.declared ? 'declared_agent' : 'not human', pages: [], notes: []};
     let browser;
     try {
       if (dependencyError) throw dependencyError;
       if (!scenario.fetch && !scenario.engine) throw stealthError || new Error('Browser engine unavailable');
       if (serverError) throw serverError;
       if (scenario.fetch) {
-        row.initial = row.final = 'no event';
+        row.initial = row.final = 'no event'; row.botd = {status: 'NO_JS'};
         for (const file of ['index.html', 'page2.html', 'page3.html']) {
           const response = await fetch(`${origin}/${file}`);
           if (!response.ok || !(await response.text()).includes('/src/traffic-class.js')) throw new Error('Fetch failed');
@@ -161,6 +163,7 @@ try {
             row.pages.push({page: 3, initial, final: events[0]});
           }
         }
+        row.botd = await botd(page);
         row.initial = row.pages[2].initial.traffic_class;
         row.final = row.pages[2].final.traffic_class;
         row.signals = [...new Set(row.pages.flatMap(p => [...p.initial.traffic_signals, ...p.final.traffic_signals]))];
@@ -182,15 +185,15 @@ try {
   const detectorBytes = Buffer.byteLength(html.trim().split('\n').at(-2));
   const report = {detectorBytes, sizeTargetBytes: 5000, sizeTargetMet: detectorBytes < 5000, generatedAt: new Date().toISOString(), platform: process.platform, playwright: dependencyError ? 'unavailable' : require('playwright/package.json').version,
     setupErrors: [dependencyError, stealthError, serverError].filter(Boolean).map(String),
-    results, contracts, completedScenarios: results.filter(r => !['ERROR', 'SKIP'].includes(r.status)).length, neverFired: never, catalog};
+    botdVersion: require('@fingerprintjs/botd/package.json').version, results, contracts, repeat, flakiness: flakes(results), completedScenarios: results.filter(r => !['ERROR', 'SKIP'].includes(r.status)).length, neverFired: never, catalog};
   await mkdir(new URL('results/', import.meta.url), {recursive: true});
   await writeFile(new URL('results/report.json', import.meta.url), JSON.stringify(report, null, 2) + '\n');
   const cell = value => String(value ?? '—').replaceAll('|', '\\|').replaceAll('\n', ' ');
   const md = `# Traffic class scenario report\n\nGenerated ${report.generatedAt}; ${report.platform}; Playwright ${report.playwright}.\n\n` +
-    `Detector ${report.detectorBytes} bytes minified; <5000-byte target ${report.sizeTargetMet ? 'met' : '**missed (open issue)**'}.\n\n${report.completedScenarios}/12 scenarios completed. ${contracts.filter(c => c.status === 'PASS').length}/${contracts.length} deterministic contract checks passed. ${report.completedScenarios === 0 ? '**Browser evidence unavailable; human controls have not been validated. All signals are unobserved, not proven absent.**' : ''}\n\n` +
-    '| Scenario | Fired signals (all pages) | Initial (page 3) | Final (page 3) | Expected | Result |\n|---|---|---|---|---|---|\n' +
-    results.map(r => `| ${[r.name, (r.signals || []).join(', '), r.initial, r.final, r.expected, r.status].map(cell).join(' | ')} |`).join('\n') +
-    '\n\nHuman controls require initial and final human on **every** page. JSON contains all page events. Each last page stays 10 seconds.\n\n' +
+    `Detector ${report.detectorBytes} bytes minified; <5000-byte target ${report.sizeTargetMet ? 'met' : '**missed (open issue)**'}.\n\n${report.completedScenarios}/${12 * repeat} scenario runs completed. ${contracts.filter(c => c.status === 'PASS').length}/${contracts.length} deterministic contract checks passed. ${report.completedScenarios === 0 ? '**Browser evidence unavailable; human controls have not been validated. All signals are unobserved, not proven absent.**' : ''}\n\n` +
+    '| Scenario | Fired signals (all pages) | Initial (page 3) | Final (page 3) | Expected | BotD bot / kind | Result |\n|---|---|---|---|---|---|---|\n' +
+    results.map(r => `| ${[`${r.name} (run ${r.iteration})`, (r.signals || []).join(', '), r.initial, r.final, r.expected, botdCell(r.botd), r.status].map(cell).join(' | ')} |`).join('\n') +
+    '\n\nFlaky scenarios: ' + (repeat < 2 ? 'not assessed (single run)' : report.flakiness.filter(r => r.flaky).map(r => r.name).join(', ') || 'none') + '\n\nHuman controls require initial and final human on **every** page. JSON contains all page events. Each last page stays 10 seconds.\n\n' +
     results.filter(r => r.notes.length).map(r => `- **${r.name}:** ${r.notes.map(cell).join(' ')}`).join('\n') +
     '\n\nPolicy: threshold 6 AND at least 3 distinct positive-weight families. Geometry capped at 1, graphics at 1, NI/SY at 2. Hard/declared/inherited score is sentinel 100. Fast navigation plus inactivity alone scores 5 and remains human; scenario 7 is allowed to slip through.\n\n## What each signal catches\n\n' + Object.entries(catalog).map(([code, text]) => `- \`${code}\`: ${text}. Observed: ${fired.has(code) ? 'yes' : 'no'}.`).join('\n') +
     '\n\nOnly completed scenarios contribute observations; SKIP means unavailable setup/launch, never a detection PASS. ERROR means execution did not complete.\n\nNever fired in natural scenarios (injected contract checks excluded): ' + never.map(s => '`' + s + '`').join(', ') + '.\n\n' +
@@ -198,5 +201,5 @@ try {
     '\n\n## Known limits\n\n- Real logged-in browsers operated by agents can look human. No identity, fingerprint, or certainty about humanity is inferred.\n- Fetch/curl and crawlers that do not execute JavaScript are invisible to this detector and client GA4.\n- Mobile controls are device emulation, not physical devices. WebKit uses an explicitly documented webdriver override because Chromium stealth/flags are unsupported there.\n- Default dimensions, software WebGL, missing APIs and inactivity are weak evidence. Full 8 seconds visible are required for NI; early pagehide never manufactures inactivity. Reload/back-forward navigation does not inflate timestamps; BFCache retains one final per document.\n- Pagehide final events may not reach GA4 before unload; blocked storage removes navigation/carry signals.\n- Exact Playwright markers are feature-dependent; natural runtime coverage remains unverified when scenarios are skipped. The Puppeteer sourceURL label is not probed as a global. Current default runtimes may expose none.\n- Test site alone posts debug events to the loopback /log sink; production detector makes no requests.\n';
   await writeFile(new URL('results/report.md', import.meta.url), md);
   console.log(`Report written. Never fired: ${never.join(', ')}`);
-  if (results.some(r => r.status !== 'PASS') || contracts.some(c => c.status !== 'PASS')) process.exitCode = 1;
+  if (results.some(r => r.status !== 'PASS' || r.botd?.status === 'ERROR') || contracts.some(c => c.status !== 'PASS') || report.flakiness.some(f => f.flaky)) process.exitCode = 1;
 } finally { if (server) await new Promise(resolve => server.close(resolve)); }

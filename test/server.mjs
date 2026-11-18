@@ -22,9 +22,13 @@ export async function startServer(port = 0) {
         await appendFile(path.join(root, 'test/results/log.jsonl'), JSON.stringify(clean) + '\n');
         res.writeHead(204).end(); return;
       }
+      if (req.method === 'GET' && url.pathname === '/blank.html') {
+        res.writeHead(200, {'Content-Type': 'text/html'}).end('<!doctype html><title>Test blank</title>'); return;
+      }
       const files = {'/': 'test/site/index.html', '/index.html': 'test/site/index.html',
         '/page2.html': 'test/site/page2.html', '/page3.html': 'test/site/page3.html',
-        '/site.js': 'test/site/site.js', '/src/traffic-class.js': 'src/traffic-class.js'};
+        '/site.js': 'test/site/site.js', '/benchmark.js': 'test/site/benchmark.js',
+        '/vendor/botd.js': 'node_modules/@fingerprintjs/botd/dist/botd.esm.js', '/src/traffic-class.js': 'src/traffic-class.js'};
       const file = files[url.pathname];
       if (req.method !== 'GET' || !file) { res.writeHead(404).end('Not found'); return; }
       res.writeHead(200, {'Content-Type': file.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-store'});

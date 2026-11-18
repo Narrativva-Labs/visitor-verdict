@@ -114,3 +114,20 @@ Real logged-in Chrome operated by an agent may look human. UA/global spoofing an
 `pagehide` updates the data layer, but unloading may prevent GTM/GA4 from delivering a request; use normal analytics delivery mechanisms and do not assume final events always arrive. Hidden pages can remain initial indefinitely until visible or pagehide. Crashes/termination may never emit pagehide. Blocked sessionStorage, cross-origin navigation, and a new tab can remove session history. A carried automated class persists within the tab until a later final class changes it (hard carry means it normally remains automated). Namespaced globals can collide with unrelated code. Only enable debug for local inspection.
 
 No commits or pushes are part of the build/test commands.
+
+
+## Extended tests and BotD benchmark
+
+```sh
+npm install
+node test/run.mjs --repeat 3
+node test/run-extended.mjs --repeat 3
+```
+
+`--repeat N` defaults to 1 in both runners; every repetition gets a fresh browser/context. The original report stays at `test/results/report.md/json`; the additional suite writes `test/results/report-extended.md/json`. A single run cannot establish stability. Reports flag changes in verdicts, per-page classes, fired signals or BotD outcomes as flaky; raw timing differences alone do not count as flaky. JSON retains every repetition, page event and all 20 performance samples. Run these commands on a desktop that allows headed browser launch; background visibility and the headed Firefox control require it. Missing launch support is SKIP. Detector mismatches remain FAIL, including stealth misses; weights are unchanged.
+
+The extended suite covers keyboard-only and passive 12-second readers, rapid real mouse clicks, headed Firefox with webdriver masked, explicitly disabled PDF/plugins, disabled WebGL, a confirmed 15-second hidden tab, reload/history navigation, Android tablet and 360×640 phone emulation, blocked sessionStorage, masked-UA and stealth bots, declared Claude/Google agents and Lighthouse. PDF/plugin and storage overrides are test-only and checked for effective application. Reload/back-forward must not fire FN; hidden time must not finalize the detector. An environment that cannot hide a background tab, or cannot execute the rapid sequence within ~3 seconds, is marked SKIP rather than claiming the fixture ran.
+
+Additional checks measure the median of 20 fresh source evaluations in new desktop iframe windows (strictly <5ms), require both phases without G0 inside a zero-size iframe, and require exactly one initial/final after double script inclusion. Each timed sample includes source parse/eval and synchronous probes, excludes iframe setup, BotD and cleanup, and cannot reuse the detector's duplicate-load guard. Inline-blocking CSP is explicitly SKIP. The performance cleanup's synthetic pagehide is outside timing; ordinary visit tests use real navigation/pagehide.
+
+`@fingerprintjs/botd` is a devDependency. Only the opt-in test module `test/site/benchmark.js` loads it, from the local server's narrowly mapped `/vendor/botd.js` route. It calls `load({monitoring: false})`, retaining only `bot` and `botKind`; no BotD components or fingerprints are logged or persisted. This uses the [official BotD load API](https://github.com/fingerprintjs/BotD/blob/main/src/index.ts). Both runners invoke BotD once after reading our last-page classification so it cannot influence that visit's measured result or slow rapid navigation. BotD results are comparison evidence, not ground truth, and are not folded into our verdict. Benchmark load/detection failures are recorded separately and make the command exit nonzero. Fetch clients have no BotD result (`NO_JS`). The detector, generated GTM HTML and source weights are untouched by the benchmark.
