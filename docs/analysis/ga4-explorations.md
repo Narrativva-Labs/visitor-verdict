@@ -33,6 +33,15 @@ Use [bigquery.sql](bigquery.sql) for one row per `(user_pseudo_id, ga_session_id
 2. Select **Traffic class (event)** where compatible, choose exact match `automated` or `declared_agent` (multiple values use OR), and keep the default baseline. Add `suspicious` as another comparison; scope the report/comparisons to the web stream.
 3. Treat these as event-label comparisons. An event-scoped comparison or “does not match” filter does not guarantee exclusion of the entire session, can handle `(not set)` differently, and can leave earlier unlabelled conversions in scope. Do not label it “sessions excluding detected automation”. Use the Exploration session segments or SQL for that headline. If the dimension is unavailable/incompatible, use Explore. See [comparison controls and compatibility](https://support.google.com/analytics/answer/9269518?hl=en).
 
+## Plausibility by hour and city
+
+To check that detected automation looks like automation, build a **Free form** exploration with the session segments from above as comparisons (retained traffic vs. **Excluded detected automation**):
+
+1. Rows: **Hour** (or **Date + hour (YYYYMMDDHH)** for bursts); values: **Sessions**. Human traffic should follow the site's daily rhythm; automation is usually flatter.
+2. Replace the rows with **City**. Automation often concentrates in data-centre cities or `(not set)`; human traffic follows the audience.
+
+Treat both as sanity checks, not evidence about any single session: VPNs, corporate networks and night owls exist. See the [study protocol](../study/protocol.md) for how the result is reported.
+
 ## Interpretation and coverage
 
 `human` means **no automation detected**, `suspicious` uncertain evidence, `automated` automation evidence without a judgement of intent, and `declared_agent` an unverified claim. Score is not a probability. Exclusion keeps unknown sessions; “only human” selects visits where classification and delivery worked and biases the headline. Always display coverage and suspicious traffic alongside the headline.

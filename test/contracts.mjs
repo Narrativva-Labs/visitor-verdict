@@ -471,7 +471,7 @@ export async function runContracts(detectorSource) {
     }
   });
   await test('Research token boundaries and score sentinel', () => {
-    for (const [ua, agent] of [['Claude-Agent/1.0', true], ['Google-Agent', true], ['ChatGPT Agent', false], ['NotChatGPT-User', false], ['Applebot-Extended', false]]) {
+    for (const [ua, agent] of [['Claude-Agent/1.0', true], ['Google-Agent', true], ['Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Gemini-Deep-Research; +https://gemini.google/overview/deep-research/) Chrome/135.0.0.0 Safari/537.36', true], ['Gemini-Deep-Researcher', false], ['ChatGPT Agent', false], ['NotChatGPT-User', false], ['Applebot-Extended', false]]) {
       const f = fixture({modify: ({navigator}) => {navigator.userAgent = ua;}});
       assert.equal(f.window.__visitorVerdict.class, agent ? 'declared_agent' : 'human');
       if (agent) assert.equal(f.window.__visitorVerdict.score, 100);

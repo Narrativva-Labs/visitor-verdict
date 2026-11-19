@@ -94,6 +94,17 @@ A session is the existing `(user_pseudo_id, ga_session_id)` pair in that web str
 
 Give k/n, percentage and **two-sided 95% Wilson score CI** for headline share, coverage, engaged/converter flag rates and panel/canary proportions. With `p=k/n`, `z=1.95996398454`, limits are `(p+z²/(2n) ± z*sqrt(p(1-p)/n+z²/(4n²)))/(1+z²/n)`, clipped to [0,1]. For n=0 display not estimable, never 0%. These are descriptive binomial intervals, not guarantees; repeat sessions/devices and traffic bursts violate independence and can make them too narrow. Use participant/run units for panel/canary summaries, not repeated pages. No multiple-comparison significance claims.
 
+### Plausibility check: hour of day and city
+
+An independent sanity check that `automated` behaves like automation rather than like the site's audience. It uses only fields GA4 already exports (`event_timestamp` in the property timezone, `geo.city`) and adds nothing to the detector.
+
+| View | What to compare | What a plausible result looks like | What warrants review |
+|---|---|---|---|
+| Hour of day × worst class | Share of each class's sessions per hour (0–23), per site | `human` follows the audience's day/night rhythm; `automated` is flatter, without the night dip | `automated` sessions follow exactly the human curve, which suggests real people are being labelled |
+| City × worst class | Top 10 cities per class, with session counts | `automated` concentrates in a few cities that host data centres (for example Ashburn, Boardman, Council Bluffs, Frankfurt, Dublin, Amsterdam) or `(not set)` | `automated` mirrors the human city mix, especially the site's home cities |
+
+This is descriptive, not a test of accuracy: small counts make both views noisy, VPN and corporate egress put real people in data-centre cities, and scheduled human activity exists. A mismatch is a reason to inspect those sessions (engagement, landing pages, device, panel and canary windows), never to relabel them. Report it in the final per-site report as one short paragraph.
+
 The check on engaged/converting traffic asks whether any clear flags appear, **not whether all such flags are errors**. Engaged bots, test orders and genuine automated purchases exist. Review any nonzero k while retaining its label and CI; even zero observed flags cannot prove absence. Show unknown coverage within these groups (SQL I). Do not exclude suspicious traffic from the headline. The strict existing SQL cohort is an optional sensitivity view, clearly labelled.
 
 Coverage has boundaries: session coverage is conditional on GA4 seeing an identifiable session. A/F2 show event labels and missing-ID pings separately; G optionally checks observable existing GA4 page groups with labels/finals, and unassignable pageviews. None measures the fraction of **all website requests** executing the detector. No new page IDs are created. `page_path` discards queries/fragments but may still contain sensitive path segments; it remains in temporary analysis tables and is not needed in the published report.

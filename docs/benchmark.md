@@ -26,12 +26,12 @@ The v1.0.0 hardening pass recorded the following deterministic results:
 
 | Check | Result |
 |---|---|
-| Build | ES5 source/output validation passed; minified detector **13,666 bytes** (~13.7 KB). |
+| Build | ES5 source/output validation passed; minified detector **13,739 bytes** (~13.7 KB). |
 | Detector contracts | **83/83 for source and 83/83 for generated minified output**. Includes frozen/replaced snapshots, reentrancy, duplicate loads, poisoned globals, callable-only automation names, hard/declaration precedence, storage bounds, readiness triggers, DLV mappings and template permissions/behaviour. |
 | Runner contracts | **7 checks passed**. |
 | Fuzz invariants | **3,145 cases, zero failures**, seed `20261118`, 100ms/document budget. Storage/output/configuration/lifecycle and immutability invariants; not detection accuracy. |
 | Fuzz self-test | **8/8 injected faults detected**, including infinite-loop and mutable-snapshot fixtures. |
-| v1 browser rerun | Base and extended suites wrote reports and exited nonzero: sandbox rejected the local listener with `listen EPERM: operation not permitted 127.0.0.1`. Browser scenarios were **SKIP, not PASS**; no new natural-browser/adversarial outcomes were established. |
+| v1 browser rerun (macOS, Google Chrome installed) | Base suite **12/12 PASS**. Extended suite **44 PASS, 2 FAIL, 3 SKIP**: FAIL 25 (stealth fast navigation without input, known limit) and FAIL 33 (headed, webdriver flag disabled, locator navigation; ended `human` with FN, GS, TP, TR, below threshold — it was `suspicious` in an earlier run, so it is a borderline, timing-dependent case); SKIP 16, 19, C4 (environment limits, not passes). Chrome-channel cases: masked headless with CDP UA override (24b) `suspicious`, CDP-driven real Chrome agent (35) `suspicious`, real headed Chrome with natural approach (35b) and fullscreen Chromium (31b) `human`. |
 | GTM template | Local structure, permissions and variable behaviour checked. Authenticated Template Editor import not yet verified. |
 
 Earlier local runs, before the v1 hardening pass, observed no synthetic human control classified non-human and median execution of **~3 ms default / ~7 ms with worker and WebGL enabled**. These are historical local observations, not new v1 measurements or guarantees for other devices/pages. Scripted controls and emulation are not real people or physical-device validation. No real assistive technology was tested; the voice-like fixture is not representative of real voice-control behaviour.
@@ -42,7 +42,7 @@ The [field-validation protocol](study/protocol.md) is prospective and has no fie
 
 ### Adversarial benchmark
 
-The earlier, pre-hardening benchmark ran against the local test site in two modes: each tool's **default clicks**, and **human-like input** using curved mouse paths with pauses. These are observed outcomes for the tested versions/configurations, not permanent properties of the tools.
+The v1.0.0 benchmark ran on macOS against the local test site in two modes: each tool's **default clicks**, and **human-like input** using curved mouse paths with pauses. Classes are for the last page (final phase). These are observed outcomes for the tested versions/configurations, not permanent properties of the tools.
 
 | Tool | Default clicks | Human-like input |
 |---|---|---|
@@ -52,8 +52,10 @@ The earlier, pre-hardening benchmark ran against the local test site in two mode
 | Puppeteer + stealth | `suspicious` | `human` |
 | Patchright | `human` | `human` |
 | undetected-chromedriver | `human` | `human` |
-| nodriver | Execution error; unknown | `human` |
-| Camoufox | Could not launch on macOS in this run | Could not launch on macOS in this run |
+| nodriver | `human` | `human` |
+| Camoufox | Could not launch on macOS (browser launch timeout) | Could not launch on macOS (browser launch timeout) |
+
+The earlier, pre-hardening benchmark gave the same classes, except that nodriver's default mode ended in an execution error.
 
 A failed run or launch gives no classification result and is not a detection pass. The misses show that patched browsers and natural input can evade the detector. Stealth with only benign signals can also end human under the conservative scoring rule.
 
@@ -78,7 +80,7 @@ For manual input in a fresh Chrome profile, run `npm run serve` and, in another 
 
 The detector uses ES5 syntax and no runtime dependencies. It targets modern Chrome/Chromium, Firefox, Safari/WebKit and mobile browsers with standard DOM events and JSON APIs. ES5 syntax is not a promise of legacy Internet Explorer support. Optional workers, permission queries, UA Client Hints and WebGL extensions are feature-detected; CSP-blocked workers lose WK/worker-HL evidence. Sites must permit the Custom HTML script under their CSP.
 
-The minified detector is **~13.7 KB (13,666 bytes)** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
+The minified detector is **~13.7 KB (13,739 bytes)** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
 
 Tools with natural input or patched browsers can end `human`, as the adversarial results show. Stealth with only benign signals can also end `human`; the detector favours conservative classification over catching every bot. Client-side detection is spoofable. Declared tokens can be spoofed and are never authenticated; JS-less fetchers never run the detector. `human` means no sufficient evidence, and a missing event means **unknown**, not human. Privacy tools, accessibility input, VMs and unusual browser settings may resemble weak signals. Global names are conditional implementation artifacts, not permanent framework signatures. Direct evidence can keep a subsequent human takeover classified automated for one following document via CA; CA alone cannot perpetuate it.
 

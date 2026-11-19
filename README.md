@@ -10,7 +10,7 @@ Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering
 |---|---|
 | Classes | `automated` (automation evidence), `declared_agent` (unverified UA claim), `suspicious` (uncertain evidence), `human` (no automation detected) |
 | Catches | WebDriver/headless and Selenium/Puppeteer/Playwright defaults, audit tools, declared AI fetchers; some masked headless setups via opt-in UB → `suspicious`. Feature/configuration dependent, not universal tool detection. |
-| Known misses | Patchright, undetected-chromedriver, stealth with human-like input; see the [observed benchmark](docs/benchmark.md). |
+| Known misses | Patchright, undetected-chromedriver, nodriver, stealth with human-like input; see the [observed benchmark](docs/benchmark.md). |
 | Footprint | ~13.7 KB minified; ~3 ms default in earlier local measurements; no runtime dependencies. |
 | Privacy | One bounded `sessionStorage` key (`visitor_verdict`); no identifiers, fingerprints, cookies or detector requests. A blocked optional worker may cause a browser CSP report. |
 | Integration | Initial/final data-layer events, GTM import, GA4 event parameters and last-observed user property. |

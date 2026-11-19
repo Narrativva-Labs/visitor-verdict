@@ -82,7 +82,7 @@
         'ChatGPT-User', 'OAI-SearchBot', 'OAI-AdsBot', 'GPTBot',
         'Claude-Agent', 'Claude-User', 'Claude-SearchBot', 'ClaudeBot',
         'Perplexity-User', 'PerplexityBot', 'Google-Agent', 'Google-CloudVertexBot',
-        'Google-GeminiNotebook', 'Google-NotebookLM', 'MistralAI-User',
+        'Google-GeminiNotebook', 'Google-NotebookLM', 'Gemini-Deep-Research', 'MistralAI-User',
         'MistralAI-Index', 'MistralAI-Training', 'DuckAssistBot', 'Applebot',
         'Bytespider', 'meta-externalagent', 'meta-externalfetcher', 'meta-webindexer',
         'CCBot', 'Amazonbot', 'Amzn-SearchBot'
