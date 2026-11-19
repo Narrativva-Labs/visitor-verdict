@@ -57,7 +57,7 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 
 **WK (worker mismatch)**, when enabled, compares supported main/worker user agent, webdriver, languages and positive hardware concurrency values. Missing worker fields are ignored. A worker exposing HeadlessChrome adds hard HL. Worker creation/errors/CSP denial produce no mismatch, and final never waits for the worker. A legitimate main-only UA switcher can also produce WK, so it is weak evidence.
 
-Activity listeners use window capture, with passive listeners where supported. Accepted activity includes mousemove, pointermove, pointerdown, pointerup, touchstart, touchmove, touchend, touchcancel, scroll, keydown, keyup, wheel, click and focusin. Pointercancel clears pointer state but does not count as activity. `isTrusted === true` **or missing `isTrusted`** counts as activity for NI/SY and counter decay; TP requires explicitly trusted events. Accepted activity prevents NI/SY and, without TP, can decay history; it does not erase hard evidence. Trusted input can come from automation.
+Activity listeners use window capture, falling back to document capture if window lacks a usable add/remove pair, with passive listeners where supported. If input listeners cannot be installed, inactivity is unknown rather than NI evidence. Accepted activity includes mousemove, pointermove, pointerdown, pointerup, touchstart, touchmove, touchend, touchcancel, scroll, keydown, keyup, wheel, click and focusin. Pointercancel clears pointer state but does not count as activity. `isTrusted === true` **or missing `isTrusted`** counts as activity for NI/SY and counter decay; TP requires explicitly trusted events. Accepted activity prevents NI/SY and, without TP, can decay history; it does not erase hard evidence. Trusted input can come from automation.
 
 ### Configuration and output
 
@@ -192,36 +192,59 @@ node test/run-extended.mjs --repeat 2
 
 Install Google Chrome for channel-Chrome and CDP cases. Headed scenarios need a desktop/display (or suitable Xvfb on Linux). `TRAFFIC_CHROME_EXECUTABLE` can point the CDP harness at another Chrome installation. `npm run serve` starts the local debug site at `http://127.0.0.1:8787`; `PORT` overrides it.
 
-The base suite navigates index → page2 → page3 and stays about 10 seconds on the last page. Clean controls use plain Chrome/Chromium with the native automation flag disabled, no stealth or navigator masking, multi-step mouse approaches or touch, and 2.4/3.6-second inter-page waits. Every page must be human in both phases. Stealth with human-like behaviour is a separate informational category, never a clean human control. Firefox/WebKit lack a clean non-WebDriver control in these launchers; mobile tests are emulation, not physical-device validation.
+The base suite navigates index → page2 → page3 and stays about 10 seconds on the last page. Clean controls use plain Chrome/Chromium with the native automation flag disabled, no stealth or navigator masking, multi-step mouse approaches or touch, and 2.4/3.6-second inter-page waits. Every page must be human in both phases. Stealth with human-like behaviour is a separate informational category, never a clean human control. Mobile controls are emulation, not physical-device validation; engine/launcher restrictions and incomplete runs are recorded separately from classifications.
 
 The extended suite covers readers, keyboard input, rapid navigation, disabled PDF/WebGL, hidden tabs, history/reload, denied storage, UA switching, rested/repeated clicks, worker CSP, duplicate inclusion, frame no-op behaviour, opt-in defaults, one-document carry, voice-like clicks, assistive warp patterns and real Chrome over CDP. Deterministic contracts check signal semantics and lifecycle, including positive-jump TP, weighted/decaying TR, provenance consumption, storage merges, configuration validation, accessibility activity and storage failure. CDP tests start their own empty temporary Chrome profile; they do not attach to your logged-in browser. BotD comparison runs only in the test harness after our result, with monitoring disabled; it is not ground truth or a runtime dependency.
 
-The historical locally recorded **2026-11-18** suites below used two repetitions and the **older 8,762-byte detector**, before the review/accessibility changes. They are not validation of the current 11.4 KB build; updated browser suites must be rerun. Controls are scripted, no real assistive technology was tested, and the synthetic voice scenario is not representative of real voice-control behaviour.
+The final measured release results are:
 
-| Group | Observation |
+| Check | Result |
 |---|---|
-| Completed clean human controls | **No synthetic human control run was classified as non-human** across 8 base and 30 extended completed control runs; every assessed page initial/final was human. These were scripted controls, not real assistive-technology users. |
-| Default headless/automation | Chromium shell/new headless, headed automation, Firefox and WebKit caught as automated. |
-| Declared UAs | ChatGPT-User, Claude-Agent and Google-Agent classified declared_agent. |
-| Stealth with fast/locator navigation | Suspicious through behaviour, worker mismatch and/or repeated TP. |
-| Real Chrome agent over CDP | Historically suspicious from page 2 final and at page 3 initial/final under the former direct-TR rule. Current TR has no initial effect; see the updated scenario below. |
-| Real Chrome with natural mouse approach | Human; expected evasion. Stealth with human-like activity also remained human in several cases. |
-| Automation flag disabled, DOM clicks | One human miss and one suspicious result across the two base runs; timing/input-sensitive. |
-| Fetch without JavaScript | No event; outside the detector's visibility. |
+| Fuzz invariants | **3,088 cases, 0 failures**. VM-based checks of storage, output, configuration and lifecycle invariants; not a detection-accuracy measurement. |
+| Contracts | **64 contract checks**, exercised against both source and minified output. |
+| Synthetic human controls | **No synthetic human control run was classified non-human**. Controls are scripted; no real assistive technology was tested, and the voice-like scenario is not representative of real voice-control behaviour. |
+| Performance | Median **~3 ms** with the default configuration; **~7 ms** with `webgl` and `worker` enabled. These local timings are not a guarantee for other devices/pages. |
+| CDP-driven real Chrome agent without mouse paths | Suspicious from later pages; history/behaviour can contribute to final classification, while TR has no initial effect. |
 
-Current contracts verify that slow assistive-style warps with keyboard activity remain human, while fast navigation plus warp/other evidence can still become suspicious. The updated CDP scenario expects **all initials human**, two TP documents, then a page 3 suspicious final via TR2+FN3+NI2 = 7. It requires observed jumps; a no-movement or nearby locator click may intentionally slip through. These are scenario expectations/contracts, not fresh browser measurements. FN+NI+one environment family no longer qualifies, so historical stealth/flag-disabled results may change.
+The synthetic human controls covered desktop, Pixel 7, iPhone WebKit, keyboard-only navigation, passive reading, rapid clicks followed by reading, a rested cursor, same-spot clicks, Enter navigation, a UA switcher, Android tablet/phone emulation, PDF disabled, WebGL disabled, and reload/back-forward. These observations do not establish a population false-positive rate or validate real assistive technology.
 
-These are synthetic observations, not a population false-positive estimate or a universal detection guarantee. Extended passive-reader and storage-denied cases errored in both repetitions (6 errors); background cases skipped twice. Firefox/WebKit clean controls and inline-blocking CSP remain explicit limitations. These gaps are not passes, and the recorded suites are not all green.
+### Adversarial benchmark
 
-Runners write `test/results/report.md` / `report.json` and `report-extended.md` / `report-extended.json`, with per-page events, signals, versions, errors and repetition/flakiness evidence. Results and logs are local generated artifacts. Missing setup/launch is SKIP; incomplete execution is ERROR; neither counts as a detection pass. Mismatches and relevant errors/skips produce a nonzero exit. The test-only `/log` sink appends event JSON lines to `test/results/log.jsonl`. `test/live.mjs` is an optional check against a separately deployed demo, not part of the local release checks.
+The benchmark ran against the local test site in two modes: each tool's **default clicks**, and **human-like input** using curved mouse paths with pauses. These are observed outcomes for the tested versions/configurations, not permanent properties of the tools.
+
+| Tool | Default clicks | Human-like input |
+|---|---|---|
+| Selenium, headed and headless | `automated` | `automated` |
+| rebrowser-puppeteer | `automated` | `automated` |
+| puppeteer-real-browser | `automated` | `automated` |
+| Puppeteer + stealth | `suspicious` | `human` |
+| Patchright | `human` | `human` |
+| undetected-chromedriver | `human` | `human` |
+| nodriver | Execution error; unknown | `human` |
+| Camoufox | Could not launch on macOS in this run | Could not launch on macOS in this run |
+
+A failed run or launch gives no classification result and is not a detection pass. The misses show that patched browsers and natural input can evade the detector. Stealth with only benign signals can also end human under the conservative scoring rule.
+
+To reproduce the adversarial benchmark from the repository root:
+
+```sh
+bash test/adversarial/setup.sh
+bash test/adversarial/run-all.sh
+```
+
+The runner's Python venv defaults to **`test/adversarial/.venv`**; override it with **`TC_ADV_VENV`**. It needs the tool/browser dependencies and a desktop session for headed runs. It owns the local server on port 8787, so stop a separately running test server first. See [adversarial usage](test/adversarial/USAGE.md) for setup and configuration. It writes `test/results/adversarial-report.md` / `.json`, including incomplete runs; it does not grade an observed `human` result as a harness failure.
+
+Run the fuzz checks with `node test/fuzz/run.mjs`; see [fuzz methodology](test/fuzz/README.md) for seeds, replay and invariant coverage. The report is `test/results/fuzz-report.md`.
+
+The browser runners write `test/results/report.md` / `report.json` and `report-extended.md` / `report-extended.json`, with per-page events, signals, versions, errors and repetition/flakiness evidence. Results and logs are local generated artifacts. Missing setup/launch is SKIP; incomplete execution is ERROR; neither counts as a detection pass. Browser-suite mismatches and relevant errors/skips produce a nonzero exit. The test-only `/log` sink appends event JSON lines to `test/results/log.jsonl`. `test/live.mjs` is an optional check against a separately deployed demo, not part of the local release checks.
 
 ## Browser support, size and limits
 
 The detector uses ES5 syntax and no runtime dependencies. It targets modern Chrome/Chromium, Firefox, Safari/WebKit and mobile browsers with standard DOM events and JSON APIs. ES5 syntax is not a promise of legacy Internet Explorer support. Optional workers, permission queries, UA Client Hints and WebGL extensions are feature-detected; CSP-blocked workers lose WK/worker-HL evidence. Sites must permit the Custom HTML script under their CSP.
 
-The minified detector is **11,426 bytes (~11.4 KB)** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
+The minified detector is **~12 KB** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
 
-Agents in a real browser with human-like mouse movement can look human. Client-side detection is spoofable. Declared tokens can be spoofed and are never authenticated; JS-less fetchers never run the detector. `human` means no sufficient evidence, and a missing event means **unknown**, not human. Privacy tools, accessibility input, VMs and unusual browser settings may resemble weak signals. Global names are conditional implementation artifacts, not permanent framework signatures. Direct evidence can keep a subsequent human takeover classified automated for one following document via CA; CA alone cannot perpetuate it.
+Tools with natural input or patched browsers can end `human`, as the adversarial results show. Stealth with only benign signals can also end `human`; the detector favours conservative classification over catching every bot. Client-side detection is spoofable. Declared tokens can be spoofed and are never authenticated; JS-less fetchers never run the detector. `human` means no sufficient evidence, and a missing event means **unknown**, not human. Privacy tools, accessibility input, VMs and unusual browser settings may resemble weak signals. Global names are conditional implementation artifacts, not permanent framework signatures. Direct evidence can keep a subsequent human takeover classified automated for one following document via CA; CA alone cannot perpetuate it.
 
 A hidden page may remain initial until it becomes visible or unloads. `pagehide` updates the data layer but delivery to GA4 can be lost during unload; crashes may never emit final. Cross-origin navigation, new tabs and denied storage remove history. Repeated same-URL ordinary navigations cannot be distinguished using timestamps alone. TP/TR describe input patterns, not agent reasoning or malicious intent.
 
