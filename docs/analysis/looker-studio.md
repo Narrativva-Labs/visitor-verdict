@@ -1,27 +1,32 @@
-# Traffic classification dashboard
+# Sessions excluding detected automation dashboard
 
-Use [bigquery.sql](bigquery.sql) as the transformation, retaining its coverage and exclusion rules. The dashboard annotates observed traffic; it does not change GA4 collection or filter conversions.
+Use [bigquery.sql](bigquery.sql) as the transformation. Set the export dataset, **one web stream ID**, timezone, date range, scan padding, optional first-observed-city filter and test windows. Run the whole script. It creates temporary tables and returns A–F; for scheduled reporting, adapt each terminal SELECT to write a separate reporting table in your own dataset. Keep the export read-only, rebuild recent dates for late arrivals, and preserve session-boundary padding.
 
-1. Set the export dataset, property timezone, date range, test windows and optional city. Run the script in BigQuery. Inspect each result before publishing anything; raw export queries incur BigQuery costs.
-2. For a recurring dashboard, adapt the script into a scheduled BigQuery job that writes each result to a separate reporting table in your own reporting dataset. Replace each terminal SELECT with `CREATE OR REPLACE TABLE ... AS SELECT ...` for a modest rolling window. Rebuild recent dates for late arrivals, preserving padding. This adaptation is required: the supplied script creates temporary tables and returns multiple results; it is not a connector-ready single SELECT. Keep export tables read-only.
-3. In Looker Studio, **Create → Data source → BigQuery**, choose the billing project and one reporting table, then **Connect / Add to report**. Repeat for the other result tables. Set `day` or `session_day` to Date and as the date-range dimension. See [Google's BigQuery connector recipe](https://cloud.google.com/looker/docs/studio/connect-to-google-bigquery).
-4. Add a date-range control and class controls per applicable data source. Add source/medium, channel and device controls to the corresponding charts. A city parameter applied before aggregation requires rerunning the job; a dashboard city control only filters tables containing city. Label the exclusion windows, timezone, refresh time, class rule and date basis in a text box.
+In Looker Studio, **Create → Data source → BigQuery**, choose the reporting table, then **Connect / Add to report**. Repeat per result. Set `session_day` (or event `day` for A/F2) as Date and the date-range dimension. See [Google's BigQuery connector](https://cloud.google.com/looker/docs/studio/connect-to-google-bigquery).
 
-Build these pages:
+Collection requires `traffic_class={{VV - current class}}` on **every GA4 event tag** (`gaawe`), evaluated at fire time. The imported variable reads the current page, then sessionStorage `traffic_class.lastClass` (string or `{value, direct}`). Optional Google tag **Shared event settings** are evaluated once at Initialization: automatic page_view/engagement/scroll events can carry the previous page's class from page 2, not later current-page updates. First-session page_view is typically unlabelled. For CSP without `unsafe-eval`, a GTM **JavaScript Variable** reading `__trafficClass.class` provides current-page-only data and no fallback. Sites without GA4 event tags rely on the final `traffic_class` event plus last-observed user property; optional shared settings only add that limited automatic-event coverage. See [setup](../../README.md#manual-installation).
 
-| Page | SQL result | Charts / metrics |
+The SQL aggregates events to **one row per `(user_pseudo_id, ga_session_id)` within the selected web stream before any metrics joins or cohort expansion**. Keep flags `any_automated`, `any_declared`, `any_suspicious`, `has_class`, and the timing fields `first_class`, `last_class`, `class_at_first_conversion` in that transformation. The latter uses the first purchase's own parameter or the latest preceding class, never a later observation or user property. Automatic-event labels may be stale prior-page values from shared settings, so timing fields describe observed exported labels, not guaranteed current-page evidence. Exact export-order ties remain ambiguous. Do not attach raw events to session metrics and sum them again.
+
+| Page | Result | Display |
 |---|---|---|
-| Observed labels | A | Daily stacked event counts by event_class; label_basis and unjoinable-event coverage |
-| Sessions | B | Daily sessions by session_class/class_basis; engaged sessions, pageviews/session, engagement milliseconds/session; purchasing/lead/cart sessions |
-| Acquisition | C | Class × source/medium/channel table; AI referral annotation as a separate control |
-| Environment | D | Class × device/browser/OS and country/city tables |
-| Review | E | Candidate counts, converting candidates and long-engagement candidates; display the configured threshold |
-| Coverage | F1, F2 separately | Sessions with/without detector/final events; unjoinable event counts by analytics_storage |
+| Headline | B | **Sessions excluding detected automation**, purchasing sessions, purchase CR, purchase revenue; All sessions baseline beside it |
+| Sensitivity | B | Stricter view excluding suspicious, suspicious within retained sessions, observed human-only diagnostic |
+| Excluded revenue | B | Excluded detected automation sessions, purchasing sessions, purchase revenue explicitly separate |
+| Acquisition | C | Cohort × source/medium/channel, assistant referral annotation separate from evidence |
+| Environment | D | Cohort × first observed device/browser/OS/country/city |
+| Evidence/timing review | E | Any-evidence flags, first/last class and class at first purchase; purchasing/long-engagement counts |
+| Coverage | F1, F2 separately | Sessions with any valid class vs without; detector/final delivery; missing-ID event/purchase/revenue totals |
+| Event labels | A | Class parameter distribution, including unclassified events; not session counts |
 
-Sum additive counts. Recompute ratios as `SUM(engaged_sessions) / SUM(sessions)`, `SUM(pageviews) / SUM(sessions)` and `SUM(engagement_time_msec) / SUM(sessions)`; guard zero denominators and divide milliseconds by 1,000 for seconds. Never average daily rates. Purchasing/lead/cart session counts overlap; do not sum them into a unique converting-session total.
+Set every headline chart to the **Sessions excluding detected automation** cohort, which excludes whole sessions with any automated/declared observation and retains unknown sessions. Keep suspicious visible separately within retained traffic. Sensitivity additionally excludes suspicious. Observed human-only requires class coverage and no other class and is diagnostic only. Cohorts overlap intentionally: never sum across cohorts. A later human result does not undo earlier evidence.
 
-A's distinct users/sessions are not additive across class, label basis or dates. Show them only at their original daily grain (with all grouping dimensions visible), or create a new BigQuery distinct aggregation at the desired grain. Do not use their sums for scorecards. Use B for additive session totals. Event dates in A/F2 and session-start dates in B–F1 differ around midnight and report boundaries.
+Use `SUM(purchasing_sessions) / SUM(sessions)` for headline purchase CR, guarding a zero denominator. Both numerator and denominator must use the **same cohort/date/stream**. Never average daily rates, divide filtered purchasers by all sessions, or use `add_to_cart` as headline conversion. Show lead/cart sessions separately. Sum purchase revenue only within the selected cohort; SQL uses exported USD purchase revenue, without transaction deduplication or refund adjustment. Removing low-converting sessions raises CR by arithmetic, not demonstrated marketing improvement.
 
-Keep each result at its own grain. Do not blend aggregate tables on date/class: multiple source/device rows would multiply counts. Do not sum the same sessions from B, C and D. Review E is a subset, not extra traffic. It contains no session identifiers. Restrict sharing of granular geography and suppress small cells in shared dashboard views when appropriate.
+Always show **sessions_with_class**, **sessions_without_class**, and `SUM(sessions_with_class) / SUM(sessions)` coverage alongside baseline and retained totals. Exclusion is preferable to “only human” because missing labels are unknown, not evidence for dropping a visit. A/F2 use event dates; B–F1 use session-start dates, so boundary totals differ.
 
-Keep `unclassified`, `(unknown)` and missing-ID events visible. A session without a detector event still has other GA4 events; fully JS-less traffic is absent. Classifications are evidence labels, AI referral sources are attribution hints, and converting/engaged candidates are not confirmed false positives. Raw BigQuery totals can differ from GA4 UI modeling; do not force them to reconcile by dropping unknowns.
+Connect each result at its own grain. Do not blend B/C/D on date/cohort: multiple source/device rows multiply metrics. Either use a single result per chart or join independently aggregated session metrics one-to-one on the complete session key upstream, then aggregate. Changing pre-aggregation filters requires rerunning SQL. Record date basis, timezone, stream, refresh time, exclusions, padding and cohort rules on the report.
+
+Keep missing-ID/cookieless pings in F2 as event-level totals, never fabricated sessions. Never join via IP/UA, coalesce missing IDs to one visitor, or retroactively link pre-consent pings. JS-less traffic is generally absent even here. Raw observed BigQuery totals can differ from GA4 modeled UI reporting.
+
+Display labels: `human` = **no automation detected**, `suspicious` = uncertain evidence, `automated` = automation evidence rather than intent, `declared_agent` = unverified claim. Score is not a probability. User property `traffic_class` is last observed class, applies from set time and is never session-exclusion evidence. Never mark `traffic_class` as a key event.

@@ -1,4 +1,12 @@
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Device descriptors include a CDP UA override, which itself can trigger UB.
+// Human controls emulate geometry/touch while preserving the native navigator.
+export function nativeDeviceContext(device, overrides = {}) {
+  const context = {...device, ...overrides};
+  delete context.userAgent;
+  delete context.defaultBrowserType;
+  return context;
+}
 // Arm the destination waiter before an action can initiate navigation. Waiting
 // for the current document's already-complete load is not a navigation barrier.
 export async function navigateAndWait(page, targetURL, action) {
@@ -9,7 +17,7 @@ export function observationDwell(spec, last, step = 0) {
   // Distinct 100ms timestamp buckets, with margin under the real 2000ms limit.
   if (['benign', 'cdp-agent'].includes(spec.mode)) return last ? 10000 : 250;
   if (spec.mode === 'history') return last ? 10000 : step < 3 ? 0 : 2500;
-  if (spec.cdp) return last ? 10000 : 1150;
+  if (spec.cdp) return last ? 10000 : spec.human ? 2800 : 1150;
   if (!spec.human && !spec.dwell) return last ? 10000 : 0;
   return spec.dwell || (last ? 10000 : 2800);
 }

@@ -6,8 +6,8 @@ Visitor Verdict classifies browser visits locally as `declared_agent`, `automate
 |---|---|
 | `declared_agent` | The user agent claims a configured agent, fetcher or crawler identity. Tokens are claims, not verification. |
 | `automated` | Hard browser automation evidence, or one document of carry-over from a previous direct hard/declared result in this tab. This does not establish intent or AI use. |
-| `suspicious` | Weighted evidence meeting the score, family and evidence-quality requirements below; repeated teleport history is one weighted signal. |
-| `human` | Insufficient evidence of automation; not proof of a person. |
+| `suspicious` | Uncertain weighted evidence meeting the score, family and evidence-quality requirements below; repeated teleport history is one weighted signal. |
+| `human` | No automation detected; not proof of a person. |
 
 ## How it works
 
@@ -19,7 +19,7 @@ Precedence is declared → hard/inherited automation → suspicious → human. T
 2. **At least three distinct positive-weight families**.
 3. At least one non-benign signal family (pointer via TP/TR, worker via WK, or explicitly synthetic input SY), **or** at least two distinct environment families plus behaviour (interaction or navigation). Environment families are geometry, language, plugins, graphics, chrome and permissions. NI alone is not the non-benign interaction evidence; SY is.
 
-“Non-benign” names a heuristic category, not a judgement about the visitor. Each family contributes its highest weight: geometry is capped at 1, graphics at 1, NI/SY together at 2, and TP/TR together at 3. Hard, declared and inherited results use sentinel score 100; scores are not probabilities. Quiet reading alone scores 2; fast navigation plus inactivity scores 5. FN+NI+WG or FN+NI+GS scores 6 across three families but still remains human, because it has only one environment family and no TP/TR/SY/WK. FN+NI+GS+WG qualifies at 7 with two environment families plus behaviour. TR never bypasses these requirements or affects initial classification.
+“Non-benign” names a heuristic category, not a judgement about the visitor. Each family contributes its highest weight: geometry is capped at 2 (HW=2, G0/GS=1), worker at 6 (UB=6, WK=2), graphics at 1, NI/SY together at 2, and TP/TR together at 3. Hard, declared and inherited results use sentinel score 100; scores are not probabilities. Quiet reading alone scores 2; fast navigation plus inactivity scores 5. FN+NI+WG or FN+NI+GS scores 6 across three families but still remains human, because it has only one environment family and no TP/TR/SY/WK. FN+NI+GS+WG qualifies at 7 with two environment families plus behaviour. TR never bypasses these requirements or affects initial classification. UB directly yields suspicious at final without the ordinary score/family gate; declared and hard evidence retain precedence. HW remains benign: HW+FN+NI alone stays human.
 
 Duplicate inclusion is ignored. BFCache restoration retains the document's state and does not emit a second final. Reload/history navigation does not append pageview timestamps. SPA route changes do not restart detection.
 
@@ -49,7 +49,13 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 | `SY` | Explicitly untrusted mousemove/pointerdown/touchstart occurred, with no accepted activity (trusted or missing isTrusted) | 2 / interaction |
 | `TP` | Positive >200px mousemove jump followed within 600ms by a trusted mouse click near the jump endpoint and fresh trusted mouse pointerdown; path/rest/repeat safeguards below | 3 / pointer, final only |
 | `WK` | Opt-in (`worker: true`): supported UA, webdriver, languages or positive core-count mismatch between main and dedicated worker; unavailable fields ignored | 2 / worker, final only |
+| `UB` | Opt-in (`worker: true`): non-empty main UA-CH brands, but an exposed worker userAgentData API has an undefined/null value or empty brands array. Unexposed API, malformed shapes, blocked getters and failed/CSP-blocked workers are unknown | 6 / worker, final only; directly suspicious, never automated alone or CA provenance |
+| `HW` | Visible, focused, top-level desktop window: outer and inner dimensions equal screen dimensions on both axes, and available screen equals full screen. Excludes mobile/embedded UAs, document fullscreen and fullscreen/standalone display modes; unknown fullscreen capability is ignored | 2 / benign geometry; ordinary corroboration required |
 | `TR` | Remaining `tpPages >=2` at final, after any eligible decay; no initial effect or class override | 2 / pointer, final only; capped at 3 together with TP |
+
+UB can also flag Chrome DevTools-style device emulation or CDP user-agent overrides: these can leave main-thread UA Client Hints brands populated while worker brands are empty, producing `suspicious` even with human input.
+
+Mobile human controls therefore emulate viewport/screen, device scale, mobile layout and touch while retaining the browser's native UA. They do not validate mobile-UA-specific branches or physical-device behaviour. A separate informational scenario deliberately retains the device UA override and expects `suspicious` via UB.
 
 **TP (teleport click)** requires positive jump evidence, not merely missing or sparse movement. A trusted `mousemove` must have a movement delta greater than 200px (Euclidean), or differ by more than 200px from the previous distinct position observed within 600ms. It suppresses jumps in a stream of at least three distinct moves whose successive gaps are at most 120ms. A trusted mouse click must follow within 600ms of both the jump and an explicit trusted mouse pointerdown, land within 2px of the jump endpoint, and be more than 40px from the previous recorded click if one exists. Touch/pen, keyboard activation (`detail: 0`), untrusted input, rested/expired jumps and repeated nearby clicks do not qualify. `mousemove` alone supplies the jump/path evidence, avoiding double counting compatibility pointer events. No trajectory is retained.
 
@@ -100,6 +106,7 @@ Both phases normally push the same fields (a broken/throwing data-layer consumer
 The detector reads these inputs locally (optional probes only when enabled):
 
 - Navigator: `userAgent`, `userAgentData.brands` and each `brand`, `webdriver`, `languages` (length and entries), `language`, `userLanguage`, `browserLanguage`, `systemLanguage`, `plugins.length`, `pdfViewerEnabled`, `maxTouchPoints` and `hardwareConcurrency`. No high-entropy UA-data request is made. The local worker reads `userAgent`, `webdriver`, `languages` and `hardwareConcurrency` too.
+- The optional worker additionally checks `userAgentData` property presence and `userAgentData.brands` array shape/length; it returns only a boolean, never brands. Geometry additionally reads `screen.availWidth`, `screen.availHeight`, `document.fullscreenElement` and `matchMedia('(display-mode: fullscreen)' / '(display-mode: standalone)').matches`. No high-entropy UA-data request is made.
 - Window/document: `top`, `screen.width/height`, `innerWidth/innerHeight`, `outerWidth/outerHeight`, `document.visibilityState`, `document.prerendering`, `document.hasFocus()`, `isSecureContext`, `chrome`, configuration and existing detector state. It enumerates own window/document property names and reads matching property descriptors and their `value` fields, including `__trafficClass` / `__tcDetector`. Shape checks inspect candidate `window`, `nodeType`, `ownerDocument`, object type and prototypes to reject host/DOM/window objects.
 - Automation candidates: window `callPhantom`, `_phantom`, `__nightmare`, `domAutomation`, `domAutomationController`, exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts`, and names matching `cdc_[A-Za-z0-9]+_(Array|Promise|Symbol|Object|Proxy|JSON|Window)`. Document candidates match `__(selenium|webdriver|driver|fxdriver)_(evaluate|unwrapped)`, `__webdriver_script_(fn|func|function)`, `__$webdriverAsyncExecutor`, and `$cdc_` / `$wdc_` prefixes. Names/values are not exported.
 - Opt-in WebGL: canvas `getContext('webgl'/'experimental-webgl')`, extension availability through `getExtension`, `WEBGL_debug_renderer_info.UNMASKED_RENDERER_WEBGL` and its renderer via `getParameter`, and `WEBGL_lose_context.loseContext` for cleanup. It draws no fingerprint image or canvas pixels.
@@ -141,7 +148,7 @@ For withdrawal, `sessionStorage.removeItem('traffic_class')` clears the stored l
 3. Choose one of the consent setups below. The imported detector explicitly has **no additional consent check** and runs on All Pages, once per page, with firing priority 100. The GA4 event tag retains Google's built-in consent behaviour; configure any additional checks according to the chosen setup.
 4. Preview with Tag Assistant: expect one initial and one final data-layer event, and one final GA4 event per document when delivery is permitted. Verify the measurement ID, consent paths, delayed consent and page navigation before publishing.
 
-The import creates two tags, four variables and one custom trigger. **traffic_class final** matches custom event `traffic_class` only when `traffic_phase` equals `final`. **GA4 - traffic_class** sends all three fields as event parameters and `traffic_class` as a user property. Initial stays available in the data layer; only final goes to GA4 by default.
+The import creates two tags, five variables and one custom trigger. **traffic_class final** matches custom event `traffic_class` only when `traffic_phase` equals `final`. **GA4 - traffic_class** sends all three fields as event parameters and `traffic_class` as a user property. Its class parameter uses **VV - current class**; the final event remains necessary for coverage, even if no later interaction occurs. The import does not modify the site's existing Google tag or other GA4 event tags: configure them as below.
 
 ### Manual installation
 
@@ -149,7 +156,33 @@ The import creates two tags, four variables and one custom trigger. **traffic_cl
 2. Use **All Pages (Page View)**, **Once per page**, priority **100**. Do not use Initialization: on sites that push an event before their consent default, Initialization can run with consent unset. Set consent defaults in the site's consent integration before All Pages; priority orders tags on the same event and cannot repair an earlier consent race.
 3. Create Version 2 Data Layer Variables named `traffic_class`, `traffic_phase` and `traffic_score`, each reading the identically named key. If using a custom data-layer name, configure the GTM snippet consistently.
 4. Create Custom Event trigger **traffic_class final**: event name `traffic_class`, condition `{{traffic_phase}}` equals `final`.
-5. Create constant **VV - GA4 measurement ID**, then a **Google Analytics: GA4 Event** tag named **GA4 - traffic_class**. Set measurement ID to that constant and event name to `traffic_class`. Map event parameters `traffic_class`, `traffic_phase`, `traffic_score` to their variables; under User Properties map `traffic_class` to `{{traffic_class}}`. Use the final trigger and the site's existing Google tag destination.
+5. Create constant **VV - GA4 measurement ID**, then a **Google Analytics: GA4 Event** tag named **GA4 - traffic_class**. Set measurement ID to that constant and event name to `traffic_class`. Map event parameter `traffic_class` to `{{VV - current class}}`, and `traffic_phase` / `traffic_score` to their data-layer variables; under User Properties map `traffic_class` to `{{traffic_class}}`. Use the final trigger and the site's existing Google tag destination.
+
+6. Create **Custom JavaScript** variable **VV - current class** (included in the import). It reads the current page first, then the previous stored class, and returns undefined for missing/invalid data or blocked storage. It never writes storage:
+
+```javascript
+function() {
+  var c;
+  function valid(v) {
+    return typeof v === 'string' && /^(human|suspicious|automated|declared_agent)$/.test(v);
+  }
+  try {
+    c = window.__trafficClass && window.__trafficClass['class'];
+    if (valid(c)) { return c; }
+  } catch (e) {}
+  try {
+    c = JSON.parse(window.sessionStorage.getItem('traffic_class') || '{}').lastClass;
+    if (c && typeof c === 'object') { c = c.value; }
+    if (valid(c)) { return c; }
+  } catch (e) {}
+  return undefined;
+}
+```
+
+7. On **every Google Analytics: GA4 Event tag** (`gaawe`), add event parameter **traffic_class = `{{VV - current class}}`**. The variable is evaluated when that tag fires. Audit ecommerce, click and other event tags; adding it only to the dedicated classification tag does not cover them.
+8. Optionally add the same parameter under the existing **Google tag → Shared event settings** (through its event settings variable). This is evaluated once when the Google tag fires, usually Initialization, before the detector runs. It supplies the previous page's stored class to automatic events from page 2; it does not refresh with later detector phases. Verify actual event requests in Tag Assistant/DebugView.
+
+**CSP-safe variable alternative:** sites without `unsafe-eval` can create a **JavaScript Variable** (GTM type `j`, not Custom JavaScript) named **VV - current class (page only)** with **Global Variable Name = `__trafficClass.class`**. Substitute it in the event tags and optionally shared settings. It reads the current page only and has no storage fallback, so an Initialization Google tag will normally receive no value. Do not weaken CSP just for the fallback; [Google documents Custom JavaScript's CSP limitation](https://developers.google.com/tag-platform/security/guides/csp).
 
 ### Choose when it runs
 
@@ -160,22 +193,46 @@ The script does not read consent. Running it before consent is a decision for th
 
 Google describes [built-in versus additional consent checks](https://support.google.com/tagmanager/answer/10718549?hl=en); requiring additional consent blocks firing rather than simply changing the request format.
 
-### GA4 reporting and annotate-first use
+### GA4 integration and reporting
 
-In **Admin → Data display → Custom definitions**, create these two custom dimensions:
+The working integration maps **traffic_class = `{{VV - current class}}` on each GA4 event tag**, evaluated at that tag's firing time. Initial/final detector updates are then available to later tagged events. Events sent before the detector can use only the storage fallback; the first `page_view` of a session is typically unlabelled. The earlier global-command approach failed in live testing with GTM's Google tag and must not be used.
+
+Automatic Google-tag events (`page_view`, `user_engagement`, enhanced-measurement scroll) use shared event settings evaluated once at Google tag Initialization. With the optional storage fallback they can carry the **previous page's class from page 2**, not the current page's later initial/final result. Storage denial or the CSP-safe page-only variable removes that fallback. Automatic and explicitly tagged events therefore have different timing semantics. Sites without GA4 event tags rely on the dedicated final `traffic_class` event plus the last-observed user property; shared settings can only add the limited automatic-event coverage above. No configuration backfills earlier events or guarantees a label on every event.
+
+Keep **GA4 - traffic_class** on final, with explicit class/phase/score parameters and its user property: it records coverage even without subsequent events. Never mark `traffic_class` as a key event. The user property means **last observed class**, applies from set time, can persist into later visits, and is not a stable visitor attribute. Never use it for session exclusion or backfill earlier events from it. Collection and conversions remain enabled; the detector cannot retract events.
+
+In **Admin → Data display → Custom definitions**, create:
 
 | Display name | Scope | Field |
 |---|---|---|
 | Traffic class (event) | Event | Event parameter `traffic_class` |
-| Traffic class (user) | User | User property `traffic_class` |
+| Traffic class (user — last observed) | User | User property `traffic_class` |
+| Traffic phase (event), optional | Event | Event parameter `traffic_phase` |
 
-The event dimension describes the observed event; the user property is the last class sent to GA4 and is not a verified identity or permanent visitor type. `traffic_phase` is also sent; optionally add a third, event-scoped dimension if you choose to send both phases. Register `traffic_score` as a custom metric only if you need it. See [Google's dimension and metric scope guide](https://support.google.com/analytics/answer/14240153?hl=en).
+Register `traffic_score` as a custom metric only if needed. Score is a heuristic, not a probability.
 
-**Do not use the class to block access, deny service or make decisions about individuals.** People using assistive technology (voice control, eye tracking, screen-reader mouse routing, remote desktop) can produce teleport-like clicks.
+| Stored value | Reporting label and interpretation |
+|---|---|
+| `human` | **No automation detected**; not proof of a person |
+| `suspicious` | Uncertain evidence; show separately for review |
+| `automated` | Automation evidence; does not establish intent or abuse |
+| `declared_agent` | Unverified identity claim; tokens can be spoofed |
+| Missing | Unknown; never silently treat as human |
 
-Start by annotating analytics and comparing segments. Leave conversion tags running while you assess actual traffic and false positives. Initial cannot include later behaviour, and final cannot retract an earlier pageview or conversion. The library does not delay, queue or replay conversions.
+Use these session views, scoped to the web stream and the same date range:
 
-For aggregate tag/trigger experiments, remember that an exception must match the tag's own firing event and classification must be available first. A `traffic_class` custom-event exception cannot block a tag triggered by a different conversion event. Keep access/service decisions outside this heuristic and preview timing and consent behaviour for each integration.
+- **All sessions**: baseline including unknown coverage.
+- **Sessions excluding detected automation**: exclude the whole session if any event carries `automated` or `declared_agent`. Keep unknown sessions; show suspicious sessions separately within this retained traffic.
+- **Stricter sensitivity view**: additionally exclude sessions containing `suspicious`.
+- **Observed human-only cohort**, diagnostic only: at least one `human` observation and no automated, declared or suspicious observations. It selects measurable, labelled visits and misses unknown traffic.
+
+Exclusion preserves unlabelled sessions and their earlier pageviews/purchases while removing sessions with observed evidence. “Only human” would bias the headline toward visits with successful classification and delivery. Always show coverage: sessions with any valid class versus sessions without, plus missing-ID pings separately. A later human label never cancels earlier automation evidence in that session.
+
+Headline purchase conversion rate = **purchasing sessions / sessions in the same cohort**. Do not mix filtered purchasers with all-session denominators; do not count `add_to_cart` as headline conversion. Show excluded purchase revenue separately. Removing low-converting bot sessions can raise CR by arithmetic; it does not demonstrate marketing improvement.
+
+For GA4 UI steps use [Explorations and comparisons](docs/analysis/ga4-explorations.md): create a **Session segment** including all web-stream sessions, then exclude sessions where a `traffic_class` event has class `automated|declared_agent` **OR any event has that event parameter**. Keep name and class conditions on the same event; event name alone must not exclude all classified sessions. Standard-report comparisons on the event-scoped dimension are scoped label comparisons, not reliable whole-session exclusions; never use the user property as a shortcut. [BigQuery SQL](docs/analysis/bigquery.sql) supplies session flags, first/last evidence, class at first purchase and consistent cohorts; [Looker Studio](docs/analysis/looker-studio.md) uses those session aggregates.
+
+**Do not use the class to block access, deny service or make decisions about individuals.** Assistive technology can resemble some input patterns. Leave conversion collection running while reviewing evidence. Any tag exception must match that tag's own firing event and have a class available then; a `traffic_class` exception cannot block an unrelated conversion event. Pre-consent classification must never feed advertising platforms.
 
 ## Tests and observed results
 
@@ -242,7 +299,7 @@ The browser runners write `test/results/report.md` / `report.json` and `report-e
 
 The detector uses ES5 syntax and no runtime dependencies. It targets modern Chrome/Chromium, Firefox, Safari/WebKit and mobile browsers with standard DOM events and JSON APIs. ES5 syntax is not a promise of legacy Internet Explorer support. Optional workers, permission queries, UA Client Hints and WebGL extensions are feature-detected; CSP-blocked workers lose WK/worker-HL evidence. Sites must permit the Custom HTML script under their CSP.
 
-The minified detector is **~12 KB** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
+The minified detector is **~13 KB** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
 
 Tools with natural input or patched browsers can end `human`, as the adversarial results show. Stealth with only benign signals can also end `human`; the detector favours conservative classification over catching every bot. Client-side detection is spoofable. Declared tokens can be spoofed and are never authenticated; JS-less fetchers never run the detector. `human` means no sufficient evidence, and a missing event means **unknown**, not human. Privacy tools, accessibility input, VMs and unusual browser settings may resemble weak signals. Global names are conditional implementation artifacts, not permanent framework signatures. Direct evidence can keep a subsequent human takeover classified automated for one following document via CA; CA alone cannot perpetuate it.
 

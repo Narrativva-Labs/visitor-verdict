@@ -15,6 +15,22 @@ const equals = (left, right) => ({type: 'EQUALS', parameter: [
 ]});
 const table = (key, rows) => ({type: 'LIST', key,
   list: rows.map(row => ({type: 'MAP', map: row.map(([name, value]) => parameter(name, value))}))});
+const currentClass = `function() {
+  var c;
+  function valid(v) {
+    return typeof v === 'string' && /^(human|suspicious|automated|declared_agent)$/.test(v);
+  }
+  try {
+    c = window.__trafficClass && window.__trafficClass['class'];
+    if (valid(c)) { return c; }
+  } catch (e) {}
+  try {
+    c = JSON.parse(window.sessionStorage.getItem('traffic_class') || '{}').lastClass;
+    if (c && typeof c === 'object') { c = c.value; }
+    if (valid(c)) { return c; }
+  } catch (e) {}
+  return undefined;
+}`;
 const container = {
   exportFormatVersion: 2,
   containerVersion: {
@@ -30,7 +46,7 @@ const container = {
         parameter: [
           parameter('sendEcommerceData', 'false', 'BOOLEAN'),
           table('eventSettingsTable', fields.map(name => [
-            ['parameter', name], ['parameterValue', reference(name)]
+            ['parameter', name], ['parameterValue', reference(name === 'traffic_class' ? 'VV - current class' : name)]
           ])),
           table('userProperties', [[['name', 'traffic_class'], ['value', reference('traffic_class')]]]),
           parameter('eventName', 'traffic_class'),
@@ -43,6 +59,8 @@ const container = {
       customEventFilter: [equals('{{_event}}', 'traffic_class')],
       filter: [equals(reference('traffic_phase'), 'final')]}],
     variable: [
+      {...ids, variableId: '8', name: 'VV - current class', type: 'jsm',
+        parameter: [parameter('javascript', currentClass)]},
       ...fields.map((name, index) => ({...ids, variableId: String(index + 4), name, type: 'v',
         parameter: [parameter('name', name), parameter('dataLayerVersion', '2', 'INTEGER'),
           parameter('setDefaultValue', 'false', 'BOOLEAN')]})),

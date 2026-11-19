@@ -1,4 +1,4 @@
-import {chromium, firefox, devices} from 'playwright';
+import {chromium, firefox, webkit, devices} from 'playwright';
 import {addExtra} from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import {readFile, writeFile, mkdtemp, mkdir, rm} from 'node:fs/promises';
@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {createRequire} from 'node:module';
 import {connectRealChrome} from './cdp-chrome.mjs';
 import {startServer} from './server.mjs';
-import {options, sleep, botd, botdCell, flakes, cell, humanClick, cleanPreflight, navigateAndWait, observationDwell, performanceSummary} from './support.mjs';
+import {options, sleep, botd, botdCell, flakes, cell, humanClick, cleanPreflight, nativeDeviceContext, navigateAndWait, observationDwell, performanceSummary} from './support.mjs';
 const {repeat} = options();
 const require = createRequire(import.meta.url);
 const source = await readFile(new URL('../src/visitor-verdict.js', import.meta.url), 'utf8');
@@ -25,12 +25,15 @@ const specs = [
   {...human, name: '18 Chromium WebGL disabled', launch: {headless: false, args: [...quiet, '--disable-webgl', '--disable-3d-apis']}, webgl: true},
   {...human, name: '19 Background tab 15 seconds', mode: 'background'},
   {...human, name: '20 Reload twice and back/forward', mode: 'history'},
-  {...human, name: '21a Android tablet', context: {...devices['Pixel 7'], userAgent: devices['Pixel 7'].userAgent.replace(' Mobile', ''), viewport: {width: 800, height: 1280}, screen: {width: 800, height: 1280}}, touch: true,
-    note: 'Android touch tablet dimensions with Pixel 7 Android UA minus Mobile token; emulated tablet, not physical hardware.'},
-  {...human, name: '21b Small Android phone 360x640', context: {...devices['Pixel 7'], viewport: {width: 360, height: 640}, screen: {width: 360, height: 640}}, touch: true},
+  {...human, name: '21a Android tablet', context: nativeDeviceContext(devices['Pixel 7'], {viewport: {width: 800, height: 1280}, screen: {width: 800, height: 1280}}), touch: true,
+    note: 'Tablet geometry/touch emulation with the browser native UA; no CDP UA override or physical-device claim.'},
+  {...human, name: '21b Small Android phone 360x640', context: nativeDeviceContext(devices['Pixel 7'], {viewport: {width: 360, height: 640}, screen: {width: 360, height: 640}}), touch: true},
   {...human, name: '22 sessionStorage denied', storage: true, dwell: 10000},
   {name: '23 Headless normal Chrome UA, webdriver true', engine: chromium, normalUA: true, expected: 'automated'},
   {name: '24 Headless webdriver disabled, idle each page', engine: chromium, launch: {args: quiet}, dwell: 10000},
+  {name: '24b Masked headless Chrome, native CDP UA override', engine: chromium, category: 'regression',
+    launch: {channel: 'chrome', headless: true, args: quiet}, normalUA: true, maskedHeadless: true,
+    context: {viewport: {width: 1366, height: 900}}, expectedDescription: 'last final at least suspicious via UB'},
   {name: '25 Stealth fast navigation without input', engine: stealth},
   {name: '25b FN+NI+WG benign combination', category: 'regression', engine: chromium, mode: 'benign', environment: 'WG', expected: 'human',
     launch: {headless: false, args: [...quiet, '--disable-webgl', '--disable-3d-apis']}, context: {...desktop, screen: {width: 1440, height: 900}}},
@@ -52,13 +55,24 @@ const specs = [
     expectedDescription: 'all phases human; tpPages 1 then 0'},
   {...human, name: '30f Assistive warp clicks, slow navigation and keyboard', mode: 'assistive-warp'},
   {...human, name: '31 Human main-only UA switcher', uaSwitcher: true},
+  {...human, name: '31b Human Chromium started fullscreen', fullscreen: true,
+    launch: {headless: false, args: [...quiet, '--start-fullscreen']}, context: {viewport: null}},
+  {...human, name: '31c Human Pixel 7 Chrome, UB/HW guard', touch: true, mobileGuard: true,
+    launch: {channel: 'chrome', headless: false, args: quiet}, context: nativeDeviceContext(devices['Pixel 7'])},
+  {name: '31d iPhone 15 WebKit UB/HW regression fixture', human: true, category: 'regression fixture',
+    engine: webkit, context: nativeDeviceContext(devices['iPhone 15']), touch: true, mobileGuard: true, webkitControl: true,
+    note: 'Main-thread webdriver=false property fixture isolates mobile UB/HW behaviour. Playwright WebKit is automated; this is not an unpatched Safari human control.'},
+  {...human, name: '31e DevTools-style device emulation with UA override', informational: true,
+    category: 'emulation observation', devtoolsEmulation: true, expectedDescription: 'suspicious via UB (informational)',
+    launch: {channel: 'chrome', headless: false, args: quiet}, context: devices['Pixel 7'],
+    note: 'Deliberate device-descriptor UA override: CDP emulation can empty worker brands and trigger UB even with human input. This is not a clean human control.'},
   {name: '32 Stealth headless locator navigation', engine: stealth, mode: 'locator'},
   {name: '33 Headed webdriver-disabled locator navigation', engine: chromium, launch: {headless: false, args: quiet}, mode: 'locator'},
   {...human, name: '34 Worker blocked by CSP', cspWorker: true},
   {name: '35 Real Chrome over CDP agent', cdp: true, category: 'CDP agent', mode: 'cdp-agent',
     expectedDescription: 'all initials human; page 3 final suspicious via TR+FN+NI'},
-  {name: '35b Real Chrome over CDP with natural approach', cdp: true, human: true, informational: true,
-    category: 'CDP agent with human-like movement', mode: 'cdp-human', expectedDescription: 'human (informational)'},
+  {name: '35b Real headed Chrome over CDP with natural approach', cdp: true, human: true,
+    category: 'clean-human', mode: 'cdp-human', expectedDescription: 'all phases human; no UB/HW'},
   {...human, name: 'S28 Stealth bot behaving humanly, rested clicks', engine: stealth, informational: true, category: 'stealth bot behaving humanly', mode: 'rest'},
   {...human, name: 'S15 Stealth bot behaving humanly, rapid navigation', engine: stealth, informational: true, category: 'stealth bot behaving humanly', mode: 'rapid'},
   {...human, name: 'C1 Default-config performance (20 fresh evaluations)', mode: 'performance', budgetMs: 5},
@@ -76,6 +90,30 @@ const specs = [
 ];
 class Skip extends Error {}
 function check(value, message) { if (!value) throw Error(message); }
+async function enterFullscreen(page) {
+  if (await page.evaluate(() => !!document.fullscreenElement || matchMedia('(display-mode: fullscreen)').matches)) return 'browser fullscreen';
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'tc-enter-fullscreen'; button.textContent = 'Enter fullscreen';
+    button.style.cssText = 'position:fixed;left:24px;top:24px;z-index:2147483647';
+    button.addEventListener('click', () => {
+      if (typeof document.documentElement.requestFullscreen !== 'function') {
+        window.__tcFullscreenError = 'Fullscreen API unavailable'; return;
+      }
+      document.documentElement.requestFullscreen().catch(error => {window.__tcFullscreenError = String(error);});
+    });
+    document.body.appendChild(button);
+  });
+  await humanClick(page, page.locator('#tc-enter-fullscreen'));
+  try {
+    await page.waitForFunction(() => !!document.fullscreenElement || matchMedia('(display-mode: fullscreen)').matches,
+      null, {timeout: 8000});
+  } catch {
+    throw Error('Fullscreen failed after trusted click: ' + await page.evaluate(() => window.__tcFullscreenError || 'browser did not enter fullscreen'));
+  }
+  await page.locator('#tc-enter-fullscreen').evaluate(button => button.remove());
+  return 'Fullscreen API after trusted click';
+}
 async function input(page, spec, step = 0) {
   if (spec.mode === 'keyboard') {
     await page.keyboard.press(step % 2 ? 'PageUp' : 'PageDown');
@@ -178,6 +216,7 @@ try {
       }
       context = context || await browser.newContext(contextOptions);
       if (spec.storage) await context.addInitScript(() => Object.defineProperty(window, 'sessionStorage', {get() {throw new DOMException('Blocked for test', 'SecurityError');}}));
+      if (spec.webkitControl) await context.addInitScript(() => Object.defineProperty(Navigator.prototype, 'webdriver', {get: () => false}));
       const page = await context.newPage(), entries = await collector(page);
       if (spec.category === 'clean-human' || spec.cdp) {
         await page.goto(`${origin}/blank.html`);
@@ -185,6 +224,15 @@ try {
         check(row.preflight.mainWebdriverFalse && row.preflight.status === 'OK' && row.preflight.workerWebdriverNotTrue,
           'Clean native webdriver preflight failed: ' + JSON.stringify(row.preflight));
       }
+      if (spec.fullscreen) await context.route('**/*.html*', async route => {
+        const response = await route.fetch(), html = await response.text();
+        const detectorTag = '<script src="/src/visitor-verdict.js"></script>';
+        check(html.includes(detectorTag), 'Fullscreen fixture detector tag missing');
+        await route.fulfill({response, body: html.replace(detectorTag, '')});
+      });
+      if (spec.maskedHeadless) await page.addInitScript(() => {
+        window.tcTestConfig = {debug: true, webgl: true, worker: true};
+      });
       await page.addInitScript(() => {
         const evidence = window.__tcTestActivity = {lastInputAt: performance.now(), observed: {}};
         for (const type of 'mousemove pointermove pointerdown pointerup pointercancel touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin'.split(' ')) {
@@ -263,6 +311,12 @@ try {
       if (spec.storage) row.notes.push('Storage denied: each page reaches its real timed final before navigation; snapshot is authoritative, console/route remain backups. This control does not claim unload delivery coverage.');
       if (spec.name.startsWith('23 ')) check(await page.evaluate(() => navigator.webdriver === true), 'Normal-UA fixture must retain webdriver=true');
       if (spec.name.startsWith('24 ')) check(await page.evaluate(() => navigator.webdriver !== true), 'AutomationControlled override did not apply');
+      if (spec.maskedHeadless) {
+        check(await page.evaluate(() => navigator.webdriver !== true && !/HeadlessChrome/.test(navigator.userAgent) &&
+          innerWidth === 1366 && innerHeight === 900 && Array.isArray(navigator.userAgentData?.brands) && navigator.userAgentData.brands.length > 0),
+        'Masked headless fixture requires webdriver disabled, normal Chrome UA, 1366x900 viewport and non-empty main UA-CH brands');
+        row.notes.push('Installed Chrome channel; headless:true; AutomationControlled disabled; context UA replaces HeadlessChrome with Chrome. Both optional probes enabled, matching the supplied GTM configuration; only test debug is added.');
+      }
       if (spec.storage) check(await page.evaluate(() => {try {void window.sessionStorage; return false;} catch {return true;}}), 'Storage-denied fixture did not apply');
       if (spec.mode === 'performance') {
         const samples = [];
@@ -329,6 +383,13 @@ try {
           const navigationStart = Date.now();
           for (let j = 0; j < steps.length; j++) {
             await page.bringToFront();
+            if (spec.fullscreen) {
+              // Document fullscreen may exit on navigation. Enter and verify it
+              // before starting each document's detector, including initial.
+              const method = await enterFullscreen(page);
+              await page.addScriptTag({content: source});
+              row.notes.push(`${new URL(page.url()).pathname}: confirmed ${method} before detector; native viewport.`);
+            }
             if (steps[j] === null && ['benign', 'cdp-agent'].includes(spec.mode)) {
               await page.mouse.move(-20, -20);
               await page.waitForFunction(() => document.visibilityState !== 'hidden' &&
@@ -378,7 +439,7 @@ try {
               await page.mouse.move(20, 20); await page.mouse.move(1000, 100, {steps: 40});
               await page.mouse.down(); await page.mouse.up();
             }
-            if (spec.cdp) await sleep(dwell); else await stay(page, spec, dwell);
+            if (spec.cdp && !spec.human) await sleep(dwell); else await stay(page, spec, dwell);
             if (spec.mode === 'stationary' && !last) {
               await page.evaluate(path => {
                 const link = document.createElement('a'); link.id = 'stationary-next'; link.href = path;
@@ -477,8 +538,24 @@ try {
           if (missing.length) row.notes.push('Fixture missed ' + missing.join(', ') + '; classification retained. Rounded navigation gaps (ms): ' + JSON.stringify(row.pages.at(-1).navigationGapsMs) + '; trusted activity counts: ' + JSON.stringify(row.pages.at(-1).activity));
           row.status = !missing.length && final.traffic_class === (spec.expectedFinal || spec.expected) ? 'PASS' : 'FAIL';
         }
-        if (spec.uaSwitcher && spec.mode !== 'benign') check(row.pages.at(-1).final.traffic_signals.includes('WK'), 'Main-only UA override did not exercise WK');
-        if (spec.cspWorker) check(!row.pages.some(p => p.final.traffic_signals.includes('WK')), 'Blocked worker must remain unknown');
+        if (spec.maskedHeadless) {
+          const final = row.pages.at(-1).final;
+          check(final.traffic_signals.includes('UB'), 'Masked headless fixture did not exercise UB');
+          check(final.traffic_signals.includes('HW'), 'Masked headless fixture did not exercise focused headless-window geometry');
+          check(row.pages.every(p => p.initial.traffic_class === 'human'), 'Mask did not remove existing hard evidence');
+        }
+        if (spec.devtoolsEmulation) {
+          row.status = row.pages.every(p => p.initial.traffic_class === 'human' &&
+            p.final.traffic_class === 'suspicious' && p.final.traffic_signals.includes('UB')) ? 'PASS' : 'FAIL';
+        }
+        if (spec.uaSwitcher && spec.mode !== 'benign') {
+          check(row.pages.at(-1).final.traffic_signals.includes('WK'), 'Main-only UA override did not exercise WK');
+          check(!row.pages.some(p => p.final.traffic_signals.includes('UB')), 'Main-only UA switcher falsely fired UB');
+        }
+        if (spec.cspWorker) check(!row.pages.some(p => p.final.traffic_signals.some(code => ['WK', 'UB'].includes(code))), 'Blocked worker must remain unknown');
+        if (spec.mobileGuard || spec.mode === 'cdp-human' || spec.fullscreen) {
+          check(!row.pages.some(p => p.final.traffic_signals.some(code => ['UB', 'HW'].includes(code))), 'Native Chrome/fullscreen/mobile control falsely fired UB/HW');
+        }
         if (spec.mode === 'history') check(!row.pages.some(p => p.final.traffic_signals.includes('FN')), 'Reload/history inflated FN');
         if (spec.mode === 'background') check(!row.pages.some(p => p.final.traffic_signals.includes('NI')), 'NI despite hidden time excluded and trusted input');
         if (spec.pdf) check(!row.pages.some(p => p.initial.traffic_signals.includes('PL')), 'PDF-disabled control fired PL');
@@ -509,7 +586,7 @@ try {
     results.map(r => '| ' + [r.name, r.category, r.iteration, r.expected, r.initial, r.final, r.signals.join(', '), botdCell(r.botd), r.medianMs?.toFixed(3), r.medianMs !== undefined ? r.budgetMs ?? 'informational' : r.budgetMs, r.status].map(cell).join(' | ') + ' |').join('\n') +
     '\n\n## Flakiness\n\n' + flakiness.map(f => `- ${f.name}: ${f.flaky ? '**FLAKY**' : repeat < 2 ? 'single run; not assessed' : 'stable'} (${f.runs} runs)`).join('\n') +
     '\n\n## Evidence and limitations\n\n' + results.filter(r => r.notes.length).map(r => `- ${r.name}, run ${r.iteration}: ${r.notes.map(cell).join(' ')}`).join('\n') +
-    '\n\nEvery human page must be initial/final human. BotD runs once per scenario, after our last result, with monitoring off, and only bot/botKind is retained. Benchmark errors are separate from classifier verdicts. Mobile/tablet inputs are emulated. Background requires confirmed hidden visibility; otherwise SKIP. Each performance profile uses 20 fresh top-level pages on a desktop engine. Only default-config median must be strictly <5ms; probes-on median is reported separately without that gate (includes parse/eval and synchronous probes, excludes setup/cleanup). Timing variability does not alone imply classification flakiness. CSP is deliberately skipped. Reload/back-forward checks forbid FN. BFCache can restore an already-final document; no second final is required. Storage-denied scenarios use console plus intercepted /log requests before forwarding; delivery to the log server is not required. TP=3 and TR=2 (shared pointer cap3, final only), WK=2 (worker), worker HeadlessChrome adds hard HL=100. Threshold/family caps stay unchanged; score also needs TP/TR/SY/WK or two environment families plus behaviour. FN+NI+WG and FN+NI+GS now stay human; GS+NI+FN+WK remains suspicious. Prior scenarios 6/7/25 may lose their benign-only suspicious result; no-movement/nearby locator clicks no longer qualify as TP. These are policy changes pending browser observations. Rapid and stealth bots may remain human; TP does not carry as raw input; tpPages/TR carries positive repeated teleport evidence as a bounded counter, decaying once per document with any trusted input and no TP. TR never overrides the normal score/family gate or affects initial classification. Trusted focusin/keyup/pointerup also count in window capture. Assistive warps with slow navigation and keyboard input stay human; scenario 35 tests a controlled idle final document after native navigation input settles: historical TR2+FN3+NI2=7, with all initials human. The previous human run had FN but also trusted activity, so NI was absent and tpPages correctly decayed from 2 to 1. Rounded gaps and bounded trusted-event counts now explain such misses. Regression navigation is spaced by 250ms to avoid same-100ms-bucket deduplication while retaining the 2000ms fast-navigation limit. Library heavy probes default off; the test site opts in explicitly except the default-off control.\n';
+    '\n\nEvery human page must be initial/final human. BotD runs once per scenario, after our last result, with monitoring off, and only bot/botKind is retained. Benchmark errors are separate from classifier verdicts. Mobile/tablet controls emulate geometry/scale/touch with native browser UA, so mobile-UA branches are not covered. The explicit DevTools-style UA-override observation expects suspicious via UB despite human input and is informational. Fullscreen is verified before each document detector starts, with a trusted-click Fullscreen API fallback when --start-fullscreen is ineffective. Background requires confirmed hidden visibility; otherwise SKIP. Each performance profile uses 20 fresh top-level pages on a desktop engine. Only default-config median must be strictly <5ms; probes-on median is reported separately without that gate (includes parse/eval and synchronous probes, excludes setup/cleanup). Timing variability does not alone imply classification flakiness. Inline-blocking CSP is deliberately skipped; worker-src denial is covered. Reload/back-forward checks forbid FN. BFCache can restore an already-final document; no second final is required. Storage-denied scenarios use console plus intercepted /log requests before forwarding; delivery to the log server is not required. TP=3 and TR=2 (shared pointer cap3, final only), WK=2 and UB=6 share the worker cap6; worker HeadlessChrome adds hard HL=100. UB is a direct final-only suspicious rule independent of score/family thresholds, never hard proof or CA provenance; absent UA-CH API, blocked getters and failed workers are unknown. HW=2 is benign geometry (family cap2), restricted to focused visible desktop windows outside fullscreen/standalone; HW+FN+NI stays human without corroboration. Other soft scores still need threshold plus three families and TP/TR/SY/WK or two environment families plus behaviour. FN+NI+WG and FN+NI+GS now stay human; GS+NI+FN+WK remains suspicious. Prior scenarios 6/7/25 may lose their benign-only suspicious result; no-movement/nearby locator clicks no longer qualify as TP. These are policy changes pending browser observations. Rapid and stealth bots may remain human; TP does not carry as raw input; tpPages/TR carries positive repeated teleport evidence as a bounded counter, decaying once per document with any trusted input and no TP. TR never overrides the normal score/family gate or affects initial classification. Trusted focusin/keyup/pointerup also count in window capture. Assistive warps with slow navigation and keyboard input stay human; scenario 35 tests a controlled idle final document after native navigation input settles: historical TR2+FN3+NI2=7, with all initials human. The previous human run had FN but also trusted activity, so NI was absent and tpPages correctly decayed from 2 to 1. Rounded gaps and bounded trusted-event counts now explain such misses. Regression navigation is spaced by 250ms to avoid same-100ms-bucket deduplication while retaining the 2000ms fast-navigation limit. Library heavy probes default off; the test site opts in explicitly except the default-off control.\n';
   await writeFile(new URL('results/report-extended.md', import.meta.url), md);
   if (results.some(r => !r.noteOnly && !['PASS', 'INFO'].includes(r.status) && r.name !== 'C4 Inline-blocking CSP' || r.botd?.status === 'ERROR') || flakiness.some(f => f.flaky && !f.informational)) process.exitCode = 1;
 } finally { if (server) await new Promise(resolve => server.close(resolve)); }

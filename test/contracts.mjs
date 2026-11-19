@@ -1,7 +1,7 @@
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {observationDwell} from './support.mjs';
+import {observationDwell, nativeDeviceContext} from './support.mjs';
 export async function runContracts(detectorSource) {
   const source = detectorSource || await readFile(new URL('../src/visitor-verdict.js', import.meta.url), 'utf8');
   const results = [];
@@ -38,6 +38,60 @@ export async function runContracts(detectorSource) {
     try { await fn(); results.push({name, status: 'PASS'}); }
     catch (error) { results.push({name, status: 'FAIL', error: String(error)}); }
   }
+  await test('Mobile human context preserves device geometry/touch without any UA override', () => {
+    const device = {userAgent: 'device UA', defaultBrowserType: 'chromium', viewport: {width: 393, height: 727},
+      screen: {width: 393, height: 851}, deviceScaleFactor: 2.75, isMobile: true, hasTouch: true};
+    const before = JSON.stringify(device);
+    const native = nativeDeviceContext(device);
+    assert.deepEqual(native, {viewport: device.viewport, screen: device.screen,
+      deviceScaleFactor: 2.75, isMobile: true, hasTouch: true});
+    const tablet = nativeDeviceContext(device, {viewport: {width: 800, height: 1280}, userAgent: 'accidental override'});
+    assert.ok(!Object.hasOwn(tablet, 'userAgent'));
+    assert.deepEqual(tablet.viewport, {width: 800, height: 1280});
+    assert.equal(JSON.stringify(device), before);
+    // The deliberate DevTools scenario uses the original descriptor unchanged.
+    assert.equal(device.userAgent, 'device UA');
+  });
+  await test('GTM current class reads live state then legacy/provenance storage; final event/property retained', async () => {
+    const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
+    assert.ok(!c.tag.some(t => t.name === 'VV - gtag set traffic_class'));
+    assert.ok(!c.trigger.some(t => t.name === 'traffic_class both phases'));
+    const variable = c.variable.find(v => v.name === 'VV - current class');
+    assert.equal(variable.type, 'jsm');
+    const script = '(' + variable.parameter.find(p => p.key === 'javascript').value + ')()';
+    const evaluate = window => vm.runInNewContext(script, {window});
+    const window = {__trafficClass: {class: 'human'}, sessionStorage: {
+      getItem: key => {assert.equal(key, 'traffic_class'); return JSON.stringify({lastClass: 'automated'});},
+      setItem: () => {throw Error('Must never write storage');}
+    }};
+    assert.equal(evaluate(window), 'human', 'Current page wins over storage');
+    window.__trafficClass.class = 'suspicious';
+    assert.equal(evaluate(window), 'suspicious', 'Re-evaluate at each tag fire');
+    delete window.__trafficClass;
+    assert.equal(evaluate(window), 'automated');
+    for (const lastClass of ['human', 'suspicious', 'automated', 'declared_agent',
+      {value: 'automated', direct: true}, {value: 'declared_agent', direct: false}]) {
+      window.sessionStorage.getItem = () => JSON.stringify({lastClass});
+      assert.equal(evaluate(window), typeof lastClass === 'string' ? lastClass : lastClass.value);
+    }
+    for (const raw of [null, '', '{', 'null', '{}', '{"lastClass":"bogus"}',
+      '{"lastClass":100}', '{"lastClass":{"value":"bogus"}}']) {
+      window.sessionStorage.getItem = () => raw;
+      assert.equal(evaluate(window), undefined, 'Missing/invalid data stays unknown');
+    }
+    Object.defineProperty(window, 'sessionStorage', {get() {throw Error('Blocked');}});
+    assert.equal(evaluate(window), undefined);
+    window.__trafficClass = {class: 'declared_agent'};
+    assert.equal(evaluate(window), 'declared_agent', 'Live state works with blocked storage');
+    const final = c.tag.find(t => t.name === 'GA4 - traffic_class');
+    const finalTrigger = c.trigger.find(t => final.firingTriggerId.includes(t.triggerId));
+    assert.equal(finalTrigger.filter[0].parameter.find(p => p.key === 'arg1').value, 'final');
+    const mappings = key => final.parameter.find(p => p.key === key).list.map(row =>
+      Object.fromEntries(row.map.map(p => [p.key, p.value])));
+    assert.deepEqual(mappings('eventSettingsTable'), ['traffic_class', 'traffic_phase', 'traffic_score']
+      .map(name => ({parameter: name, parameterValue: '{{' + (name === 'traffic_class' ? 'VV - current class' : name) + '}}'})));
+    assert.deepEqual(mappings('userProperties'), [{name: 'traffic_class', value: '{{traffic_class}}'}]);
+  });
   await test('Initial synchronous; final once after 8000 visible ms; idle alone stays human', () => {
     const f = fixture();
     assert.equal(f.window.dataLayer.length, 1);
@@ -150,6 +204,88 @@ export async function runContracts(detectorSource) {
       window.outerWidth = window.outerHeight = 0; document.hasFocus = () => false;
     }});
     assert.ok(!g.window.__trafficClass.signals.includes('G0'));
+  });
+  function headlessGeometry({window, document}) {
+    window.screen = {width: 1366, height: 900, availWidth: 1366, availHeight: 900};
+    window.innerWidth = window.outerWidth = 1366;
+    window.innerHeight = window.outerHeight = 900;
+    document.fullscreenElement = null;
+    window.matchMedia = () => ({matches: false});
+  }
+  await test('HW is benign geometry weight 2, shares the family cap, and needs corroboration', () => {
+    const alone = fixture({config: {debug: true}, modify: headlessGeometry});
+    assert.ok(alone.window.__trafficClass.signals.includes('HW'));
+    assert.equal(alone.window.__trafficClass.score, 2);
+    alone.emit('keydown', {isTrusted: true}); alone.advance(8000);
+    assert.equal(alone.window.__trafficClass.class, 'human');
+    assert.equal(alone.window.__trafficClass.score, 2);
+    for (const graphics of [false, true]) {
+      const f = fixture({config: {debug: true, webgl: graphics}, modify: objects => {
+        headlessGeometry(objects);
+        objects.store.set('traffic_class', JSON.stringify({timestamps: [9000, 9500]}));
+      }});
+      f.advance(8000);
+      assert.ok(['HW', 'FN', 'NI'].every(code => f.window.__trafficClass.signals.includes(code)));
+      assert.equal(f.window.__trafficClass.score, graphics ? 8 : 7);
+      assert.equal(f.window.__trafficClass.class, graphics ? 'suspicious' : 'human');
+    }
+    const capped = fixture({config: {debug: true}, modify: objects => {
+      headlessGeometry(objects);
+      objects.window.screen.width = objects.window.screen.availWidth = objects.window.innerWidth = objects.window.outerWidth = 1280;
+      objects.window.screen.height = objects.window.screen.availHeight = objects.window.innerHeight = objects.window.outerHeight = 720;
+    }});
+    assert.ok(['GS', 'HW'].every(code => capped.window.__trafficClass.signals.includes(code)));
+    assert.equal(capped.window.__trafficClass.score, 2);
+  });
+  await test('HW requires every dimension, desktop, visible focus and known non-fullscreen modes', () => {
+    const guards = [
+      ({window}) => {window.outerWidth++;}, ({window}) => {window.outerHeight++;},
+      ({window}) => {window.screen.width++;}, ({window}) => {window.screen.height++;},
+      ({window}) => {window.screen.availWidth--;}, ({window}) => {window.screen.availHeight--;},
+      ({window}) => {delete window.screen.availHeight;},
+      ({window}) => {window.innerWidth = window.outerWidth = window.screen.width = window.screen.availWidth = 0;},
+      ({document}) => {document.visibilityState = 'hidden';},
+      ({document}) => {document.visibilityState = undefined;},
+      ({document}) => {document.hasFocus = () => false;},
+      ({document}) => {document.fullscreenElement = {};},
+      ({document}) => {delete document.fullscreenElement;},
+      ({window}) => {window.matchMedia = undefined;},
+      ({window}) => {window.matchMedia = () => {throw Error('unavailable');};},
+      ...['fullscreen', 'standalone'].map(mode => ({window}) => {window.matchMedia = query => ({matches: query === `(display-mode: ${mode})`});}),
+      ...['Chrome/140.0 Android Mobile', 'iPhone Version/18.0 Safari/605.1', 'Chrome/140.0 Android', 'Chrome/140.0; wv)']
+        .map(ua => ({navigator}) => {navigator.userAgent = ua;}),
+      ({navigator}) => {navigator.userAgent = 'Macintosh Safari/605.1'; navigator.maxTouchPoints = 5;}
+    ];
+    for (const [index, guard] of guards.entries()) {
+      const f = fixture({config: {debug: true}, modify: objects => {headlessGeometry(objects); guard(objects);}});
+      f.emit('pagehide');
+      assert.ok(!f.window.dataLayer.some(event => event.traffic_signals.includes('HW')), `HW guard ${index}`);
+      assert.equal(f.window.__trafficClass.class, 'human', `HW guard ${index}`);
+    }
+    const frame = fixture({modify: objects => {headlessGeometry(objects); objects.window.top = {};}});
+    assert.equal(frame.window.dataLayer, undefined);
+  });
+  await test('HW rechecks final geometry after hidden/unfocused initial; real Mac window remains human', () => {
+    for (const hidden of [false, true]) {
+      const f = fixture({config: {debug: true}, modify: objects => {
+        headlessGeometry(objects);
+        objects.document.hasFocus = () => hidden;
+        if (hidden) objects.document.visibilityState = 'hidden';
+      }});
+      assert.ok(!f.window.__trafficClass.signals.includes('HW'));
+      f.document.hasFocus = () => true; f.document.visibilityState = 'visible'; f.emit('visibilitychange');
+      f.emit('keydown', {isTrusted: true}); f.advance(8000);
+      assert.ok(f.window.__trafficClass.signals.includes('HW'));
+      assert.equal(f.window.__trafficClass.class, 'human');
+    }
+    const real = fixture({config: {debug: true}, modify: objects => {
+      headlessGeometry(objects);
+      objects.window.outerHeight += 87;
+      objects.window.screen = {width: 1710, height: 1112, availWidth: 1710, availHeight: 998};
+    }});
+    real.advance(8000);
+    assert.ok(!real.window.__trafficClass.signals.includes('HW'));
+    assert.equal(real.window.__trafficClass.class, 'human');
   });
   await test('Missing WebGL debug extension and hardware Mesa renderer are not WG', () => {
     for (const renderer of [null, 'Mesa Intel Graphics', 'ANGLE (Apple M1)', 'Google SwiftShader', 'llvmpipe (LLVM 15)', 'Mesa OffScreen']) {
@@ -300,6 +436,104 @@ export async function runContracts(detectorSource) {
     return record;
   }
   const workerNav = {userAgent: 'Chrome/140.0 Desktop', languages: ['en'], hardwareConcurrency: 8};
+  const chromeBrands = [{brand: 'Chromium'}, {brand: 'Not.A/Brand'}, {brand: 'Google Chrome'}];
+  await test('UB is final-only direct suspicious weight 6, never automated or CA, even without other evidence', () => {
+    for (const userAgentData of [undefined, null, {brands: []}]) {
+      let record;
+      const f = fixture({config: {debug: true, worker: true, suspiciousThreshold: 1000}, modify: objects => {
+        record = fakeWorker(objects); objects.navigator.userAgentData = {brands: chromeBrands};
+      }});
+      record.reply({...workerNav, userAgentData});
+      assert.equal(record.input.ub, true);
+      assert.ok(!Object.keys(record.input).some(key => /brands|userAgentData/.test(key)));
+      assert.ok(Object.values(record.replyData).every(value => typeof value === 'boolean'));
+      assert.equal(record.replyData.b, true);
+      assert.equal(f.window.__trafficClass.class, 'human');
+      assert.ok(!f.window.__trafficClass.signals.includes('UB'));
+      f.emit('keydown', {isTrusted: true}); f.advance(8000);
+      assert.deepEqual([...f.window.__trafficClass.signals], ['UB']);
+      assert.equal(f.window.__trafficClass.class, 'suspicious');
+      assert.equal(f.window.__trafficClass.score, 6);
+      assert.equal(JSON.parse(f.store.get('traffic_class')).lastClass, 'suspicious');
+      assert.equal(fixture({store: f.store, now: 11000}).window.__trafficClass.class, 'human');
+      assert.equal(record.terminated, 1); assert.equal(record.revoked, 1);
+    }
+  });
+  await test('UB ignores unsupported, blocked and malformed API shapes; non-empty worker brands need not match', () => {
+    const cases = [
+      [{brands: chromeBrands}, {}], // WorkerNavigator has no UA-CH API at all.
+      [undefined, {userAgentData: {brands: []}}], // Firefox/Safari main API absent.
+      [{}, {userAgentData: {brands: []}}],
+      [{brands: []}, {userAgentData: {brands: []}}],
+      [{brands: {length: 1}}, {userAgentData: {brands: []}}],
+      ...[[null], [{}], [{brand: ''}]].map(brands => [{brands}, {userAgentData: {brands: []}}]),
+      [{brands: chromeBrands}, {userAgentData: {}}],
+      [{brands: chromeBrands}, {userAgentData: {brands: {length: 0}}}],
+      [{brands: chromeBrands}, {userAgentData: {brands: chromeBrands}}],
+      [{brands: chromeBrands}, {userAgentData: {brands: [{brand: 'Different brand'}]}}],
+      [{brands: chromeBrands}, {get userAgentData() {throw Error('denied');}}]
+    ];
+    for (const [mainData, workerData] of cases) {
+      let record;
+      const f = fixture({config: {debug: true, worker: true}, modify: objects => {
+        record = fakeWorker(objects); objects.navigator.userAgentData = mainData;
+      }});
+      record.reply(Object.defineProperties({...workerNav}, Object.getOwnPropertyDescriptors(workerData)));
+      f.advance(8000);
+      assert.equal(record.replyData.b, false);
+      assert.ok(!f.window.__trafficClass.signals.includes('UB'));
+      assert.equal(f.window.__trafficClass.class, 'human');
+    }
+  });
+  await test('UB shares the worker cap with WK; normal main-only UA switching stays human', () => {
+    for (const emptyBrands of [false, true]) {
+      let record;
+      const f = fixture({config: {debug: true, worker: true}, modify: objects => {
+        record = fakeWorker(objects); objects.navigator.userAgentData = {brands: chromeBrands};
+        objects.navigator.userAgent += ' UA-Switcher';
+      }});
+      record.reply({...workerNav, userAgentData: {brands: emptyBrands ? [] : chromeBrands}});
+      f.emit('keydown', {isTrusted: true}); f.advance(8000);
+      assert.ok(f.window.__trafficClass.signals.includes('WK'));
+      assert.equal(f.window.__trafficClass.score, emptyBrands ? 6 : 2);
+      assert.equal(f.window.__trafficClass.class, emptyBrands ? 'suspicious' : 'human');
+    }
+  });
+  await test('Pixel 7 and iPhone controls with consistent or unsupported UA-CH stay human without HW/UB', () => {
+    for (const [ua, mainData] of [
+      ['Chrome/140.0 Android Mobile Pixel 7', {brands: chromeBrands}],
+      ['Chrome/140.0 Android Mobile Pixel 7', {brands: []}],
+      ['iPhone Version/18.0 Safari/605.1', undefined]
+    ]) {
+      let record;
+      const f = fixture({config: {debug: true, worker: true}, modify: objects => {
+        headlessGeometry(objects); record = fakeWorker(objects);
+        objects.navigator.userAgent = ua; objects.navigator.userAgentData = mainData;
+        objects.navigator.plugins.length = 0;
+      }});
+      record.reply({...workerNav, userAgent: ua, userAgentData: mainData});
+      f.emit('touchstart', {isTrusted: true}); f.advance(8000);
+      assert.equal(f.window.__trafficClass.class, 'human');
+      assert.ok(!f.window.__trafficClass.signals.some(code => ['HW', 'UB', 'PL'].includes(code)));
+    }
+  });
+  await test('UB preserves declared and hard precedence; production output remains class/phase/score only', () => {
+    for (const kind of ['production', 'WD', 'AG', 'HL']) {
+      let record;
+      const f = fixture({config: {debug: false, worker: true}, modify: objects => {
+        record = fakeWorker(objects); objects.navigator.userAgentData = {brands: chromeBrands};
+        if (kind === 'WD') objects.navigator.webdriver = true;
+        if (kind === 'AG') objects.navigator.userAgent = 'ChatGPT-User';
+      }});
+      record.reply({...workerNav, userAgent: kind === 'HL' ? 'HeadlessChrome/140.0' : workerNav.userAgent,
+        userAgentData: {brands: []}});
+      f.emit('keydown', {isTrusted: true}); f.advance(8000);
+      assert.equal(f.window.__trafficClass.class, kind === 'AG' ? 'declared_agent' : kind === 'production' ? 'suspicious' : 'automated');
+      assert.equal(f.window.__trafficClass.score, kind === 'production' ? 6 : 100);
+      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score']);
+      assert.deepEqual(Object.keys(f.window.__trafficClass).sort(), ['class', 'phase', 'score']);
+    }
+  });
   await test('WK is zero when main and worker navigator are consistent', () => {
     let record;
     const f = fixture({modify: objects => {record = fakeWorker(objects); objects.navigator.webdriver = false;}});
@@ -344,6 +578,7 @@ export async function runContracts(detectorSource) {
       let record;
       const f = fixture({modify: objects => {
         record = fakeWorker(objects);
+        objects.navigator.userAgentData = {brands: chromeBrands};
         if (mode === 'constructor') objects.window.Worker = function () {throw Error('CSP blocked');};
       }});
       if (mode === 'error') record.instance.onerror({preventDefault() {}});
@@ -351,6 +586,7 @@ export async function runContracts(detectorSource) {
       if (mode === 'pagehide') f.emit('pagehide'); else f.advance(8000);
       assert.equal(f.window.dataLayer.length, 2);
       assert.ok(!f.window.__trafficClass.signals.includes('WK'));
+      assert.ok(!f.window.__trafficClass.signals.includes('UB'));
       assert.equal(record.revoked, 1);
       if (mode !== 'constructor') assert.equal(record.terminated, 1);
     }
@@ -359,7 +595,7 @@ export async function runContracts(detectorSource) {
     let record;
     const f = fixture({config: {debug: false, worker: true}, modify: objects => {record = fakeWorker(objects);}});
     const late = record.instance.onmessage;
-    f.emit('pagehide'); late({data: {h: true, m: true}});
+    f.emit('pagehide'); late({data: {h: true, m: true, b: true}});
     assert.equal(f.window.dataLayer.length, 2);
     assert.equal(f.window.__trafficClass.class, 'human');
     assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score']);

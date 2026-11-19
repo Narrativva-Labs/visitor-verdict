@@ -2,7 +2,7 @@ import {mkdir, writeFile, readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {startServer} from './server.mjs';
 import {runContracts} from './contracts.mjs';
-import {options, botd, botdCell, flakes, humanClick, cleanPreflight} from './support.mjs';
+import {options, botd, botdCell, flakes, humanClick, cleanPreflight, nativeDeviceContext} from './support.mjs';
 const {repeat} = options();
 const require = createRequire(import.meta.url);
 let chromium, firefox, webkit, devices = {}, stealth, dependencyError, stealthError;
@@ -32,15 +32,15 @@ const scenarios = [
   {name: '10b Human bundled Chromium', engine: chromium, human: true, category: 'clean-human',
     launch: {headless: false, args: quiet}, context: {viewport: {width: 1440, height: 900}}},
   {name: '11 Human Pixel 7', engine: chromium, human: true, category: 'clean-human', touch: true,
-    launch: {headless: false, args: quiet}, context: devices['Pixel 7']},
+    launch: {headless: false, args: quiet}, context: nativeDeviceContext(devices['Pixel 7'])},
   {name: '11b Human Pixel 7 Chrome channel', engine: chromium, human: true, category: 'clean-human', touch: true,
-    launch: {channel: 'chrome', headless: false, args: quiet}, context: devices['Pixel 7']},
+    launch: {channel: 'chrome', headless: false, args: quiet}, context: nativeDeviceContext(devices['Pixel 7'])},
   {name: '12 iPhone WebKit limitation', category: 'limitation', noteOnly: true,
     note: 'Unpatched Playwright WebKit cannot provide a clean non-WebDriver iPhone control; no webdriver mask applied.'},
   {name: 'S10 Stealth bot behaving humanly, desktop', engine: stealth, human: true, informational: true,
     category: 'stealth bot behaving humanly', launch: {headless: false, args: quiet}, context: {viewport: {width: 1440, height: 900}}},
   {name: 'S11 Stealth bot behaving humanly, Pixel 7', engine: stealth, human: true, informational: true,
-    category: 'stealth bot behaving humanly', touch: true, launch: {headless: true, args: quiet}, context: devices['Pixel 7']}
+    category: 'stealth bot behaving humanly', touch: true, launch: {headless: true, args: quiet}, context: nativeDeviceContext(devices['Pixel 7'])}
 
 ];
 const catalog = {
@@ -51,6 +51,7 @@ const catalog = {
   CA: 'Direct hard/declaration provenance from previous document; consumed once, second clean page human (100, inherited)',
   G0: 'Both dimensions zero, visible focused top-level only; rechecked final (1, geometry)',
   GS: '800×600 screen or matching 1280×720 screen/viewport (1, geometry)',
+  HW: 'Focused visible desktop: outer=inner=screen and full available screen, excluding fullscreen/standalone (2, benign geometry)',
   LA: 'Empty languages and all language fallbacks absent (1, language)',
   PL: 'Desktop Chromium empty plugins; excludes mobile/WebView/PDF disabled (1, plugins)',
   WG: 'Opt-in WebGL: unavailable WebGL or exact software-renderer family; missing debug extension alone ignored (1, graphics)',
@@ -61,6 +62,7 @@ const catalog = {
   SY: 'Synthetic pointer input without any trusted input modality (2, interaction)',
   TP: 'Positive one-event mouse jump over 200px, click within 600ms at that point, explicit mouse pointerdown (3, pointer)',
   WK: 'Opt-in Worker: supported main/worker navigator mismatch; unknown ignored (2, worker)',
+  UB: 'Opt-in Worker: non-empty main UA-CH brands but exposed worker API has no value or empty brands (6, worker; direct suspicious, never hard)',
   TR: 'Final-only repeat-TP weight 2 in pointer family, capped at 3 with TP; never a direct class override; decays on any trusted-input document without TP'
 };
 const results = [];
@@ -212,10 +214,10 @@ try {
     results.map(r => `| ${[`${r.name} (run ${r.iteration})`, r.category, (r.signals || []).join(', '), r.initial, r.final, r.expected, botdCell(r.botd), r.status].map(cell).join(' | ')} |`).join('\n') +
     '\n\nFlaky scenarios: ' + (repeat < 2 ? 'not assessed (single run)' : report.flakiness.filter(r => r.flaky).map(r => r.name).join(', ') || 'none') + '\n\nHuman controls require initial and final human on **every** page. JSON contains all page events. Each last page stays 10 seconds.\n\n' +
     results.filter(r => r.notes.length).map(r => `- **${r.name}:** ${r.notes.map(cell).join(' ')}`).join('\n') +
-    '\n\nPolicy: threshold 6 AND at least 3 positive-weight families AND either TP/TR/SY/WK or two distinct environment families plus behaviour. Geometry capped at 1, graphics at 1, NI/SY at 2. Hard/declared/inherited score is sentinel 100. Fast navigation plus inactivity alone scores 5 and remains human. TR contributes 2 in the pointer family, capped at 3 together with TP, only at final. It uses the ordinary score/family gate; tpPages alone never starts a document suspicious. Any trusted input without TP decays history by one. Assistive warp-on-click can fire TP/TR while remaining human when navigation is slow and keyboard input prevents NI. FN+NI+WG and FN+NI+GS now remain human. Scenarios 6/7 and extended 25 may change from suspicious to human when they have only one environment family plus fast navigation and inactivity; GS+NI+FN+WK still qualifies. Locator scenarios with no recorded jump, a first movement with zero deltas, or nearby targets can now slip through intentionally. WebGL/Worker default off in the library; test site and GTM example explicitly enable both. Browser re-runs are required to establish actual changed outcomes.\n\n## What each signal catches\n\n' + Object.entries(catalog).map(([code, text]) => `- \`${code}\`: ${text}. Observed: ${fired.has(code) ? 'yes' : 'no'}.`).join('\n') +
+    '\n\nPolicy: UB directly yields suspicious at final (worker weight6, never hard/CA); failed/unsupported worker probes are unknown. Other soft evidence requires threshold 6 AND at least 3 positive-weight families AND either TP/TR/SY/WK or two distinct environment families plus behaviour. Geometry capped at 2 (HW2; G0/GS1), worker at 6 (UB6/WK2), graphics at 1, NI/SY at 2. HW is benign: HW+FN+NI remains human; fullscreen/standalone/mobile windows are excluded. Hard/declared/inherited score is sentinel 100. Fast navigation plus inactivity alone scores 5 and remains human. TR contributes 2 in the pointer family, capped at 3 together with TP, only at final. It uses the ordinary score/family gate; tpPages alone never starts a document suspicious. Any trusted input without TP decays history by one. Assistive warp-on-click can fire TP/TR while remaining human when navigation is slow and keyboard input prevents NI. FN+NI+WG and FN+NI+GS now remain human. Scenarios 6/7 and extended 25 may change from suspicious to human when they have only one environment family plus fast navigation and inactivity; GS+NI+FN+WK still qualifies. Locator scenarios with no recorded jump, a first movement with zero deltas, or nearby targets can now slip through intentionally. WebGL/Worker default off in the library; test site and GTM example explicitly enable both. Browser re-runs are required to establish actual changed outcomes.\n\n## What each signal catches\n\n' + Object.entries(catalog).map(([code, text]) => `- \`${code}\`: ${text}. Observed: ${fired.has(code) ? 'yes' : 'no'}.`).join('\n') +
     '\n\nOnly completed scenarios contribute observations; SKIP means unavailable setup/launch, never a detection PASS. ERROR means execution did not complete.\n\nNever fired in natural scenarios (injected contract checks excluded): ' + never.map(s => '`' + s + '`').join(', ') + '.\n\n' +
     '## Contract checks\n\n' + contracts.map(c => `- ${c.status}: ${c.name}${c.error ? ' — ' + c.error : ''}`).join('\n') +
-    '\n\n## Known limits\n\n- Real logged-in browsers operated by agents can look human. No identity, fingerprint, or certainty about humanity is inferred.\n- Fetch/curl and crawlers that do not execute JavaScript are invisible to this detector and client GA4.\n- Clean Chromium/Chrome controls have no stealth or webdriver init patches. Mobile controls are emulation, not physical devices. Unpatched WebKit remains an explicit limitation note. Stealth human-like cases are informational, not human controls.\n- Default dimensions, software WebGL, missing APIs and inactivity are weak evidence. Full 8 seconds visible are required for NI; early pagehide never manufactures inactivity. Reload/back-forward navigation does not inflate timestamps; BFCache retains one final per document.\n- Pagehide final events may not reach GA4 before unload; blocked storage removes navigation/carry signals.\n- Exact Playwright markers are feature-dependent; natural runtime coverage remains unverified when scenarios are skipped. The Puppeteer sourceURL label is not probed as a global. Current default runtimes may expose none.\n- Test site alone posts debug events to the loopback /log sink; production detector makes no requests.\n';
+    '\n\n## Known limits\n\n- Real logged-in browsers operated by agents can look human. No identity, fingerprint, or certainty about humanity is inferred.\n- Fetch/curl and crawlers that do not execute JavaScript are invisible to this detector and client GA4.\n- Clean Chromium/Chrome controls have no stealth or webdriver init patches. Mobile controls emulate viewport/screen, scale and touch with the native browser UA, not a CDP UA override or physical devices. Native desktop UA means mobile-UA-specific detector branches are not validated by these controls. Unpatched WebKit remains an explicit limitation note. Stealth human-like cases are informational, not human controls.\n- Default dimensions, software WebGL, missing APIs and inactivity are weak evidence. Full 8 seconds visible are required for NI; early pagehide never manufactures inactivity. Reload/back-forward navigation does not inflate timestamps; BFCache retains one final per document.\n- Pagehide final events may not reach GA4 before unload; blocked storage removes navigation/carry signals.\n- Exact Playwright markers are feature-dependent; natural runtime coverage remains unverified when scenarios are skipped. The Puppeteer sourceURL label is not probed as a global. Current default runtimes may expose none.\n- Test site alone posts debug events to the loopback /log sink; production detector makes no requests.\n';
   await writeFile(new URL('results/report.md', import.meta.url), md);
   console.log(`Report written. Never fired: ${never.join(', ')}`);
   if (results.some(r => (!r.noteOnly && !['PASS', 'INFO'].includes(r.status)) || r.botd?.status === 'ERROR') || contracts.some(c => c.status !== 'PASS') || report.flakiness.some(f => f.flaky && !f.informational)) process.exitCode = 1;

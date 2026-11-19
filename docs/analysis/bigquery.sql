@@ -2,6 +2,7 @@
 -- Read-only against the export; creates temporary tables and returns A--F.
 -- Dataset identifiers cannot be bound parameters, hence validated dynamic SQL.
 DECLARE export_dataset STRING DEFAULT 'your-project.analytics_123456789';
+DECLARE web_stream_id STRING DEFAULT '1234567890'; -- REQUIRED: one GA4 web stream ID
 DECLARE start_date DATE DEFAULT DATE '2026-11-01';
 DECLARE end_date DATE DEFAULT DATE '2026-11-17'; -- inclusive, completed daily tables
 DECLARE property_timezone STRING DEFAULT 'Europe/Prague'; -- match GA4 property
@@ -20,19 +21,30 @@ DECLARE test_windows ARRAY<STRUCT<start_ts TIMESTAMP, end_ts TIMESTAMP>> DEFAULT
 ASSERT REGEXP_CONTAINS(export_dataset, r'^[A-Za-z0-9_-]+\.[A-Za-z0-9_]+$')
   AS 'Use project.dataset without backticks';
 ASSERT start_date <= end_date AND padding_days >= 0 AS 'Invalid date range/padding';
+ASSERT web_stream_id IS NOT NULL AND web_stream_id != '' AS 'Set one web stream ID';
 ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(test_windows) WHERE start_ts IS NULL
   OR end_ts IS NULL OR start_ts >= end_ts) AS 'Invalid test window';
 
 -- Semantics:
 -- * Session = the existing (user_pseudo_id, ga_session_id) pair; never coalesce
 --   missing IDs to a shared value, invent an ID or join pre-consent pings later.
--- * Session class = latest valid FINAL detector event across observed documents;
---   fallback: latest initial/unphased detector event, then latest event parameter.
---   User properties are NOT a session fallback: they can persist from older visits.
---   This is a retrospective analysis label, not the class at conversion time.
--- * A is an EVENT-label distribution (event parameter first, user property fallback
---   explicitly marked). A user/session can appear in multiple classes and days.
--- * B--F assign each session once, to the local date of ga_session_id (epoch seconds).
+-- * Flags use valid event parameters on ANY event, including the final detector
+--   event. User properties are last observed class, never exclusion evidence.
+-- * first_class/last_class follow export order, not class precedence. Exclusion
+--   uses ANY evidence across the session, so later human cannot erase automation.
+-- * class_at_first_conversion means first purchase (not add_to_cart): its own
+--   event parameter, otherwise latest preceding parameter in the same session.
+--   No future label is backfilled. Exact export-order ties are ambiguous.
+-- * GA4 event tags must map traffic_class to VV - current class at fire time.
+--   Automatic events use shared settings captured at Google tag Initialization:
+--   with storage fallback, labels may be the previous page's class from page 2.
+--   First-session page_view is typically unlabelled; timing fields describe
+--   exported labels, not guaranteed current-page evidence. Sites without GA4
+--   event tags rely on the final detector event plus last-observed user property;
+--   the property is never used here as a session-exclusion fallback.
+-- * A counts event parameters only; missing remains unknown.
+-- * B--F1 use the local date of ga_session_id (epoch seconds). Cohorts overlap;
+--   each session contributes once within each applicable cohort.
 -- * Missing IDs still contribute events in A/F2, never fabricated users/sessions.
 --   Null IDs may occur in cookieless pings, but are not proof of consent denial.
 -- * Daily tables only: no intraday double counting. Re-run recent dates after
@@ -55,6 +67,7 @@ SELECT
   PARSE_DATE('%%Y%%m%%d', event_date) AS day,
   event_timestamp, event_name, user_pseudo_id,
   batch_page_id, batch_ordering_id, batch_event_index,
+  COALESCE(ecommerce.purchase_revenue_in_usd, 0) AS purchase_revenue_usd,
   (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
    FROM UNNEST(event_params) WHERE key = 'ga_session_id' LIMIT 1) AS ga_session_id,
   (SELECT value.string_value FROM UNNEST(event_params)
@@ -63,10 +76,6 @@ SELECT
    WHERE key = 'traffic_phase' LIMIT 1) AS phase,
   (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
    FROM UNNEST(event_params) WHERE key = 'traffic_score' LIMIT 1) AS traffic_score,
-  (SELECT value.string_value FROM UNNEST(user_properties)
-   WHERE key = 'traffic_class' LIMIT 1) AS property_class_raw,
-  (SELECT value.set_timestamp_micros FROM UNNEST(user_properties)
-   WHERE key = 'traffic_class' LIMIT 1) AS property_set_micros,
   COALESCE((SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
    FROM UNNEST(event_params) WHERE key = 'engagement_time_msec' LIMIT 1), 0)
     AS engagement_ms,
@@ -90,14 +99,14 @@ SELECT
 FROM `%s.events_*`
 WHERE _TABLE_SUFFIX BETWEEN @scan_start AND @scan_end
   AND REGEXP_CONTAINS(_TABLE_SUFFIX, r'^[0-9]{8}$')
-  AND platform = 'WEB'
+  AND platform = 'WEB' AND stream_id = @web_stream_id
 ''', export_dataset)
 USING FORMAT_DATE('%Y%m%d', DATE_SUB(start_date, INTERVAL padding_days DAY)) AS scan_start,
-      FORMAT_DATE('%Y%m%d', DATE_ADD(end_date, INTERVAL padding_days DAY)) AS scan_end;
+      FORMAT_DATE('%Y%m%d', DATE_ADD(end_date, INTERVAL padding_days DAY)) AS scan_end,
+      web_stream_id AS web_stream_id;
 
 CREATE TEMP TABLE normalized AS
 SELECT *, valid_class(param_class_raw) AS param_class,
-  valid_class(property_class_raw) AS property_class,
   EXISTS (SELECT 1 FROM UNNEST(test_windows) w
     WHERE TIMESTAMP_MICROS(event_timestamp) >= w.start_ts
       AND TIMESTAMP_MICROS(event_timestamp) < w.end_ts) AS in_test_window
@@ -119,26 +128,31 @@ WHERE CASE WHEN n.user_pseudo_id IS NOT NULL AND n.ga_session_id IS NOT NULL
   THEN NOT s.exclude_test AND (city_filter IS NULL OR s.first_city = city_filter)
   ELSE NOT n.in_test_window AND (city_filter IS NULL OR n.city = city_filter) END;
 
+-- Forward fill only within an identifiable session. The purchase's own valid
+-- parameter takes precedence because CURRENT ROW is included. No user property.
+CREATE TEMP TABLE ordered_events AS
+SELECT *, LAST_VALUE(param_class IGNORE NULLS) OVER (
+  PARTITION BY user_pseudo_id, ga_session_id
+  ORDER BY event_timestamp, batch_page_id, batch_ordering_id, batch_event_index
+  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS class_as_of_event
+FROM events
+WHERE user_pseudo_id IS NOT NULL AND ga_session_id IS NOT NULL;
+
 CREATE TEMP TABLE session_rollup AS
 SELECT user_pseudo_id, ga_session_id,
   DATE(TIMESTAMP_SECONDS(ga_session_id), property_timezone) AS session_day,
-  COALESCE(
-    ARRAY_AGG(IF(event_name = 'traffic_class' AND phase = 'final', param_class, NULL)
-      IGNORE NULLS ORDER BY event_timestamp DESC, batch_page_id DESC,
-      batch_ordering_id DESC, batch_event_index DESC LIMIT 1)[SAFE_OFFSET(0)],
-    ARRAY_AGG(IF(event_name = 'traffic_class', param_class, NULL)
-      IGNORE NULLS ORDER BY event_timestamp DESC, batch_page_id DESC,
-      batch_ordering_id DESC, batch_event_index DESC LIMIT 1)[SAFE_OFFSET(0)],
-    ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp DESC,
-      batch_page_id DESC, batch_ordering_id DESC, batch_event_index DESC
-      LIMIT 1)[SAFE_OFFSET(0)], 'unclassified') AS session_class,
-  CASE
-    WHEN COUNTIF(event_name = 'traffic_class' AND phase = 'final'
-      AND param_class IS NOT NULL) > 0 THEN 'final_detector'
-    WHEN COUNTIF(event_name = 'traffic_class' AND param_class IS NOT NULL) > 0
-      THEN 'initial_or_unphased_detector'
-    WHEN COUNTIF(param_class IS NOT NULL) > 0 THEN 'other_event_parameter'
-    ELSE 'unclassified' END AS class_basis,
+  COUNTIF(param_class = 'automated') > 0 AS any_automated,
+  COUNTIF(param_class = 'declared_agent') > 0 AS any_declared,
+  COUNTIF(param_class = 'suspicious') > 0 AS any_suspicious,
+  COUNTIF(param_class IS NOT NULL) > 0 AS has_class,
+  ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp, batch_page_id,
+    batch_ordering_id, batch_event_index LIMIT 1)[SAFE_OFFSET(0)] AS first_class,
+  ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp DESC, batch_page_id DESC,
+    batch_ordering_id DESC, batch_event_index DESC LIMIT 1)[SAFE_OFFSET(0)] AS last_class,
+  ARRAY_AGG(IF(event_name = 'purchase', STRUCT(class_as_of_event AS class), NULL)
+    IGNORE NULLS ORDER BY event_timestamp, batch_page_id, batch_ordering_id,
+    batch_event_index LIMIT 1)[SAFE_OFFSET(0)].class AS class_at_first_conversion,
+  SUM(IF(event_name = 'purchase', purchase_revenue_usd, 0)) AS purchase_revenue_usd,
   COUNTIF(event_name = 'traffic_class') > 0 AS has_detector_event,
   COUNTIF(event_name = 'traffic_class' AND phase = 'final') > 0 AS has_final_event,
   LOGICAL_OR(is_engaged) AS engaged,
@@ -160,8 +174,7 @@ SELECT user_pseudo_id, ga_session_id,
   ARRAY_AGG(STRUCT(device_category, browser, operating_system, country, city,
     referrer_host) ORDER BY event_timestamp, batch_page_id, batch_ordering_id,
     batch_event_index LIMIT 1)[OFFSET(0)] AS first_observed
-FROM events
-WHERE user_pseudo_id IS NOT NULL AND ga_session_id IS NOT NULL
+FROM ordered_events
 GROUP BY user_pseudo_id, ga_session_id;
 
 CREATE TEMP TABLE sessions AS
@@ -183,113 +196,98 @@ SELECT *,
 FROM session_rollup
 WHERE session_day BETWEEN start_date AND end_date;
 
--- A. Daily observed class distribution. Counts are distinct within each row,
--- NOT additive across classes/bases/days. Users = pseudo IDs, not GA4 Active users.
--- Explicit property fallback shows coverage but can be stale. No backfilling
--- earlier events from a later final class. Events missing both labels stay unknown.
-WITH labeled AS (
-SELECT *, COALESCE(param_class, property_class, 'unclassified') AS event_class,
-  CASE WHEN param_class IS NOT NULL THEN 'event_parameter'
-       WHEN property_class IS NOT NULL THEN 'user_property_fallback'
-       ELSE 'missing' END AS label_basis
-FROM events WHERE day BETWEEN start_date AND end_date
-), ranked AS (
-SELECT *, ROW_NUMBER() OVER (
-  PARTITION BY day, event_class, label_basis, user_pseudo_id, ga_session_id
-  ORDER BY event_timestamp) AS session_event_rank
-FROM labeled
-)
-SELECT day, event_class, label_basis,
-  COUNT(*) AS events, COUNT(DISTINCT user_pseudo_id) AS observed_users,
-  COUNTIF(user_pseudo_id IS NOT NULL AND ga_session_id IS NOT NULL
-    AND session_event_rank = 1) AS observed_sessions,
-  COUNTIF(user_pseudo_id IS NULL) AS events_without_user_id,
+-- One row per session already contains metrics BEFORE any cohort expansion or
+-- reporting joins. Never join raw event rows to sessions and re-sum these metrics.
+-- Cohorts overlap intentionally: do not sum them into an all-traffic total.
+CREATE TEMP TABLE cohort_sessions AS
+SELECT s.*, cohort
+FROM sessions s CROSS JOIN UNNEST([
+  'All sessions',
+  IF(NOT any_automated AND NOT any_declared,
+     'Sessions excluding detected automation', NULL),
+  IF(NOT any_automated AND NOT any_declared AND NOT any_suspicious,
+     'Stricter sensitivity view', NULL),
+  IF(has_class AND NOT any_automated AND NOT any_declared AND NOT any_suspicious,
+     'Observed human-only cohort (diagnostic)', NULL),
+  IF(NOT any_automated AND NOT any_declared AND any_suspicious,
+     'Suspicious within retained sessions', NULL),
+  IF(any_automated OR any_declared, 'Excluded detected automation', NULL)
+]) AS cohort WHERE cohort IS NOT NULL;
+
+-- A. Event-label coverage; user property is deliberately not a fallback.
+SELECT day, COALESCE(param_class, 'unclassified') AS event_class,
+  COUNT(*) AS events,
   COUNTIF(user_pseudo_id IS NULL OR ga_session_id IS NULL) AS unjoinable_events
-FROM ranked
-GROUP BY day, event_class, label_basis ORDER BY day, event_class, label_basis;
+FROM events WHERE day BETWEEN start_date AND end_date
+GROUP BY day, event_class ORDER BY day, event_class;
 
--- B. One retrospective label per session; final coverage/fallback kept visible.
--- Engagement is SUM of exported increments, not wall-clock duration. Engaged
--- sessions use exported session_engaged, not a reconstructed ten-second rule.
--- Named conversions are raw event counts even if not marked as GA4 key events.
--- Purchase counts are not transaction-ID deduplicated or refund-adjusted.
-SELECT session_day, session_class, class_basis, COUNT(*) AS sessions,
-  COUNTIF(engaged) AS engaged_sessions,
-  SAFE_DIVIDE(COUNTIF(engaged), COUNT(*)) AS engagement_rate,
-  SUM(engagement_ms) AS engagement_time_msec,
-  SAFE_DIVIDE(SUM(engagement_ms), COUNT(*)) AS engagement_ms_per_session,
-  SUM(pageviews) AS pageviews,
-  SAFE_DIVIDE(SUM(pageviews), COUNT(*)) AS pageviews_per_session,
-  SUM(purchases) AS purchase_events, SUM(leads) AS generate_lead_events,
-  SUM(carts) AS add_to_cart_events,
+-- B. Headline sessions excluding detected automation, alongside baseline,
+-- sensitivity and diagnostics. Purchase conversion uses the SAME cohort.
+-- Revenue is exported USD purchase revenue, not transaction-deduplicated or
+-- refund-adjusted. Excluded revenue is its own cohort, not silently discarded.
+SELECT session_day, cohort, COUNT(*) AS sessions,
   COUNTIF(purchases > 0) AS purchasing_sessions,
-  COUNTIF(leads > 0) AS lead_sessions, COUNTIF(carts > 0) AS cart_sessions
-FROM sessions GROUP BY session_day, session_class, class_basis
-ORDER BY session_day, session_class, class_basis;
-
--- C. Source / medium / exported session default channel; AI referral annotation.
--- Missing attribution stays unknown, never inferred as Direct. A human clicking
--- an assistant link can be human; declared_agent need not have an AI referrer.
-SELECT session_day, session_class, source, medium, session_default_channel,
-  source_basis, ai_referral_annotation, COUNT(*) AS sessions,
+  SAFE_DIVIDE(COUNTIF(purchases > 0), COUNT(*)) AS purchase_conversion_rate,
+  SUM(purchase_revenue_usd) AS purchase_revenue_usd,
+  COUNTIF(has_class) AS sessions_with_class,
+  COUNTIF(NOT has_class) AS sessions_without_class,
+  SAFE_DIVIDE(COUNTIF(has_class), COUNT(*)) AS class_coverage,
+  COUNTIF(any_suspicious) AS suspicious_sessions,
   COUNTIF(engaged) AS engaged_sessions,
-  COUNTIF(purchases > 0 OR leads > 0 OR carts > 0) AS converting_sessions
-FROM sessions GROUP BY session_day, session_class, source, medium,
-  session_default_channel, source_basis, ai_referral_annotation
-ORDER BY session_day, sessions DESC;
+  SUM(engagement_ms) AS engagement_time_msec, SUM(pageviews) AS pageviews,
+  COUNTIF(leads > 0) AS lead_sessions, COUNTIF(carts > 0) AS cart_sessions
+FROM cohort_sessions GROUP BY session_day, cohort ORDER BY session_day, cohort;
 
--- D. Device / browser / OS / geo: first observed event per session.
--- Roll up dimensions as needed; geo reflects GA4 estimates, not verified location.
-SELECT session_day, session_class, first_observed.device_category AS device_category,
+-- C. Acquisition at session grain; referrals annotate attribution, not identity.
+SELECT session_day, cohort, source, medium, session_default_channel,
+  source_basis, ai_referral_annotation, COUNT(*) AS sessions,
+  COUNTIF(purchases > 0) AS purchasing_sessions,
+  SAFE_DIVIDE(COUNTIF(purchases > 0), COUNT(*)) AS purchase_conversion_rate,
+  SUM(purchase_revenue_usd) AS purchase_revenue_usd
+FROM cohort_sessions GROUP BY session_day, cohort, source, medium,
+  session_default_channel, source_basis, ai_referral_annotation;
+
+-- D. First observed environment; geography is not automation evidence.
+SELECT session_day, cohort, first_observed.device_category AS device_category,
   first_observed.browser AS browser, first_observed.operating_system AS operating_system,
   first_observed.country AS country, first_observed.city AS city,
-  COUNT(*) AS sessions, COUNTIF(engaged) AS engaged_sessions,
-  COUNTIF(purchases > 0 OR leads > 0 OR carts > 0) AS converting_sessions
-FROM sessions GROUP BY session_day, session_class, device_category, browser,
-  operating_system, country, city ORDER BY session_day, sessions DESC;
+  COUNT(*) AS sessions, COUNTIF(purchases > 0) AS purchasing_sessions,
+  SUM(purchase_revenue_usd) AS purchase_revenue_usd
+FROM cohort_sessions GROUP BY session_day, cohort, device_category, browser,
+  operating_system, country, city;
 
--- E. Potential false positives: aggregate review queue, no exported session IDs.
--- Bots can convert and engage; a conversion/long engagement is review evidence,
--- NOT ground truth. Also inspect timing: conversion may precede classification.
-SELECT session_day, session_class, class_basis, source, medium,
-  first_observed.device_category AS device_category, COUNT(*) AS review_sessions,
-  COUNTIF(purchases > 0 OR leads > 0 OR carts > 0) AS converting_sessions,
+-- E. Evidence and conversion timing diagnostics, not proof of false positives.
+-- Exports no session identifiers. NULL first-purchase class stays unknown;
+-- sessions without a purchase can also have NULL, so keep purchasing_sessions.
+SELECT session_day, any_automated, any_declared, any_suspicious, has_class,
+  first_class, last_class, class_at_first_conversion, COUNT(*) AS sessions,
+  COUNTIF(purchases > 0) AS purchasing_sessions,
   COUNTIF(engagement_ms >= long_engagement_ms) AS long_engagement_sessions,
-  SUM(engagement_ms) AS engagement_time_msec,
-  SUM(purchases) AS purchase_events, SUM(leads) AS generate_lead_events,
-  SUM(carts) AS add_to_cart_events
-FROM sessions
-WHERE session_class IN ('suspicious', 'automated')
-  AND (purchases > 0 OR leads > 0 OR carts > 0 OR engagement_ms >= long_engagement_ms)
-GROUP BY session_day, session_class, class_basis, source, medium, device_category
-ORDER BY review_sessions DESC;
+  SUM(purchase_revenue_usd) AS purchase_revenue_usd
+FROM sessions GROUP BY session_day, any_automated, any_declared, any_suspicious,
+  has_class, first_class, last_class, class_at_first_conversion;
 
--- F1. Detector coverage in OBSERVED, joinable GA4 sessions. This is independent
--- of whether page_view/other events carry traffic_class or a user property exists.
-SELECT session_day, has_detector_event, has_final_event, COUNT(*) AS sessions,
-  SUM(events) AS events, COUNTIF(engaged) AS engaged_sessions,
-  SUM(engagement_ms) AS engagement_time_msec, SUM(pageviews) AS pageviews,
-  COUNTIF(purchases > 0 OR leads > 0 OR carts > 0) AS converting_sessions
-FROM sessions GROUP BY session_day, has_detector_event, has_final_event
-ORDER BY session_day, has_detector_event, has_final_event;
+-- F1. Coverage = ANY valid class parameter, not merely detector-event presence.
+SELECT session_day, has_class, has_detector_event, has_final_event,
+  COUNT(*) AS sessions, COUNTIF(purchases > 0) AS purchasing_sessions
+FROM sessions GROUP BY session_day, has_class, has_detector_event, has_final_event;
 
--- F2. Separate event-level coverage for pings that cannot form sessions. Do not
--- claim that other events on such pings belong to a visit with/without a detector.
+-- F2. Missing-ID / cookieless pings separately, at event grain only. Missing IDs
+-- do not prove consent denial. NEVER join via IP/UA, invent IDs, or merge into
+-- session denominators. Revenue here is separate from joinable-session revenue.
 SELECT day, analytics_storage, user_pseudo_id IS NULL AS missing_user_id,
   ga_session_id IS NULL AS missing_session_id, COUNT(*) AS events,
   COUNTIF(event_name = 'traffic_class') AS detector_events,
-  COUNTIF(event_name = 'traffic_class' AND phase = 'final') AS final_detector_events,
-  COUNTIF(param_class IS NOT NULL) AS events_with_class_parameter
+  COUNTIF(param_class IS NOT NULL) AS events_with_class_parameter,
+  COUNTIF(event_name = 'purchase') AS purchase_events,
+  SUM(IF(event_name = 'purchase', purchase_revenue_usd, 0)) AS purchase_revenue_usd
 FROM events
 WHERE day BETWEEN start_date AND end_date
   AND (user_pseudo_id IS NULL OR ga_session_id IS NULL)
-GROUP BY day, analytics_storage, missing_user_id, missing_session_id
-ORDER BY day, analytics_storage;
+GROUP BY day, analytics_storage, missing_user_id, missing_session_id;
 
--- Coverage limits: a JS-less fetch normally sends NO GA4 event, so it cannot
--- appear even in F1's 'no detector' cohort. Use separately governed server/CDN
--- aggregates to assess that blind spot. No detector event can also mean blocked
--- tags, consent configuration, failed pagehide delivery, or a deployment gap.
--- Short visits are not automatically missing: final fires on pagehide OR after
--- 8 seconds VISIBLE time; GA4 delivery is separate and not guaranteed.
--- BigQuery raw observed counts need not match GA4 modeled/thresholded reports.
+-- JS-less fetches usually send no GA4 event at all. Blocked tags, deployment gaps
+-- and pagehide loss also limit coverage. Scan padding is finite; first/last and
+-- flags are provisional for open/boundary sessions. Increase padding if needed.
+-- Rebuild recent dates for late arrivals; daily export is observed, not modeled.
+-- A rise in CR after exclusions is arithmetic, not evidence of marketing lift.

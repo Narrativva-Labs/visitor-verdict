@@ -82,13 +82,13 @@
       (n.maxTouchPoints > 1 && /Macintosh/i.test(ua));
     var embedded = /; wv\)|WebView|FBAN|FBAV|Instagram/i.test(ua);
     var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
-    var chromium = false, brands = n.userAgentData && n.userAgentData.brands, i;
+    var chromium = false, hasBrands = false, brands = n.userAgentData && n.userAgentData.brands, i;
     var events = 'mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin'.split(' ');
     // Bounded transient state only: no trajectories, rates or input objects retained.
     var move = null, clicked = null, pointerKind = '', downAt = 0, teleport = false;
     var tpPages = 0, pageTime = Math.floor(Date.now() / 100) * 100;
     var classSnapshot = null, tpSnapshot = 0;
-    var worker = null, workerURL = null, workerTimer, workerMismatch = false, workerHeadless = false;
+    var worker = null, workerURL = null, workerTimer, workerMismatch = false, workerHeadless = false, workerBrands = false;
     var urlAPI = w.URL || w.webkitURL;
     function stopWorker() {
       w.clearTimeout(workerTimer);
@@ -109,13 +109,17 @@
         if (!w.Worker || !w.Blob || !urlAPI || !urlAPI.createObjectURL) { return; }
         // Main values travel only to this local worker; its reply contains booleans.
         // No OffscreenCanvas probe: avoid another graphics context and its cost.
-        var code = 'onmessage=function(e){var a=e.data,n=navigator,m=false;' +
+        var code = 'onmessage=function(e){var a=e.data,n=navigator,m=false,b=false;' +
           'try{if(a.ua&&n.userAgent&&a.ua!==n.userAgent)m=true;' +
           'if(typeof a.wd==="boolean"&&typeof n.webdriver==="boolean"&&a.wd!==n.webdriver)m=true;' +
           'if(a.la&&a.la.length&&n.languages&&n.languages.length&&a.la.join("|")!==Array.prototype.join.call(n.languages,"|"))m=true;' +
           'if(a.hc>0&&n.hardwareConcurrency>0&&a.hc!==n.hardwareConcurrency)m=true;' +
-          'postMessage({m:m,h:/(?:^|[^A-Za-z0-9_-])HeadlessChrome(?=$|[^A-Za-z0-9_-])/i.test(n.userAgent||"")});' +
-          '}catch(x){postMessage({m:false,h:false});}close();}';
+          // An absent API (Firefox/Safari), malformed shape or denied getter is
+          // unknown. An exposed API with no value/brands contradicts main UA-CH.
+          'try{if(a.ub&&"userAgentData" in n){var u=n.userAgentData;' +
+          'b=u==null||(Object.prototype.toString.call(u.brands)==="[object Array]"&&u.brands.length===0);}}catch(y){}' +
+          'postMessage({m:m,b:b,h:/(?:^|[^A-Za-z0-9_-])HeadlessChrome(?=$|[^A-Za-z0-9_-])/i.test(n.userAgent||"")});' +
+          '}catch(x){postMessage({m:false,b:false,h:false});}close();}';
         workerURL = urlAPI.createObjectURL(new w.Blob([code], {type: 'text/javascript'}));
         worker = new w.Worker(workerURL);
         worker.onmessage = function (event) {
@@ -123,6 +127,7 @@
             if (!done && event.data) {
               workerMismatch = event.data.m === true;
               workerHeadless = event.data.h === true;
+              workerBrands = event.data.b === true;
             }
           } finally { stopWorker(); }
         };
@@ -131,6 +136,7 @@
         };
         workerTimer = w.setTimeout(stopWorker, Math.min(1500, config.idleMs));
         worker.postMessage({ua: n.userAgent || '', wd: n.webdriver,
+          ub: hasBrands,
           la: n.languages ? Array.prototype.slice.call(n.languages) : null, hc: n.hardwareConcurrency});
         ready = true;
       } catch (ignore) {} finally { if (!ready) { stopWorker(); } }
@@ -191,11 +197,20 @@
     }
     function geometry() {
       try {
-        if (d.visibilityState !== 'hidden' && d.hasFocus() && w.top === w &&
-            ((w.screen.width === 0 && w.screen.height === 0) ||
-            (w.innerWidth === 0 && w.innerHeight === 0) || (w.outerWidth === 0 && w.outerHeight === 0))) {
+        if (d.visibilityState === 'hidden' || !d.hasFocus() || w.top !== w) { return; }
+        if ((w.screen.width === 0 && w.screen.height === 0) ||
+            (w.innerWidth === 0 && w.innerHeight === 0) || (w.outerWidth === 0 && w.outerHeight === 0)) {
           add('G0', 1, 'geometry');
         }
+        // F11, kiosk/PWA windows and mobile can share these dimensions. HW is
+        // benign geometry evidence: it never bypasses the corroboration gate.
+        if (!mobile && !embedded && d.visibilityState === 'visible' && w.innerWidth > 0 && w.innerHeight > 0 &&
+            w.outerWidth === w.innerWidth && w.outerHeight === w.innerHeight &&
+            w.screen.width === w.innerWidth && w.screen.height === w.innerHeight &&
+            w.screen.availWidth === w.screen.width && w.screen.availHeight === w.screen.height &&
+            d.fullscreenElement === null && typeof w.matchMedia === 'function' &&
+            w.matchMedia('(display-mode: fullscreen)').matches === false &&
+            w.matchMedia('(display-mode: standalone)').matches === false) { add('HW', 2, 'geometry'); }
       } catch (ignore) {}
     }
     function boundedTP(value) {
@@ -260,7 +275,8 @@
       for (family in families) {
         if (/^(geometry|language|plugins|graphics|chrome|permissions)$/.test(family)) { env++; }
       }
-      return score >= config.suspiciousThreshold && Object.keys(families).length >= 3 &&
+      // UB is a direct suspicious rule, never hard proof or carry provenance.
+      return workerBrands || score >= config.suspiciousThreshold && Object.keys(families).length >= 3 &&
         (families.pointer || signals.indexOf('SY') !== -1 || families.worker ||
         (env >= 2 && (families.interaction || families.navigation)));
     }
@@ -290,8 +306,10 @@
     }
     if (n.webdriver === true) { add('WD', 100); }
     if (bounded('HeadlessChrome')) { add('HL', 100); }
-    if (brands) {
+    if (tag.call(brands) === '[object Array]') {
       for (i = 0; i < brands.length; i++) {
+        if (!brands[i] || typeof brands[i].brand !== 'string') { continue; }
+        if (brands[i].brand.length) { hasBrands = true; }
         if (/HeadlessChrome/i.test(brands[i].brand)) { add('HL', 100); }
         if (/Chromium|Google Chrome|Microsoft Edge/i.test(brands[i].brand)) { chromium = true; }
       }
@@ -389,6 +407,7 @@
       if (mismatch) { add('NP', 1, 'permissions'); }
       if (teleport) { add('TP', 3, 'pointer'); }
       if (workerMismatch) { add('WK', 2, 'worker'); }
+      if (workerBrands) { add('UB', 6, 'worker'); }
       if (workerHeadless) { add('HL', 100); }
       // Warp-on-click accessibility tools share TP's pattern. History is only
       // a final-phase pointer weight (2), capped at 3 together with current TP.
