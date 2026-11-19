@@ -10,7 +10,7 @@ import {startServer} from './server.mjs';
 import {options, sleep, botd, botdCell, flakes, cell, humanClick, cleanPreflight, navigateAndWait, observationDwell, performanceSummary} from './support.mjs';
 const {repeat} = options();
 const require = createRequire(import.meta.url);
-const source = await readFile(new URL('../src/traffic-class.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../src/visitor-verdict.js', import.meta.url), 'utf8');
 const stealth = addExtra(chromium).use(StealthPlugin());
 const quiet = ['--disable-blink-features=AutomationControlled'];
 const desktop = {viewport: {width: 1440, height: 900}};
@@ -114,8 +114,8 @@ async function snapshot(page) {
 async function collector(page) {
   const entries = [];
   page.on('console', message => {
-    if (!message.text().startsWith('traffic-class-test:')) return;
-    try { entries.push(JSON.parse(message.text().slice('traffic-class-test:'.length))); } catch {}
+    if (!message.text().startsWith('visitor-verdict-test:')) return;
+    try { entries.push(JSON.parse(message.text().slice('visitor-verdict-test:'.length))); } catch {}
   });
   // Observe requests before forwarding them; unload may cancel delivery to /log.
   // This requires no storage or exposed binding and retains only test events.
@@ -162,7 +162,7 @@ try {
           row.notes.push('Spawned separate headed Google Chrome with temporary profile and a nonzero remote-debugging port; no Playwright launch flags, stealth or init-script navigator patches.');
         } else if (spec.pdf) {
           // Use Chrome's native PDF preference, not a navigator init-script patch.
-          profileDir = await mkdtemp(join(tmpdir(), 'traffic-class-pdf-'));
+          profileDir = await mkdtemp(join(tmpdir(), 'visitor-verdict-pdf-'));
           await mkdir(join(profileDir, 'Default'));
           await writeFile(join(profileDir, 'Default', 'Preferences'), JSON.stringify({plugins: {always_open_pdf_externally: true}}));
           context = await spec.engine.launchPersistentContext(profileDir, {headless: true, ...spec.launch, ...spec.context});
@@ -203,7 +203,7 @@ try {
       if (['benign', 'cdp-agent'].includes(spec.mode)) {
         await context.route('**/page3.html', async route => {
           const response = await route.fetch(), html = await response.text();
-          const detectorTag = '<script src="/src/traffic-class.js"></script>';
+          const detectorTag = '<script src="/src/visitor-verdict.js"></script>';
           check(html.includes(detectorTag), 'Deferred fixture detector tag missing');
           await route.fulfill({response, body: html.replace(detectorTag, '')});
         });
@@ -318,7 +318,7 @@ try {
         row.botd = await botd(page); row.status = 'PASS';
       } else {
         if (spec.mode === 'double') {
-          await page.addScriptTag({url: `${origin}/src/traffic-class.js`});
+          await page.addScriptTag({url: `${origin}/src/visitor-verdict.js`});
           await stay(page, spec, 10000);
           const state = await snapshot(page);
           const counts = await page.evaluate(() => ({initial: dataLayer.filter(e => e.traffic_phase === 'initial').length, final: dataLayer.filter(e => e.traffic_phase === 'final').length}));
@@ -504,7 +504,7 @@ try {
   const report = {generatedAt: new Date().toISOString(), playwright: require('playwright/package.json').version,
     botdVersion: require('@fingerprintjs/botd/package.json').version, repeat, results, flakiness};
   await writeFile(new URL('results/report-extended.json', import.meta.url), JSON.stringify(report, null, 2) + '\n');
-  const md = `# Extended traffic-class tests\n\nGenerated ${report.generatedAt}; Playwright ${report.playwright}; BotD ${report.botdVersion}; repeat ${repeat}.\n\n` +
+  const md = `# Extended visitor-verdict tests\n\nGenerated ${report.generatedAt}; Playwright ${report.playwright}; BotD ${report.botdVersion}; repeat ${repeat}.\n\n` +
     '| Scenario | Category | Run | Expected | Initial | Final | Signals | BotD bot / kind | Median ms | Budget ms | Status |\n|---|---|---|---|---|---|---|---|---|---|---|\n' +
     results.map(r => '| ' + [r.name, r.category, r.iteration, r.expected, r.initial, r.final, r.signals.join(', '), botdCell(r.botd), r.medianMs?.toFixed(3), r.medianMs !== undefined ? r.budgetMs ?? 'informational' : r.budgetMs, r.status].map(cell).join(' | ') + ' |').join('\n') +
     '\n\n## Flakiness\n\n' + flakiness.map(f => `- ${f.name}: ${f.flaky ? '**FLAKY**' : repeat < 2 ? 'single run; not assessed' : 'stable'} (${f.runs} runs)`).join('\n') +

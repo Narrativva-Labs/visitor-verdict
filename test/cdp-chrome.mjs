@@ -27,7 +27,7 @@ export async function connectRealChrome(chromium) {
   const executable = await chromeExecutable();
   // A literal port=0 enables navigator.webdriver in Chrome; use a nonzero port.
   const port = await freeLoopbackPort();
-  const profile = await mkdtemp(join(tmpdir(), 'traffic-class-cdp-'));
+  const profile = await mkdtemp(join(tmpdir(), 'visitor-verdict-cdp-'));
   let child, browser, spawnError, endpoint, diagnostics = '';
   async function close() {
     // CDP close/disconnect is bounded; the separately spawned process is ours.

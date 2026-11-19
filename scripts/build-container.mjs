@@ -19,9 +19,9 @@ const container = {
   exportFormatVersion: 2,
   containerVersion: {
     ...ids, containerVersionId: '0',
-    container: {...ids, name: 'traffic-class', publicId: 'GTM-XXXXXXX', usageContext: ['WEB']},
+    container: {...ids, name: 'visitor-verdict', publicId: 'GTM-XXXXXXX', usageContext: ['WEB']},
     tag: [
-      {...ids, tagId: '1', name: 'TC - detector traffic_class', type: 'html',
+      {...ids, tagId: '1', name: 'VV - detector', type: 'html',
         parameter: [parameter('html', html), parameter('supportDocumentWrite', 'false', 'BOOLEAN')],
         priority: {type: 'INTEGER', value: '100'},
         firingTriggerId: ['2147479553'], tagFiringOption: 'ONCE_PER_LOAD',
@@ -34,7 +34,7 @@ const container = {
           ])),
           table('userProperties', [[['name', 'traffic_class'], ['value', reference('traffic_class')]]]),
           parameter('eventName', 'traffic_class'),
-          parameter('measurementIdOverride', reference('TC - GA4 measurement ID'))
+          parameter('measurementIdOverride', reference('VV - GA4 measurement ID'))
         ],
         firingTriggerId: ['3'], tagFiringOption: 'ONCE_PER_EVENT',
         consentSettings: {consentStatus: 'NOT_SET'}}
@@ -46,7 +46,7 @@ const container = {
       ...fields.map((name, index) => ({...ids, variableId: String(index + 4), name, type: 'v',
         parameter: [parameter('name', name), parameter('dataLayerVersion', '2', 'INTEGER'),
           parameter('setDefaultValue', 'false', 'BOOLEAN')]})),
-      {...ids, variableId: '7', name: 'TC - GA4 measurement ID', type: 'c',
+      {...ids, variableId: '7', name: 'VV - GA4 measurement ID', type: 'c',
         parameter: [parameter('value', 'G-XXXXXXXXXX')]}
     ]
   }

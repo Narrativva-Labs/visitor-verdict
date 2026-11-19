@@ -7,7 +7,7 @@
     "container": {
       "accountId": "0",
       "containerId": "0",
-      "name": "traffic-class",
+      "name": "visitor-verdict",
       "publicId": "GTM-XXXXXXX",
       "usageContext": [
         "WEB"
@@ -18,7 +18,7 @@
         "accountId": "0",
         "containerId": "0",
         "tagId": "1",
-        "name": "TC - detector traffic_class",
+        "name": "VV - detector",
         "type": "html",
         "parameter": [
           {
@@ -136,7 +136,7 @@
           {
             "type": "TEMPLATE",
             "key": "measurementIdOverride",
-            "value": "{{TC - GA4 measurement ID}}"
+            "value": "{{VV - GA4 measurement ID}}"
           }
         ],
         "firingTriggerId": [
@@ -268,7 +268,7 @@
         "accountId": "0",
         "containerId": "0",
         "variableId": "7",
-        "name": "TC - GA4 measurement ID",
+        "name": "VV - GA4 measurement ID",
         "type": "c",
         "parameter": [
           {

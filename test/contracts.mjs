@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {observationDwell} from './support.mjs';
 export async function runContracts(detectorSource) {
-  const source = detectorSource || await readFile(new URL('../src/traffic-class.js', import.meta.url), 'utf8');
+  const source = detectorSource || await readFile(new URL('../src/visitor-verdict.js', import.meta.url), 'utf8');
   const results = [];
   function fixture(options = {}) {
     let now = options.now ?? 10000, next = 0;

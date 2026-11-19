@@ -7,7 +7,7 @@ node test/fuzz/run.mjs --self-test
 ```
 
 The default is 3,000 seeded random documents plus a fixed boundary corpus. Every
-invocation reads `src/traffic-class.js` anew. Exit status is 1 if any invariant
+invocation reads `src/visitor-verdict.js` anew. Exit status is 1 if any invariant
 fails; results and reduced replay cases go into the already gitignored
 `test/results/`. The report is `test/results/fuzz-report.md`.
 

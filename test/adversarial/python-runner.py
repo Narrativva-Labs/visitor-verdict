@@ -162,7 +162,7 @@ async def run_camoufox():
     console_events = []
 
     def console_event(message):
-        prefix = 'traffic-class-test:'
+        prefix = 'visitor-verdict-test:'
         if not message.text.startswith(prefix):
             return
         try:

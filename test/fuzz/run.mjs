@@ -18,8 +18,8 @@ const timeout = Number(flag('--timeout', 100));
 if (!Number.isInteger(runs) || runs < 0 || runs > 1000000 || !Number.isInteger(timeout) || timeout < 1 || timeout > 10000) {
   throw Error('Use --runs 0..1000000 and --timeout 1..10000 (milliseconds).');
 }
-const source = await readFile(resolve(root, 'src/traffic-class.js'), 'utf8');
-const detector = new vm.Script(source, {filename:'src/traffic-class.js'});
+const source = await readFile(resolve(root, 'src/visitor-verdict.js'), 'utf8');
+const detector = new vm.Script(source, {filename:'src/visitor-verdict.js'});
 const life = new vm.Script(lifecycle, {filename:'fuzz-lifecycle.js'});
 const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];

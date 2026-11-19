@@ -104,7 +104,7 @@ try {
         row.initial = row.final = 'no event'; row.botd = {status: 'NO_JS'};
         for (const file of ['index.html', 'page2.html', 'page3.html']) {
           const response = await fetch(`${origin}/${file}`);
-          if (!response.ok || !(await response.text()).includes('/src/traffic-class.js')) throw new Error('Fetch failed');
+          if (!response.ok || !(await response.text()).includes('/src/visitor-verdict.js')) throw new Error('Fetch failed');
         }
         row.status = 'PASS'; row.notes.push('HTML downloaded; JavaScript never executes, so no classification or GA4 event.');
       } else {
@@ -126,7 +126,7 @@ try {
           collected.get(path).set(event.traffic_phase, event);
         }
         page.on('console', message => {
-          const text = message.text(), prefix = 'traffic-class-test:';
+          const text = message.text(), prefix = 'visitor-verdict-test:';
           if (!text.startsWith(prefix)) return;
           try { const {path, event} = JSON.parse(text.slice(prefix.length)); collect(path, event); }
           catch { /* Ignore unrelated/malformed console messages. */ }

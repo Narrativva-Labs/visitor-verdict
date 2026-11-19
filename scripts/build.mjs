@@ -2,7 +2,7 @@ import {readFile, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 const {minify} = createRequire(import.meta.url)('terser');
 import {parse} from 'acorn';
-const source = await readFile(new URL('../src/traffic-class.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../src/visitor-verdict.js', import.meta.url), 'utf8');
 parse(source, {ecmaVersion: 5});
 const {code} = await minify(source, {ecma: 5, compress: {passes: 3}, mangle: true});
 parse(code, {ecmaVersion: 5});

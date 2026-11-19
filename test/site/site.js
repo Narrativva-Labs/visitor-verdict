@@ -5,7 +5,7 @@ window.dataLayer.push = function (event) {
   Array.prototype.push.call(this, event);
   // Capture synchronously through Playwright's console channel before unload can
   // cancel the test-only POST. No exposed binding or detector instrumentation.
-  console.debug('traffic-class-test:' + JSON.stringify({path: location.pathname, event: event}));
+  console.debug('visitor-verdict-test:' + JSON.stringify({path: location.pathname, event: event}));
   // Primary channel: same-tab sessionStorage survives the navigation that fires pagehide.
   try {
     var log = JSON.parse(sessionStorage.getItem('tc_test_events') || '[]');

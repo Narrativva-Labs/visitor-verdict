@@ -1,5 +1,5 @@
 {
-  "name": "traffic-class-adversarial",
+  "name": "visitor-verdict-adversarial",
   "private": true,
   "type": "module",
   "engines": {"node": ">=20"},

@@ -1,6 +1,6 @@
-# traffic-class
+# Visitor Verdict
 
-traffic-class classifies browser visits locally as `declared_agent`, `automated`, `suspicious`, or `human`. It pushes an initial result and a later behaviour-based result to a data layer for Google Tag Manager (GTM) and Google Analytics 4 (GA4). It has no runtime dependencies and creates no identifier or fingerprint; the detector makes no requests itself, but if CSP blocks its optional Blob worker the browser may send a CSP violation report to the site's endpoint.
+Visitor Verdict classifies browser visits locally as `declared_agent`, `automated`, `suspicious`, or `human`. It pushes an initial result and a later behaviour-based result to a data layer for Google Tag Manager (GTM) and Google Analytics 4 (GA4). It has no runtime dependencies and creates no identifier or fingerprint; the detector makes no requests itself, but if CSP blocks its optional Blob worker the browser may send a CSP violation report to the site's endpoint.
 
 | Class | Meaning |
 |---|---|
@@ -61,7 +61,7 @@ Activity listeners use window capture, falling back to document capture if windo
 
 ### Configuration and output
 
-Load `src/traffic-class.js` after optionally setting:
+Load `src/visitor-verdict.js` after optionally setting:
 
 ```html
 <script>
@@ -77,12 +77,12 @@ window.trafficClassConfig = {
   // agentTokens: ['your-literal-token'] // replaces the default array
 };
 </script>
-<script src="/src/traffic-class.js"></script>
+<script src="/src/visitor-verdict.js"></script>
 ```
 
 `webgl` and `worker` are **opt-in probes, default `false` in the library**; only the boolean `true` enables them. The supplied GTM tag configuration and local test site explicitly enable both for WG, WK and worker-HL coverage. Set `worker: false` if your CSP does not permit `blob:` workers (or you do not want the allocation); blocking can also generate browser CSP reports. Set `webgl: false` on WebGL-heavy pages or where extra contexts risk context limits or GPU resource contention. Disabling either probe reduces evidence and can change classifications; it does not add a signal.
 
-`agentTokens` are **literal strings**, matched case-insensitively with token boundaries; regex metacharacters are escaped. A supplied array replaces the defaults and is truncated to 64 entries; only nonempty strings up to 128 characters are evaluated. The list is maintained in [the source](src/traffic-class.js), with historical evidence in [the research notes](research/agents-and-tells.md). It includes AI-associated fetchers and general crawlers; `Google-Extended` is not a UA and is excluded.
+`agentTokens` are **literal strings**, matched case-insensitively with token boundaries; regex metacharacters are escaped. A supplied array replaces the defaults and is truncated to 64 entries; only nonempty strings up to 128 characters are evaluated. The list is maintained in [the source](src/visitor-verdict.js), with historical evidence in [the research notes](research/agents-and-tells.md). It includes AI-associated fetchers and general crawlers; `Google-Extended` is not a UA and is excluded.
 
 Numeric overrides must be finite integers: `idleMs` 1–3,600,000; `fastNavMs` 1–60,000; `fastNavCount` 2–20; `suspiciousThreshold` 1–1,000. Invalid values retain defaults. `dataLayerName` must be a nonempty string of at most 128 characters and cannot be `__proto__`, `prototype` or `constructor`. Boolean options enable only on strict `true`.
 
@@ -137,7 +137,7 @@ For withdrawal, `sessionStorage.removeItem('traffic_class')` clears the stored l
 ### Import the supplied container
 
 1. In a web container, open **Admin → Import Container** and select [gtm/container-import.json](gtm/container-import.json). Choose a workspace, select **Merge**, and review conflicts and the import preview before confirming. See [Google's import instructions](https://support.google.com/tagmanager/answer/6106997?hl=en).
-2. Set the constant **TC - GA4 measurement ID** to your measurement ID instead of `G-XXXXXXXXXX`. Use the site's existing Google tag for that destination, with its normal consent configuration; the import does not create a Google tag or consent manager.
+2. Set the constant **VV - GA4 measurement ID** to your measurement ID instead of `G-XXXXXXXXXX`. Use the site's existing Google tag for that destination, with its normal consent configuration; the import does not create a Google tag or consent manager.
 3. Choose one of the consent setups below. The imported detector explicitly has **no additional consent check** and runs on All Pages, once per page, with firing priority 100. The GA4 event tag retains Google's built-in consent behaviour; configure any additional checks according to the chosen setup.
 4. Preview with Tag Assistant: expect one initial and one final data-layer event, and one final GA4 event per document when delivery is permitted. Verify the measurement ID, consent paths, delayed consent and page navigation before publishing.
 
@@ -145,11 +145,11 @@ The import creates two tags, four variables and one custom trigger. **traffic_cl
 
 ### Manual installation
 
-1. Create a **Custom HTML** tag named **TC - detector traffic_class** and paste all of [gtm/custom-html.html](gtm/custom-html.html), including its configuration block. Keep `debug: false` and review the explicit `webgl: true` / `worker: true` opt-ins described above.
+1. Create a **Custom HTML** tag named **VV - detector** and paste all of [gtm/custom-html.html](gtm/custom-html.html), including its configuration block. Keep `debug: false` and review the explicit `webgl: true` / `worker: true` opt-ins described above.
 2. Use **All Pages (Page View)**, **Once per page**, priority **100**. Do not use Initialization: on sites that push an event before their consent default, Initialization can run with consent unset. Set consent defaults in the site's consent integration before All Pages; priority orders tags on the same event and cannot repair an earlier consent race.
 3. Create Version 2 Data Layer Variables named `traffic_class`, `traffic_phase` and `traffic_score`, each reading the identically named key. If using a custom data-layer name, configure the GTM snippet consistently.
 4. Create Custom Event trigger **traffic_class final**: event name `traffic_class`, condition `{{traffic_phase}}` equals `final`.
-5. Create constant **TC - GA4 measurement ID**, then a **Google Analytics: GA4 Event** tag named **GA4 - traffic_class**. Set measurement ID to that constant and event name to `traffic_class`. Map event parameters `traffic_class`, `traffic_phase`, `traffic_score` to their variables; under User Properties map `traffic_class` to `{{traffic_class}}`. Use the final trigger and the site's existing Google tag destination.
+5. Create constant **VV - GA4 measurement ID**, then a **Google Analytics: GA4 Event** tag named **GA4 - traffic_class**. Set measurement ID to that constant and event name to `traffic_class`. Map event parameters `traffic_class`, `traffic_phase`, `traffic_score` to their variables; under User Properties map `traffic_class` to `{{traffic_class}}`. Use the final trigger and the site's existing Google tag destination.
 
 ### Choose when it runs
 
@@ -250,7 +250,7 @@ A hidden page may remain initial until it becomes visible or unloads. `pagehide`
 
 ## Contributing
 
-Open an issue or pull request at [Narrativva-Labs/traffic-class](https://github.com/Narrativva-Labs/traffic-class). Include browser versions, a minimal reproduction and debug codes without raw visitor data. Changes should preserve data minimisation, ES5 output and conservative human controls; document misses rather than increasing weights to fit a fixture.
+Open an issue or pull request at [Narrativva-Labs/visitor-verdict](https://github.com/Narrativva-Labs/visitor-verdict). Include browser versions, a minimal reproduction and debug codes without raw visitor data. Changes should preserve data minimisation, ES5 output and conservative human controls; document misses rather than increasing weights to fit a fixture.
 
 Run `npm run build` after source/configuration changes: it regenerates both GTM HTML and the import JSON. `npm run build:container` regenerates only the JSON from the current HTML. Do not edit generated files directly. Run contracts and relevant browser suites, and report skipped/errored cases honestly.
 

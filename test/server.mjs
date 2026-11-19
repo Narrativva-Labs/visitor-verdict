@@ -28,7 +28,7 @@ export async function startServer(port = 0) {
       const files = {'/': 'test/site/index.html', '/index.html': 'test/site/index.html',
         '/page2.html': 'test/site/page2.html', '/page3.html': 'test/site/page3.html',
         '/site.js': 'test/site/site.js', '/benchmark.js': 'test/site/benchmark.js',
-        '/vendor/botd.js': 'node_modules/@fingerprintjs/botd/dist/botd.esm.js', '/src/traffic-class.js': 'src/traffic-class.js'};
+        '/vendor/botd.js': 'node_modules/@fingerprintjs/botd/dist/botd.esm.js', '/src/visitor-verdict.js': 'src/visitor-verdict.js'};
       const file = files[url.pathname];
       if (req.method !== 'GET' || !file) { res.writeHead(404).end('Not found'); return; }
       const policy = url.searchParams.get('worker') === 'none' && file.endsWith('.html') ? {'Content-Security-Policy': "worker-src 'none'"} : {};
