@@ -62,6 +62,22 @@ Match stable tokens case-insensitively, not complete UA strings or Chrome versio
 
 **Evidence gap, Manus:** the current [isbot pattern source](https://github.com/omrilotan/isbot/blob/main/src/patterns.json) includes `manus-user/`, and [Cloudflare Radar's Manus entry](https://radar.cloudflare.com/bots/directory/manus-bot) is indexed with an operator documentation link. This establishes a practical candidate, not an authenticated full UA/signing contract. The operator link `https://manus.im/help/Manus-user` failed (404); Radar detail fetches timed out. Keep this candidate separate from the verified default array. Do not fill missing primary evidence with a fabricated “exact” string.
 
+### Field observations, v1.0 (2026-11-19)
+
+Real agent runs against our own test shop, with the debug badge; each agent added a product to the cart and idled in the cart until the final verdict.
+
+| Agent | Runs | Verdict | Signals | Page × worker difference |
+|---|---|---|---|---|
+| Grok agent (remote browser) | 2 | `automated`, score 100 | WD, HL, GS, CA, NI | none |
+| ChatGPT agent (remote browser; business and personal account) | 5 | `human`, score 4 | NI, WK | `navigator.languages`: page `["en-US"]`, worker `["en-US","en"]` (all 3 runs where the badge showed it, on both accounts) |
+| Antigravity browser subagent (user's own Chrome via remote debugging) | 1 | `human`, score 2 | NI | none |
+
+**Temporary tell, ChatGPT agent:** the language mismatch matches a lab reproduction exactly: CDP `Emulation.setUserAgentOverride` with `acceptLanguage: "en-US"` on the page session only. Chromium propagates the user agent to dedicated workers but not `acceptLanguage`, so the worker falls back to the browser's accept languages. Playwright fixed this for `locale` in 1.65.0 ([PR #43488](https://github.com/microsoft/playwright/pull/43488), merged 2026-10-19), so the tell is expected to disappear when the operator updates its stack.
+
+**Not promoted to a direct `suspicious` rule.** An adversarial review reproduced the identical prefix pattern on an ordinary Chrome with a main-world locale-switcher extension (extensions cannot override `WorkerNavigator`), and a narrower "page list is a prefix of the worker list" rule does not separate the two. `WK` stays at weight 2 behind the corroboration gate. Follow-up: measure how often `WK` appears with a `human` verdict in field data; identify the ChatGPT agent server-side via signed requests (Phase 2).
+
+**Own-browser agents** (an agent driving the user's real Chrome) carry no browser-side tell and are indistinguishable from the user in the page. This is a stated Phase 1 limit.
+
 ### Web Bot Auth and `Signature-Agent`
 
 Web Bot Auth builds agent identity on **HTTP Message Signatures (RFC 9421)**. The architecture/directory conventions remain evolving drafts; header syntax differs between implementations. Check the operator's current syntax, covered fields, key lookup, timestamps/replay handling and signature verification. A bare header can be spoofed. None of these inbound request headers is exposed by `navigator`; a pure page script cannot read or cryptographically verify its navigation request headers.
