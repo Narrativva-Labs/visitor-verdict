@@ -1,180 +1,236 @@
 # traffic-class
 
-A dependency-free ES5 detector for a GTM Custom HTML tag. It classifies each visit as `declared_agent`, `automated`, `suspicious`, or `human`. `human` means insufficient evidence of automation; it is not proof that a person is browsing.
+traffic-class classifies browser visits locally as `declared_agent`, `automated`, `suspicious`, or `human`. It pushes an initial result and a later behaviour-based result to a data layer for Google Tag Manager (GTM) and Google Analytics 4 (GA4). It has no runtime dependencies and creates no identifier or fingerprint; the detector makes no requests itself, but if CSP blocks its optional Blob worker the browser may send a CSP violation report to the site's endpoint.
 
-The detector evaluates browser signals locally, creates no identifier or hash, and sends no network requests. Its only persistence is one `sessionStorage` entry (`traffic_class`) with at most 20 pageview timestamps, the last final class, and one bounded integer `tpPages` (0–255). No cookies or localStorage are used. Production output contains only class, phase and numeric score, plus the fixed event name. `debug: true` adds short signal codes. The test site separately POSTs these debug events to its local `/log` sink. Consent gating belongs in GTM.
+| Class | Meaning |
+|---|---|
+| `declared_agent` | The user agent claims a configured agent, fetcher or crawler identity. Tokens are claims, not verification. |
+| `automated` | Hard browser automation evidence, or one document of carry-over from a previous direct hard/declared result in this tab. This does not establish intent or AI use. |
+| `suspicious` | Weighted evidence meeting the score, family and evidence-quality requirements below; repeated teleport history is one weighted signal. |
+| `human` | Insufficient evidence of automation; not proof of a person. |
 
-## Run
+## How it works
 
-Node.js 20 or newer:
+The **initial** phase runs synchronously using environment signals and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes after 8 seconds of visible time, or on `pagehide`, whichever comes first. Hidden time pauses the timer; early navigation does not count as eight seconds without input. Final fires once per document; initial declared/automated classes retain precedence.
 
-```sh
-npm install
-npx playwright install chromium firefox webkit
-npm run build
-node test/run.mjs
-```
+Precedence is declared → hard/inherited automation → suspicious → human. The suspicious rule requires all of:
 
-The suite also needs installed Google Chrome for control 10 and a graphical desktop for headed scenarios 3, 7 and 10 (on Linux, use an appropriate display/Xvfb). Missing engines, dependencies or launch permissions produce `SKIP`, never a passing substitute; execution errors after launch produce `ERROR`. Each browser scenario uses a fresh context, follows index → page2 → page3 and remains 10 seconds on the last page. Browser versions, every page's initial/final event, and deviations appear in `test/results/report.json`; `report.md` contains the matrix. Any scenario failure or error causes a nonzero exit. No bot miss is hidden.
+1. **Score ≥ `suspiciousThreshold` (default 6)**.
+2. **At least three distinct positive-weight families**.
+3. At least one non-benign signal family (pointer via TP/TR, worker via WK, or explicitly synthetic input SY), **or** at least two distinct environment families plus behaviour (interaction or navigation). Environment families are geometry, language, plugins, graphics, chrome and permissions. NI alone is not the non-benign interaction evidence; SY is.
 
-```sh
-npm run test:contracts   # deterministic detector semantics without a browser
-npm run serve            # http://127.0.0.1:8787 (PORT is overridable)
-```
+“Non-benign” names a heuristic category, not a judgement about the visitor. Each family contributes its highest weight: geometry is capped at 1, graphics at 1, NI/SY together at 2, and TP/TR together at 3. Hard, declared and inherited results use sentinel score 100; scores are not probabilities. Quiet reading alone scores 2; fast navigation plus inactivity scores 5. FN+NI+WG or FN+NI+GS scores 6 across three families but still remains human, because it has only one environment family and no TP/TR/SY/WK. FN+NI+GS+WG qualifies at 7 with two environment families plus behaviour. TR never bypasses these requirements or affects initial classification.
 
-`test/results/log.jsonl` appends test-only dataLayer output and is ignored by Git. It contains no scenario identifier or browser attributes. Reports group scenario events in runner memory instead. Only the local test harness makes requests.
+Duplicate inclusion is ignored. BFCache restoration retains the document's state and does not emit a second final. Reload/history navigation does not append pageview timestamps. SPA route changes do not restart detection.
 
-Phase 3 validation in this sandbox: 35 deterministic contract checks pass, and source/generated output parse as ES5. No browsers were run for this phase. The owner runs browser suites outside the sandbox; their earlier reports do not validate the new TR rule or CDP scenarios. The detector currently minifies to **8,762 bytes**, exceeding the original <5 KB target; build warns about this open issue. Re-run the browser suites before treating the new signals as calibrated.
+### Signals
 
-## Configuration and phases
+Weights below are the implemented defaults. Missing or blocked optional APIs are unknown rather than positive evidence; genuinely unavailable WebGL has the explicit weak WG weight.
 
-Set `window.trafficClassConfig` before loading `src/traffic-class.js`. The config at the top of `gtm/custom-html.html` uses the defaults:
+| Code | Evidence and safeguards | Weight / family |
+|---|---|---|
+| `AG` | Boundary-matched configured agent token | 100 / declared |
+| `WD` | navigator.webdriver strictly true | 100 / hard |
+| `HL` | HeadlessChrome in main UA/synchronous brands or opt-in dedicated worker UA (worker result final only); no high-entropy request | 100 / hard |
+| `AU` | Bounded PhantomJS, Chrome-Lighthouse, Lighthouse, GTmetrix, Google-PageRenderer; PTST requires `/version` | 100 / hard |
+| `GL` | Shape-checked named Phantom/Nightmare/DOM automation/Selenium globals, document `$cdc_`/`$wdc_` caches, narrow window `cdc_…_(Array\|Promise\|Symbol\|Object\|Proxy\|JSON\|Window)` | 100 / hard |
+| `PW` | Exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts` with function/array/plain-object shape, excluding DOM/host objects and window proxies; initial and final | 100 / hard, feature-dependent |
+| `CA` | Previous final direct hard/declared evidence, consumed for one following document only; plain class strings do not qualify | 100 / inherited |
+| `G0` | Both dimensions zero for screen, viewport or outer size; only visible, focused, top-level; rechecked final | 1 / geometry |
+| `GS` | 800×600 screen or 1280×720 screen equal to viewport | 1 / geometry |
+| `LA` | Empty/missing languages AND no language/userLanguage/browserLanguage/systemLanguage fallback | 1 / language |
+| `PL` | Desktop Chromium-compatible empty plugins; excludes mobile/touch iPad, known WebView/in-app UA, pdfViewerEnabled false | 1 / plugins |
+| `WG` | Opt-in (`webgl: true`): no WebGL, or exact software-renderer token SwiftShader/llvmpipe/softpipe or exact Mesa OffScreen; no broad Mesa/ANGLE match | 1 / graphics |
+| `CH` | Desktop Chrome-compatible UA plus Chromium brands, window.chrome missing; excludes mobile/known embedded UA | 1 / chrome |
+| `NP` | Secure top-level Chromium, supported denied/prompt notification mismatch, successful async query | 1 / permissions, final only |
+| `HC` | Missing/zero hardwareConcurrency | 0 / debug only |
+| `NI` | No accepted activity after a full configured visible window (default 8000 ms); missing isTrusted counts as activity | 2 / interaction |
+| `FN` | At least 3 pageviews connected by consecutive positive intervals <2000 ms (2 intervals for count 3) | 3 / navigation |
+| `SY` | Explicitly untrusted mousemove/pointerdown/touchstart occurred, with no accepted activity (trusted or missing isTrusted) | 2 / interaction |
+| `TP` | Positive >200px mousemove jump followed within 600ms by a trusted mouse click near the jump endpoint and fresh trusted mouse pointerdown; path/rest/repeat safeguards below | 3 / pointer, final only |
+| `WK` | Opt-in (`worker: true`): supported UA, webdriver, languages or positive core-count mismatch between main and dedicated worker; unavailable fields ignored | 2 / worker, final only |
+| `TR` | Remaining `tpPages >=2` at final, after any eligible decay; no initial effect or class override | 2 / pointer, final only; capped at 3 together with TP |
 
-```js
+**TP (teleport click)** requires positive jump evidence, not merely missing or sparse movement. A trusted `mousemove` must have a movement delta greater than 200px (Euclidean), or differ by more than 200px from the previous distinct position observed within 600ms. It suppresses jumps in a stream of at least three distinct moves whose successive gaps are at most 120ms. A trusted mouse click must follow within 600ms of both the jump and an explicit trusted mouse pointerdown, land within 2px of the jump endpoint, and be more than 40px from the previous recorded click if one exists. Touch/pen, keyboard activation (`detail: 0`), untrusted input, rested/expired jumps and repeated nearby clicks do not qualify. `mousemove` alone supplies the jump/path evidence, avoiding double counting compatibility pointer events. No trajectory is retained.
+
+**TR (repeated teleport)** uses the decaying `tpPages` counter described below. TP increments it synchronously in click capture before navigation, at most once per observed document, saturating at 255. At final, a document with accepted activity and no TP repays one count, subject to stale-write guards; idle and TP documents do not decay it. TR fires only at final if the remaining count is at least 2. It contributes 2 in the pointer family, capped at 3 together with TP, and uses the ordinary suspicious rule. Repeated history alone never starts a document suspicious. Duplicate inclusion, repeated clicks and BFCache restoration cannot increment again. New/reloaded documents may count separately; no unique-URL claim is possible. Blocked storage leaves page-local TP evidence; repeated clicks in one document cannot create TR alone.
+
+**WK (worker mismatch)**, when enabled, compares supported main/worker user agent, webdriver, languages and positive hardware concurrency values. Missing worker fields are ignored. A worker exposing HeadlessChrome adds hard HL. Worker creation/errors/CSP denial produce no mismatch, and final never waits for the worker. A legitimate main-only UA switcher can also produce WK, so it is weak evidence.
+
+Activity listeners use window capture, with passive listeners where supported. Accepted activity includes mousemove, pointermove, pointerdown, pointerup, touchstart, touchmove, touchend, touchcancel, scroll, keydown, keyup, wheel, click and focusin. Pointercancel clears pointer state but does not count as activity. `isTrusted === true` **or missing `isTrusted`** counts as activity for NI/SY and counter decay; TP requires explicitly trusted events. Accepted activity prevents NI/SY and, without TP, can decay history; it does not erase hard evidence. Trusted input can come from automation.
+
+### Configuration and output
+
+Load `src/traffic-class.js` after optionally setting:
+
+```html
+<script>
 window.trafficClassConfig = {
   idleMs: 8000,
   fastNavMs: 2000,
   fastNavCount: 3,
   suspiciousThreshold: 6,
   debug: false,
+  webgl: false,
+  worker: false,
   dataLayerName: 'dataLayer'
-  // agentTokens: ['your-regex-source'] // replaces, rather than extends, defaults
+  // agentTokens: ['your-literal-token'] // replaces the default array
 };
+</script>
+<script src="/src/traffic-class.js"></script>
 ```
 
-`agentTokens` is exactly the array in [research section 5](research/agents-and-tells.md), compiled as case-insensitive regex sources with token boundaries. It includes `Claude-Agent`, `Google-Agent`, the documented fetcher/crawler identities, and legacy `Google-NotebookLM` compatibility. It excludes `ChatGPT Agent`, `Google-Extended` and `Applebot-Extended`. Custom patterns replace the array; malformed patterns are ignored, and the same outer boundaries apply. A declared UA is self-identification, not authenticated vendor identity or proof of an interactive agent.
+`webgl` and `worker` are **opt-in probes, default `false` in the library**; only the boolean `true` enables them. The supplied GTM tag configuration and local test site explicitly enable both for WG, WK and worker-HL coverage. Set `worker: false` if your CSP does not permit `blob:` workers (or you do not want the allocation); blocking can also generate browser CSP reports. Set `webgl: false` on WebGL-heavy pages or where extra contexts risk context limits or GPU resource contention. Disabling either probe reduces evidence and can change classifications; it does not add a signal.
 
-Initial classification is synchronous. Final classification adds behaviour after `idleMs` of **visible** time, pausing while hidden, or immediately on `pagehide`. Final fires once per document. `NI` requires the full configured `idleMs` of visible exposure (default 8000 ms); an early `pagehide` does not manufacture inactivity. Reinserting the script is ignored. BFCache restoration retains the existing document's completed state, adds no timestamp and never produces another final. Reload/back-forward navigation does not append navigation timestamps. SPA route changes do not rerun classification.
+`agentTokens` are **literal strings**, matched case-insensitively with token boundaries; regex metacharacters are escaped. A supplied array replaces the defaults and is truncated to 64 entries; only nonempty strings up to 128 characters are evaluated. The list is maintained in [the source](src/traffic-class.js), with historical evidence in [the research notes](research/agents-and-tells.md). It includes AI-associated fetchers and general crawlers; `Google-Extended` is not a UA and is excluded.
 
-Both phases push:
+Numeric overrides must be finite integers: `idleMs` 1–3,600,000; `fastNavMs` 1–60,000; `fastNavCount` 2–20; `suspiciousThreshold` 1–1,000. Invalid values retain defaults. `dataLayerName` must be a nonempty string of at most 128 characters and cannot be `__proto__`, `prototype` or `constructor`. Boolean options enable only on strict `true`.
+
+Both phases normally push the same fields (a broken/throwing data-layer consumer can prevent delivery while local finalization still completes):
 
 ```js
 {event: 'traffic_class', traffic_class: 'human',
  traffic_phase: 'initial', traffic_score: 0}
 ```
 
-`window.__trafficClass` holds `{class, score, phase}` and adds `signals` only in debug mode. Classification order is declared UA → hard/inherited automation → suspicious → human. Initial declared/automated classes persist into final. `CA` carries a previous **final** automated class in the same tab; this is inherited history, not fresh hard evidence. Hard/declared/inherited classes have sentinel score **100** regardless of the number of proofs; the score is not a probability.
+`window.__trafficClass` exposes `{class, score, phase}`. With `debug: true`, it adds `signals`, and events add `traffic_signals` containing short codes. Keep debug disabled in production. The state also has a non-enumerable internal duplicate-inclusion marker. Both `window.__trafficClass` and the data layer are readable by any script/tag on the page.
 
-## Signals and weights
+## Privacy and data minimisation
 
-[Research sections 4–5](research/agents-and-tells.md) take precedence over the earlier AGENTS.md proposals. The ordinary suspicious rule requires **score ≥6 AND at least 3 distinct positive-weight families**. The approved TR rule directly yields suspicious for repeated TP documents, independently of that score/family guard; declared/hard classes retain priority. Geometry is capped at 1, graphics at 1, and inactivity/synthetic input at 2. Other positive signals have separate families; zero-weight HC does not count.
+The detector reads these inputs locally (optional probes only when enabled):
 
-| Code | Evidence and safeguards | Weight / family |
+- Navigator: `userAgent`, `userAgentData.brands` and each `brand`, `webdriver`, `languages` (length and entries), `language`, `userLanguage`, `browserLanguage`, `systemLanguage`, `plugins.length`, `pdfViewerEnabled`, `maxTouchPoints` and `hardwareConcurrency`. No high-entropy UA-data request is made. The local worker reads `userAgent`, `webdriver`, `languages` and `hardwareConcurrency` too.
+- Window/document: `top`, `screen.width/height`, `innerWidth/innerHeight`, `outerWidth/outerHeight`, `document.visibilityState`, `document.prerendering`, `document.hasFocus()`, `isSecureContext`, `chrome`, configuration and existing detector state. It enumerates own window/document property names and reads matching property descriptors and their `value` fields, including `__trafficClass` / `__tcDetector`. Shape checks inspect candidate `window`, `nodeType`, `ownerDocument`, object type and prototypes to reject host/DOM/window objects.
+- Automation candidates: window `callPhantom`, `_phantom`, `__nightmare`, `domAutomation`, `domAutomationController`, exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts`, and names matching `cdc_[A-Za-z0-9]+_(Array|Promise|Symbol|Object|Proxy|JSON|Window)`. Document candidates match `__(selenium|webdriver|driver|fxdriver)_(evaluate|unwrapped)`, `__webdriver_script_(fn|func|function)`, `__$webdriverAsyncExecutor`, and `$cdc_` / `$wdc_` prefixes. Names/values are not exported.
+- Opt-in WebGL: canvas `getContext('webgl'/'experimental-webgl')`, extension availability through `getExtension`, `WEBGL_debug_renderer_info.UNMASKED_RENDERER_WEBGL` and its renderer via `getParameter`, and `WEBGL_lose_context.loseContext` for cleanup. It draws no fingerprint image or canvas pixels.
+- Permissions: `Notification.permission`, availability of `navigator.permissions.query`, and the returned notification permission `state`. It never requests notification permission.
+- Timing/history: `Date.now()`, `performance.getEntriesByType('navigation')[0].type` or legacy `performance.navigation.type`, and the stored `timestamps`, `lastClass` (including `value` / `direct`) and `tpPages` below.
+- Input: event `type`, `isTrusted`, `pointerType`, `detail`, `clientX`, `clientY`, **`movementX` and `movementY`**. It retains short-lived observation times, a bounded path counter and jump flag, not event objects or a trajectory. It does not inspect event targets, typed keys, text, page content, URLs or browsing destinations.
+- Integration/capability checks: configured data-layer availability, `length` and `push`; DOM listener and timer APIs (including passive-option support), `Worker`, `Blob`, `URL` / `webkitURL` and their object-URL methods, worker messaging/termination, worker message `data.m` / `data.h` booleans and error `preventDefault`. These support local execution and cleanup, not additional scoring attributes.
+
+Raw values are reduced to flags locally and discarded after use. Main navigator values pass only to the local worker, whose reply contains booleans; the worker is terminated and its Blob URL revoked. Pointer state is bounded to the latest move/click, timing, jump and small path-count fields and cleared at final; no click trace is collected.
+
+The only detector storage is **one `sessionStorage` entry named `traffic_class`**, containing exactly these three keys:
+
+```js
+{
+  timestamps: [/* newest fastNavCount pageview times; default maximum 3 */],
+  lastClass: '', // class string, or {value: 'automated', direct: true}
+  tpPages: 0    // integer 0–255
+}
+```
+
+- `timestamps`: finite nonnegative nonfuture times, rounded **down to 100ms**, deduplicated, sorted and limited to `fastNavCount` (default 3, configurable up to 20). Reload/back-forward does not append. Writes merge current storage so stale finalizers preserve newer page times.
+- `lastClass`: initially an empty string; normally a final class string. A final with direct hard/declared evidence stores `{value: 'automated' | 'declared_agent', direct: true}` instead. **CA consumes that direct provenance at the next document's initial processing**, converting it to a plain string even if that document never finalizes. That document is automated via CA unless declared identity wins. CA alone cannot renew provenance; a second consecutive document without direct evidence has no CA. A legacy/plain `automated` string does not seed CA. Fresh direct evidence on a carried document can renew it. Stale finalizers preserve a newer stored class/provenance.
+- `tpPages`: bounded, saturating count of observed TP documents, incremented once per document before navigation. Missing, invalid, noninteger and out-of-range values reset to 0. At final, accepted activity without TP decrements it by one, down to 0; no activity or current TP leaves history undecayed. Decay occurs before checking TR. It is guarded against newer documents, changed class snapshots or changed counters, so stale finalizers cannot repay newer evidence or resurrect a decayed count. It is not a lifetime total, unique-URL count or time-based expiry.
+
+No signals, raw properties, coordinates, URLs or IDs are stored. Storage denial does not stop local classification/output, but removes cross-document history.
+
+There are **no cookies, localStorage, hashes, fingerprints or identifiers** in the detector. **The detector makes no requests itself; if CSP blocks the Blob worker, the browser may send a CSP violation report to the site's endpoint.** Production data-layer output contains only the fixed event name, class, phase and numeric score. Downstream tools such as GA4 attach the result to their own identifiers; in advanced consent-mode setups, an event may reach Google as a cookieless ping before consent. Installing this library does not change those tools' collection, storage or consent settings. The local test site separately posts debug events to `/log` and maintains test-only event history; that instrumentation is absent from the detector and GTM HTML.
+
+The detector writes to `sessionStorage` and reads device/browser properties. [EDPB Guidelines 2/2023](https://www.edpb.europa.eu/system/files/documents/2024-10/edpb_guidelines_202302_technical_scope_art_53_eprivacydirective_v2_en_0.pdf) treat storing/reading such information as within the technical scope of Article 5(3) of the ePrivacy Directive regardless of cookies, including local processing. This project does not assess exemptions; site owners decide the applicable setup with their DPO.
+
+For withdrawal, `sessionStorage.removeItem('traffic_class')` clears the stored local record. It does not erase already-published state, data-layer events or downstream data, and an active detector can write again at TP/final. Integrate withdrawal with gating future loads/analytics and clearing storage after active observation has ended; the detector has no consent listener or stop API.
+
+## Install in GTM
+
+### Import the supplied container
+
+1. In a web container, open **Admin → Import Container** and select [gtm/container-import.json](gtm/container-import.json). Choose a workspace, select **Merge**, and review conflicts and the import preview before confirming. See [Google's import instructions](https://support.google.com/tagmanager/answer/6106997?hl=en).
+2. Set the constant **TC - GA4 measurement ID** to your measurement ID instead of `G-XXXXXXXXXX`. Use the site's existing Google tag for that destination, with its normal consent configuration; the import does not create a Google tag or consent manager.
+3. Choose one of the consent setups below. The imported detector explicitly has **no additional consent check** and runs on All Pages, once per page, with firing priority 100. The GA4 event tag retains Google's built-in consent behaviour; configure any additional checks according to the chosen setup.
+4. Preview with Tag Assistant: expect one initial and one final data-layer event, and one final GA4 event per document when delivery is permitted. Verify the measurement ID, consent paths, delayed consent and page navigation before publishing.
+
+The import creates two tags, four variables and one custom trigger. **traffic_class final** matches custom event `traffic_class` only when `traffic_phase` equals `final`. **GA4 - traffic_class** sends all three fields as event parameters and `traffic_class` as a user property. Initial stays available in the data layer; only final goes to GA4 by default.
+
+### Manual installation
+
+1. Create a **Custom HTML** tag named **TC - detector traffic_class** and paste all of [gtm/custom-html.html](gtm/custom-html.html), including its configuration block. Keep `debug: false` and review the explicit `webgl: true` / `worker: true` opt-ins described above.
+2. Use **All Pages (Page View)**, **Once per page**, priority **100**. Do not use Initialization: on sites that push an event before their consent default, Initialization can run with consent unset. Set consent defaults in the site's consent integration before All Pages; priority orders tags on the same event and cannot repair an earlier consent race.
+3. Create Version 2 Data Layer Variables named `traffic_class`, `traffic_phase` and `traffic_score`, each reading the identically named key. If using a custom data-layer name, configure the GTM snippet consistently.
+4. Create Custom Event trigger **traffic_class final**: event name `traffic_class`, condition `{{traffic_phase}}` equals `final`.
+5. Create constant **TC - GA4 measurement ID**, then a **Google Analytics: GA4 Event** tag named **GA4 - traffic_class**. Set measurement ID to that constant and event name to `traffic_class`. Map event parameters `traffic_class`, `traffic_phase`, `traffic_score` to their variables; under User Properties map `traffic_class` to `{{traffic_class}}`. Use the final trigger and the site's existing Google tag destination.
+
+### Choose when it runs
+
+The script does not read consent. Running it before consent is a decision for the site owner together with their DPO; these are configuration options, not legal advice.
+
+- **After analytics consent:** require additional consent `analytics_storage` on both the detector and GA4 event tag. Keep All Pages for already-granted consent and add your CMP's consent-granted custom event as another detector trigger for later grants, after the consent update has taken effect. Blocked All Pages tags are not automatically replayed. The once-per-page setting and duplicate guard prevent a second run. Observation begins when the detector actually loads. If consent is later withdrawn, the already-loaded detector continues local observation; GTM consent checks gate the GA4 event at firing time.
+- **Before consent:** leave the detector's additional consent setting at **No additional consent required**, on All Pages. Configure consent defaults and updates through the CMP, and retain the Google tag's built-in consent checks for any permitted cookieless analytics delivery. A local class result does not grant consent. Keep pre-consent classification out of advertising tags, remarketing and ad-platform exports.
+
+Google describes [built-in versus additional consent checks](https://support.google.com/tagmanager/answer/10718549?hl=en); requiring additional consent blocks firing rather than simply changing the request format.
+
+### GA4 reporting and annotate-first use
+
+In **Admin → Data display → Custom definitions**, create these two custom dimensions:
+
+| Display name | Scope | Field |
 |---|---|---|
-| `AG` | Boundary-matched configured agent token | 100 / declared |
-| `WD` | navigator.webdriver strictly true | 100 / hard |
-| `HL` | HeadlessChrome in main UA/synchronous brands or dedicated worker UA (worker result final only); no high-entropy request | 100 / hard |
-| `AU` | Bounded PhantomJS, Chrome-Lighthouse, Lighthouse, GTmetrix, Google-PageRenderer; PTST requires `/version` | 100 / hard |
-| `GL` | Shape-checked named Phantom/Nightmare/DOM automation/Selenium globals, document `$cdc_`/`$wdc_` caches, narrow window `cdc_…_(Array\|Promise\|Symbol\|Object\|Proxy\|JSON\|Window)` | 100 / hard |
-| `PW` | Exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts` with function/object shape; initial and final | 100 / hard, feature-dependent |
-| `CA` | Previous final automated class | 100 / inherited |
-| `G0` | Both dimensions zero for screen, viewport or outer size; only visible, focused, top-level; rechecked final | 1 / geometry |
-| `GS` | 800×600 screen or 1280×720 screen equal to viewport | 1 / geometry |
-| `LA` | Empty/missing languages AND no language/userLanguage/browserLanguage/systemLanguage fallback | 1 / language |
-| `PL` | Desktop Chromium-compatible empty plugins; excludes mobile/touch iPad, known WebView/in-app UA, pdfViewerEnabled false | 1 / plugins |
-| `WG` | No WebGL, or exact software-renderer token SwiftShader/llvmpipe/softpipe or exact Mesa OffScreen; no broad Mesa/ANGLE match | 1 / graphics |
-| `CH` | Desktop Chrome-compatible UA plus Chromium brands, window.chrome missing; excludes mobile/known embedded UA | 1 / chrome |
-| `NP` | Secure top-level Chromium, supported denied/prompt notification mismatch, successful async query | 1 / permissions, final only |
-| `HC` | Missing/zero hardwareConcurrency | 0 / debug only |
-| `NI` | No trusted interaction after a full 8000 visible ms | 2 / interaction |
-| `FN` | At least 3 pageviews connected by consecutive positive intervals <2000 ms (2 intervals for count 3) | 3 / navigation |
-| `SY` | Synthetic pointer input occurred, no trusted input of **any** accepted modality | 2 / interaction |
-| `TP` | Click following an explicit trusted mouse pointerdown, without approach, >40px from last move, or only one distinct move in the preceding ~1s; ignores touch/pen, keyboard detail 0 and untrusted events; rested/same-point clicks exempt | 3 / pointer, final only |
-| `WK` | Supported UA, webdriver, languages or positive core-count mismatch between main and dedicated worker; unavailable fields ignored | 2 / worker, final only |
-| `TR` | TP on this document with at least one prior TP document, or initial `tpPages >=2`; never hard automation by itself | 0 / direct suspicious rule; bypasses ordinary score/family guard |
+| Traffic class (event) | Event | Event parameter `traffic_class` |
+| Traffic class (user) | User | User property `traffic_class` |
 
-Accepted activity: mousemove/pointermove, pointerdown, touchstart, scroll, keydown, wheel and trusted click. A trusted key or scroll prevents both NI and SY; trusted events can also be generated by automation. NI and SY never add beyond 2 together. Reading quietly scores 2; rapid navigation plus inactivity scores 5 and remains human unless another environment family raises the score to 6. Scenario 7 may legitimately slip through. Weights are research proposals, not empirically tuned results; do not increase them to force that bot to pass.
+The event dimension describes the observed event; the user property is the last class sent to GA4 and is not a verified identity or permanent visitor type. `traffic_phase` is also sent; optionally add a third, event-scoped dimension if you choose to send both phases. Register `traffic_score` as a custom metric only if you need it. See [Google's dimension and metric scope guide](https://support.google.com/analytics/answer/14240153?hl=en).
 
-Raw UA, renderer strings, dimensions, property names and event objects are not persisted or exported. Global scans inspect property descriptors rather than invoking arbitrary getters and discard the name list. WebGL is reduced to a boolean and its context released; a missing debug-renderer extension scores zero. Failures/unsupported APIs are unknown. Permission queries never prompt, never delay final, and late results are ignored. Blocked storage removes FN/carry signals but not either output phase.
+**Do not use the class to block access, deny service or make decisions about individuals.** People using assistive technology (voice control, eye tracking, screen-reader mouse routing, remote desktop) can produce teleport-like clicks.
 
-FN validates finite ordered timestamps, rejects future/duplicate entries, keeps at most 20 and requires positive rapid intervals. Duplicate script insertion is guarded in memory; reload and history restoration do not append. A new document's same-URL navigation reported as ordinary `navigate` cannot be distinguished from other navigation using the permitted timestamp-only storage; URLs/identifiers are not stored. This limitation can still affect rapid-navigation evidence.
+Start by annotating analytics and comparing segments. Leave conversion tags running while you assess actual traffic and false positives. Initial cannot include later behaviour, and final cannot retract an earlier pageview or conversion. The library does not delay, queue or replay conversions.
 
-## Scenarios and control methodology
+For aggregate tag/trigger experiments, remember that an exception must match the tag's own firing event and classification must be available first. A `traffic_class` custom-event exception cannot block a tag triggered by a different conversion event. Keep access/service decisions outside this heuristic and preview timing and consent behaviour for each integration.
 
-The runner includes both Chromium headless shell and new headless (`channel: 'chromium'`), headed Chromium, Firefox, WebKit, Chromium stealth, headed Chromium with webdriver disabled and rapid DOM clicks without pointer input, plain fetch and a ChatGPT-User override. Human controls use clean desktop Chrome/Chromium and Pixel 7 emulation, trusted input, and deterministic 2.4/3.6 second waits between pages. Initial and final must be human on **all three pages** for a control PASS.
+## Tests and observed results
 
-Clean human controls use plain Playwright Chromium (bundled and channel Chrome), headed, with `--disable-blink-features=AutomationControlled` and no stealth or webdriver init-script masks. Desktop and Pixel 7 each run on bundled Chromium and the Chrome channel in the base suite; tablet/small-phone cases use the same clean engine. Touch navigation uses `tap`, never mouse `click`. A native preflight records main webdriver false and worker webdriver not true, plus boolean consistency diagnostics. WorkerNavigator.webdriver is normally absent; that is recorded as unsupported, never patched to false. Inconsistency does not skip a clean control: its actual classification remains subject to PASS/FAIL.
-
-The former WebKit iPhone control is now an explicit limitation note: unpatched Playwright WebKit cannot represent a clean non-WebDriver human control here. The same limitation is recorded for Firefox instead of masking webdriver. Stealth runs with human-like activity have their own **stealth bot behaving humanly** category, expectation `not-human-or-human (informational)` and status INFO. Their class/signals and flakiness remain visible but do not constitute human false-positive results or fail the command solely because their classifications vary.
-
-Exact automation globals are conditional artifacts, not promises of what Playwright always inject. The natural scenarios report only signals actually observed; separate injected contract checks validate named-marker matching without counting these as natural detections. The nonexistent assumed `__puppeteer_evaluation_script__` global and arbitrary `__playwright*` prefixes are deliberately ignored. Puppeteer is not one of the requested engines and is not independently tested. PW candidate collisions against clean real-browser baselines remain unverified because the browser scenarios were skipped.
-
-Browser/channel selection and emulation follow the official [Playwright browser documentation](https://playwright.dev/docs/browsers) and [emulation documentation](https://playwright.dev/docs/emulation).
-
-## GTM / GA4 setup
-
-1. Run `npm run build` after source changes. This checks ES5 syntax, warns if the detector exceeds the 5,000-byte target, and regenerates `gtm/custom-html.html` from the same source. Copy the entire generated HTML into a **Custom HTML** tag. Keep `debug: false` in production.
-2. Fire on **Initialization – All Pages**. In the tag's consent settings add the required additional consent **analytics_storage**. Establish consent beforehand using Consent Initialization and your consent manager. GTM consent checks gate firing; this script does not check consent itself. If consent arrives later, configure a consent-granted event to run the tag then; GTM does not automatically replay every blocked tag. The duplicate-load guard prevents duplicate classification.
-3. Create Data Layer Variables (Version 2) for `traffic_class`, `traffic_phase`, and optionally `traffic_score`. For a custom data layer name, configure the GTM container snippet consistently.
-4. Create a **Custom Event** trigger named `traffic_class`. Attach a **GA4 Event** tag with event name `traffic_class` and parameters `traffic_class`, `traffic_phase`, and optionally `traffic_score` mapped to those variables. Send both phases intentionally. Set the GA4 **user property** `traffic_class` from the same variable on this event tag; it updates when final changes the class. Register event-scoped custom dimensions for class/phase and a user-scoped custom dimension for that user property in GA4 as needed.
-5. For conversion tags, add trigger exceptions with conditions `traffic_class` matches `^(declared_agent|automated|suspicious)$`. Exception event types must match the tag's normal firing event: use All Pages/pageview exceptions for pageview tags, and Custom Event exceptions matching each conversion event for event tags. Ensure classification has run before the conversion trigger. A `traffic_class` exception alone cannot block a tag firing on an unrelated event. Preview these timings and consent paths in Tag Assistant.
-6. Initial filtering cannot use later behaviour. To filter conversions using final, defer their triggering until final classification and retain the conversion intent in your integration. This library does not queue/replay conversion events. A final update cannot retract an earlier GA4 event. Avoid delaying critical measurement solely for a heuristic result.
-
-Do not send debug signal codes to production analytics. The user property is the last observed class for a user, whereas the event parameter describes a particular phase; use event parameters for visit-level analysis.
-
-## Limits
-
-Real logged-in Chrome operated by an agent may look human. UA/global spoofing and stealth can evade detection. Fetch/curl never execute the script and therefore never create client GA4 classification events. Accessibility tools, virtual machines, privacy settings, real fast navigation and idle readers can resemble weak automation evidence. No false-positive rate is established by the synthetic controls alone.
-
-`pagehide` updates the data layer, but unloading may prevent GTM/GA4 from delivering a request; use normal analytics delivery mechanisms and do not assume final events always arrive. Hidden pages can remain initial indefinitely until visible or pagehide. Crashes/termination may never emit pagehide. Blocked sessionStorage, cross-origin navigation, and a new tab can remove session history. A carried automated class persists within the tab until a later final class changes it (hard carry means it normally remains automated). Namespaced globals can collide with unrelated code. Only enable debug for local inspection.
-
-No commits or pushes are part of the build/test commands.
-
-
-## Extended tests and BotD benchmark
+Use Node.js 20 or newer:
 
 ```sh
 npm install
-node test/run.mjs --repeat 3
-node test/run-extended.mjs --repeat 3
-```
-
-`--repeat N` defaults to 1 in both runners; every repetition gets a fresh browser/context. The original report stays at `test/results/report.md/json`; the additional suite writes `test/results/report-extended.md/json`. A single run cannot establish stability. Reports flag changes in verdicts, per-page classes, fired signals or BotD outcomes as flaky; raw timing differences alone do not count as flaky. JSON retains every repetition, page event and all 20 performance samples. Run these commands on a desktop that allows headed browser launch; background visibility and the headed Firefox control require it. Missing launch support is SKIP. Detector mismatches remain FAIL, including stealth misses; weights are unchanged.
-
-The extended suite covers keyboard-only and passive 12-second readers, rapid real mouse clicks, an explicit Firefox clean-control limitation note, natively disabled PDF/plugins, disabled WebGL, a confirmed 15-second hidden tab, reload/history navigation, Android tablet and 360×640 phone emulation, blocked sessionStorage, masked-UA and stealth bots, declared Claude/Google agents and Lighthouse. PDF disabling uses a disposable native Chromium profile preference, without navigator patches; storage denial remains an explicit test-only override. Effective fixture values are checked. Reload/back-forward must not fire FN; hidden time must not finalize the detector. An environment that cannot hide a background tab, or cannot execute the rapid sequence within ~3 seconds, is marked SKIP rather than claiming the fixture ran.
-
-Additional checks measure the median of 20 fresh source evaluations in new desktop iframe windows (strictly <5ms), require both phases without G0 inside a zero-size iframe, and require exactly one initial/final after double script inclusion. Each timed sample includes source parse/eval and synchronous probes, excludes iframe setup, BotD and cleanup, and cannot reuse the detector's duplicate-load guard. Inline-blocking CSP is explicitly SKIP. The performance cleanup's synthetic pagehide is outside timing; ordinary visit tests use real navigation/pagehide.
-
-`@fingerprintjs/botd` is a devDependency. Only the opt-in test module `test/site/benchmark.js` loads it, from the local server's narrowly mapped `/vendor/botd.js` route. It calls `load({monitoring: false})`, retaining only `bot` and `botKind`; no BotD components or fingerprints are logged or persisted. This uses the [official BotD load API](https://github.com/fingerprintjs/BotD/blob/main/src/index.ts). Both runners invoke BotD once after reading our last-page classification so it cannot influence that visit's measured result or slow rapid navigation. BotD results are comparison evidence, not ground truth, and are not folded into our verdict. Benchmark load/detection failures are recorded separately and make the command exit nonzero. Fetch clients have no BotD result (`NO_JS`). The detector and generated GTM HTML do not load BotD.
-
-
-## Phase 2: pointer and worker evidence
-
-TP is a small boolean heuristic inspired by the paper's `teleport_click_ratio` and `mouse_event_rate`, not an implementation of its classifier, event rate or raw trace collection. The [paper](https://arxiv.org/html/2607.26935v1) explicitly limits its automation-channel evidence; it does not prove agent reasoning or general human accuracy. TP scores 3 in its own pointer family: it can complement FN (3) and one weak environment family at the existing threshold 6/three-family guard, but cannot classify alone. Existing weights and caps are unchanged.
-
-Only the last mouse-move point, two move timestamps, last click point and pointer kind are temporarily kept in memory, then cleared at final. No path, event list, rate, click ratio, coordinates or input timings leave the detector or enter storage. Pointer/mouse compatibility events are counted once by choosing pointermove when supported. A click near a cursor that has rested for >1 second is exempt; repeated clicks within 40px of the last click are exempt. Only an unconsumed trusted pointerdown explicitly reporting mouse enables TP for the following click. Touch, pen, missing/empty/unknown pointerdown types and click-only WebKit events never enable TP. Click pointerType alone cannot enable it; keyboard/touch/cancellation and visibility changes clear pending mouse input. Older browsers may therefore miss TP. Capture-phase click observation runs before a navigation's pagehide final. Clicks after final cannot alter an already-published result.
-
-WK scores 2 because privacy extensions and UA switchers can modify only the main thread. A local Blob worker receives a transient main-thread snapshot and returns **only two booleans** (mismatch and HeadlessChrome); no values are exported to analytics. Comparisons require supported nonempty values on both sides; worker webdriver is normally absent and is then unknown, not a mismatch. Missing/CSP-blocked Worker, Blob/URL failure, worker errors and timeout are all unknown/zero. Worker lifetime is bounded by the earlier of 1500ms, configured idleMs and final/pagehide; termination and URL revocation happen on reply, failure, timeout and final. The final timer never waits for the worker. No OffscreenCanvas probe is performed, keeping graphics work limited to the existing main-thread boolean WG probe.
-
-A worker declaring HeadlessChrome sets hard HL as requested. Consequently, a headless browser disguised as a human control by a main-thread stealth patch can now be automated; this is a conflict in the simulated control, not proof about real users. A genuine main-only UA switcher in headed Chrome should receive at most WK from that difference. Re-run all existing controls to check for additional interactions; no browser false-positive guarantee is established by contracts.
-
-Extended scenarios 28–34 cover rested/repeated clicks, Enter navigation, a main-only UA override, stealth/headed locator clicks and worker-src 'none' across all three documents. Human mouse navigation now approaches the actual link with multiple trusted moves; keyboard/touch controls retain their own input modalities. Bot locator fixtures keep the sparse approach and include a neutral click on the last page before final, while raw pointer input is never carried between documents; phase 3 carries only the approved bounded counter. Scenario 22 now stays 10 seconds on every page and reads each real timed final directly before navigation; console/intercepted `/log` and the owner's storage channel remain backups. This verifies both phases under denied storage without claiming reliable early-unload delivery.
-
-The original scenario 7's DOM `.click()` is untrusted and intentionally cannot trigger TP. New scenario 33 exercises trusted locator clicks with webdriver disabled. TP + FN without a third family remains human unless the separate TR session rule applies; a pristine browser or an agent moving naturally can still slip through. No weights were increased to force a particular browser fixture to pass.
-
-
-The owner observed WK on every former stealth-backed human control. Those controls were instrumented simulations and are now separated from clean humans; their observations are not used to lower weights. TP remains 3 and WK 2 pending clean-control results. The main-only UA-switcher scenario 31 intentionally adds its named UA override after a clean native preflight; it is a differential environment fixture, not an untouched navigator baseline. Scenario 22 likewise deliberately denies storage. All other common human navigator probes remain native.
-
-Scenario 17 sets the native Chromium PDF preference in a temporary profile and removes that profile after closing the browser. The preference is present in [Chromium's PDF settings source](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/resources/settings/site_settings/pdf_documents_page.html); effective PDF-disabled/empty-plugin values are still verified, and unsupported builds are SKIP. No navigator PDF/plugin getters are patched.
-
-For 14b, NI evidence is recorded per page instead of requiring NI on every page; browser-generated trusted events can suppress NI despite no runner-issued input. For 33, missing TP is recorded as a detector miss, with per-page evidence, rather than throwing a harness ERROR. The ordinary expected nonhuman verdict still produces FAIL when the bot slips through. No browser run was made for this revision; existing reports from the owner's runs are preserved.
-
-
-## Phase 3: repeated teleport documents
-
-Approved by František: the existing `traffic_class` sessionStorage object additionally contains **one integer `tpPages`, 0–255**. A first TP in a document increments it synchronously in click capture, before the browser can navigate. Further clicks, duplicate script loads, final publication and BFCache restoration of that document do not increment again. The count saturates at 255. Older records without it, malformed JSON and invalid, noninteger or out-of-range values default to zero. No URLs, IDs, input traces or counters per URL are created. Distinct means distinct detector documents: a new document at the same URL (including reload) can count again; unique-URL deduplication would require forbidden extra state.
-
-TR is a **classification override, not additional numeric weight**. On a second TP document its final is at least suspicious even with one evidence family and a score below 6. Once `tpPages >=2`, subsequent documents start suspicious even without their own TP. Page 2 initial may still be human when only one earlier TP document exists; its navigating click establishes TR before pagehide final, and page 3 initial then carries it. The existing two-event lifecycle is retained. Declared-agent and hard-automated classes still win. TR alone can never yield automated. The ordinary weights, caps and threshold remain unchanged; class and score must be interpreted together because a TR-only suspicious visit can have score 0.
-
-The counter is stored locally only; even debug output adds just `TR`, never `tpPages`. If storage is blocked, repeated clicks in one document cannot synthesize prior-page history. Saves retain any newer valid same-tab count to avoid stale documents reducing it. This is per-tab session history, not a unique-visitor identifier. Misclassified TP on two genuine human documents can now cause a persistent suspicious carry-over for the tab session; the rested/repeated/Enter contracts and scenarios 28–30 explicitly guard against accumulating that history. No new browser false-positive claim is made without the owner's rerun.
-
-Scenarios **35** and **35b** spawn a separate headed Google Chrome executable from the standard channel-chrome installation, then use `chromium.connectOverCDP` with its default profile context. They use an empty temporary profile, no stealth, no webdriver init patches and no Playwright browser launch flags. A nonzero loopback debugging port avoids the special `--remote-debugging-port=0` webdriver behavior. Only the endpoint announced by that spawned child is used. Startup failure is SKIP; process/profile cleanup is bounded and targets only that child and temporary directory. Set `TRAFFIC_CHROME_EXECUTABLE` if Chrome is installed elsewhere.
-
-35 follows index → page2 → page3 using locator clicks and short waits, requiring page 2 final and page 3 initial/final to be suspicious. Missing TP/TR remains an honest FAIL, not a harness error. 35b uses natural multi-step approaches before clicks and expects human as an informational evasion case, recording its observed PASS/FAIL under INFO. JSON records each visit's counter as test evidence. Clean controls 28–30 additionally require that their visit counters remain zero.
-
-```sh
-node test/contracts.mjs
+npx playwright install chromium firefox webkit
+npm run build
+npm run test:contracts
+node test/run.mjs --repeat 2
 node test/run-extended.mjs --repeat 2
 ```
 
-The browser command is for the owner outside this sandbox. Existing browser reports were not overwritten for phase 3.
+Install Google Chrome for channel-Chrome and CDP cases. Headed scenarios need a desktop/display (or suitable Xvfb on Linux). `TRAFFIC_CHROME_EXECUTABLE` can point the CDP harness at another Chrome installation. `npm run serve` starts the local debug site at `http://127.0.0.1:8787`; `PORT` overrides it.
+
+The base suite navigates index → page2 → page3 and stays about 10 seconds on the last page. Clean controls use plain Chrome/Chromium with the native automation flag disabled, no stealth or navigator masking, multi-step mouse approaches or touch, and 2.4/3.6-second inter-page waits. Every page must be human in both phases. Stealth with human-like behaviour is a separate informational category, never a clean human control. Firefox/WebKit lack a clean non-WebDriver control in these launchers; mobile tests are emulation, not physical-device validation.
+
+The extended suite covers readers, keyboard input, rapid navigation, disabled PDF/WebGL, hidden tabs, history/reload, denied storage, UA switching, rested/repeated clicks, worker CSP, duplicate inclusion, frame no-op behaviour, opt-in defaults, one-document carry, voice-like clicks, assistive warp patterns and real Chrome over CDP. Deterministic contracts check signal semantics and lifecycle, including positive-jump TP, weighted/decaying TR, provenance consumption, storage merges, configuration validation, accessibility activity and storage failure. CDP tests start their own empty temporary Chrome profile; they do not attach to your logged-in browser. BotD comparison runs only in the test harness after our result, with monitoring disabled; it is not ground truth or a runtime dependency.
+
+The historical locally recorded **2026-11-18** suites below used two repetitions and the **older 8,762-byte detector**, before the review/accessibility changes. They are not validation of the current 11.4 KB build; updated browser suites must be rerun. Controls are scripted, no real assistive technology was tested, and the synthetic voice scenario is not representative of real voice-control behaviour.
+
+| Group | Observation |
+|---|---|
+| Completed clean human controls | **No synthetic human control run was classified as non-human** across 8 base and 30 extended completed control runs; every assessed page initial/final was human. These were scripted controls, not real assistive-technology users. |
+| Default headless/automation | Chromium shell/new headless, headed automation, Firefox and WebKit caught as automated. |
+| Declared UAs | ChatGPT-User, Claude-Agent and Google-Agent classified declared_agent. |
+| Stealth with fast/locator navigation | Suspicious through behaviour, worker mismatch and/or repeated TP. |
+| Real Chrome agent over CDP | Historically suspicious from page 2 final and at page 3 initial/final under the former direct-TR rule. Current TR has no initial effect; see the updated scenario below. |
+| Real Chrome with natural mouse approach | Human; expected evasion. Stealth with human-like activity also remained human in several cases. |
+| Automation flag disabled, DOM clicks | One human miss and one suspicious result across the two base runs; timing/input-sensitive. |
+| Fetch without JavaScript | No event; outside the detector's visibility. |
+
+Current contracts verify that slow assistive-style warps with keyboard activity remain human, while fast navigation plus warp/other evidence can still become suspicious. The updated CDP scenario expects **all initials human**, two TP documents, then a page 3 suspicious final via TR2+FN3+NI2 = 7. It requires observed jumps; a no-movement or nearby locator click may intentionally slip through. These are scenario expectations/contracts, not fresh browser measurements. FN+NI+one environment family no longer qualifies, so historical stealth/flag-disabled results may change.
+
+These are synthetic observations, not a population false-positive estimate or a universal detection guarantee. Extended passive-reader and storage-denied cases errored in both repetitions (6 errors); background cases skipped twice. Firefox/WebKit clean controls and inline-blocking CSP remain explicit limitations. These gaps are not passes, and the recorded suites are not all green.
+
+Runners write `test/results/report.md` / `report.json` and `report-extended.md` / `report-extended.json`, with per-page events, signals, versions, errors and repetition/flakiness evidence. Results and logs are local generated artifacts. Missing setup/launch is SKIP; incomplete execution is ERROR; neither counts as a detection pass. Mismatches and relevant errors/skips produce a nonzero exit. The test-only `/log` sink appends event JSON lines to `test/results/log.jsonl`. `test/live.mjs` is an optional check against a separately deployed demo, not part of the local release checks.
+
+## Browser support, size and limits
+
+The detector uses ES5 syntax and no runtime dependencies. It targets modern Chrome/Chromium, Firefox, Safari/WebKit and mobile browsers with standard DOM events and JSON APIs. ES5 syntax is not a promise of legacy Internet Explorer support. Optional workers, permission queries, UA Client Hints and WebGL extensions are feature-detected; CSP-blocked workers lose WK/worker-HL evidence. Sites must permit the Custom HTML script under their CSP.
+
+The minified detector is **11,426 bytes (~11.4 KB)** before the configuration/HTML wrapper. It exceeds the original 5 KB target; the build reports this warning and validates source/output as ES5.
+
+Agents in a real browser with human-like mouse movement can look human. Client-side detection is spoofable. Declared tokens can be spoofed and are never authenticated; JS-less fetchers never run the detector. `human` means no sufficient evidence, and a missing event means **unknown**, not human. Privacy tools, accessibility input, VMs and unusual browser settings may resemble weak signals. Global names are conditional implementation artifacts, not permanent framework signatures. Direct evidence can keep a subsequent human takeover classified automated for one following document via CA; CA alone cannot perpetuate it.
+
+A hidden page may remain initial until it becomes visible or unloads. `pagehide` updates the data layer but delivery to GA4 can be lost during unload; crashes may never emit final. Cross-origin navigation, new tabs and denied storage remove history. Repeated same-URL ordinary navigations cannot be distinguished using timestamps alone. TP/TR describe input patterns, not agent reasoning or malicious intent.
+
+## Contributing
+
+Open an issue or pull request at [Narrativva-Labs/traffic-class](https://github.com/Narrativva-Labs/traffic-class). Include browser versions, a minimal reproduction and debug codes without raw visitor data. Changes should preserve data minimisation, ES5 output and conservative human controls; document misses rather than increasing weights to fit a fixture.
+
+Run `npm run build` after source/configuration changes: it regenerates both GTM HTML and the import JSON. `npm run build:container` regenerates only the JSON from the current HTML. Do not edit generated files directly. Run contracts and relevant browser suites, and report skipped/errored cases honestly.
+
+## License
+
+[MIT](LICENSE). Copyright © 2026 František Bujnovský.

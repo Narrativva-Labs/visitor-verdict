@@ -1,6 +1,6 @@
 # AI website visitors and browser automation tells
 
-Research date: **2026-11-18**. Scope: evidence for the small, ES5, local-only detector described in `AGENTS.md`. This is desk research, not a browser benchmark. No framework/browser combinations were executed for this document. Recommendations below are proposed calibration, not measured accuracy.
+Research date: **2026-11-18**. Scope: evidence for the small, ES5, local-only detector described in the detector design. This is desk research, not a browser benchmark. No framework/browser combinations were executed for this document. Recommendations below are proposed calibration, not measured accuracy.
 
 Dates beside sources mean publication/update dates when explicitly available. Otherwise **accessed 2026-11-18** applies to every link, including live documentation and repository `main`/`master`. Moving source branches are not release guarantees; pin versions and record actual browser versions in the eventual test report. An absent documented identifier means “not established by this research”, not “proved absent in every request”.
 
@@ -216,7 +216,7 @@ var agentTokens = [
 //            ')(?=$|[^A-Za-z0-9_-])', 'i')
 ```
 
-The array intentionally includes general crawlers with AI-related downstream use because `AGENTS.md` requests that coverage. Therefore `declared_agent` should be documented as declared AI-associated agent/fetcher/crawler, **not** “an autonomous purchase agent”. Plain HTTP fetchers remain invisible to in-page execution regardless of inclusion.
+The array intentionally includes general crawlers with AI-related downstream use because the detector design includes that coverage. Therefore `declared_agent` should be documented as declared AI-associated agent/fetcher/crawler, **not** “an autonomous purchase agent”. Plain HTTP fetchers remain invisible to in-page execution regardless of inclusion.
 
 Optional compatibility candidate after confirmation: `Manus-User` (primary evidence incomplete above). Do **not** put `ChatGPT Agent` in the default array solely because a WAF uses that display name. Do not invent `Operator`, `Claude in Chrome`, `Comet`, `Gemini`, `Copilot-User`, `Opera Neon`, `Browserbase`, `NovaAct`, `Manus` or `Brave` UA matches. Add a product-specific token only after verifying the actual operator contract or a reproducible captured UA. Keep `Google-Extended` and `Applebot-Extended` out.
 
@@ -234,7 +234,7 @@ Weights are deliberately conservative. Their values are design proposals based o
 | `AU` | hard / 100 | Explicit known automation/audit tokens: `PhantomJS`, `Chrome-Lighthouse`, `Lighthouse`, `PTST` with version delimiter, `GTmetrix`, `Google-PageRenderer`. Use bounded token patterns, not broad `bot`/`test` matches. These indicate automation/audit tooling rather than AI; exact current coverage must be verified in the test harness. |
 | `GL` | hard / 100 | Exact known automation globals with expected shape: PhantomJS/Nightmare, Selenium document helper functions, domAutomation objects, narrow ChromeDriver window/cache signatures. Avoid generic application identifiers and broad prefixes. |
 | `PW` | hard / 100, feature-dependent | Recognizable exact Playwright binding/controller/init-script objects **when verified for the installed test version**. Start with known names above; repeat probes at final to catch late injection. A missing object has no score. Disable any candidate whose clean baseline collides. |
-| `CA` | inherited / 100 | Previous page's stored final class `automated`, as explicitly required by AGENTS.md. Separate code from direct evidence. No cross-session identifier. |
+| `CA` | inherited / 100 | Previous page's stored final class `automated`, as explicitly required by the detector design. Separate code from direct evidence. No cross-session identifier. |
 | `G0` | soft / 1 | Both screen dimensions zero, both viewport dimensions zero, or both outer dimensions zero; only visible, focused top-level context. One geometry-family point maximum; recheck final. |
 | `GS` | soft / 1 | 800×600 screen, or 1280×720 **screen equal to viewport**. Not viewport alone. Geometry family including `G0` capped at 1; normal resolutions are weak evidence. |
 | `LA` | soft / 1 | `navigator.languages` empty/missing **and** no usable `navigator.language`/legacy fallback. A one-item languages array is normal. |
@@ -247,7 +247,7 @@ Weights are deliberately conservative. Their values are design proposals based o
 | `FN` | behavior / 3 | At least `fastNavCount` pageviews in a qualifying consecutive rapid run: with count 3, **two** consecutive positive intervals below 2000 ms. Bound timestamps to 20; dedupe invocation and handle bad/future timestamps and storage failure. Do not confuse three intervals with three pageviews. |
 | `SY` | behavior / 2 | Pointer interactions occurred, all were `isTrusted === false`, and no trusted interaction of any accepted modality occurred. No points merely because no pointer input occurred. Treat `NI`/`SY` as one behavior family capped at 2; a single library-generated event must not add to inactivity. |
 
-**Decision safeguards:** cap correlated geometry at 1, graphics at 1 and inactivity/synthetic-only at 2. Consider requiring at least three distinct soft/behavior families to reach `suspicious` (with the listed weights, fast navigation + inactivity + one environment family does so). These caps/guards are recommendations beyond the simplest sum in AGENTS.md; preserve them or document the false-positive tradeoff if simplifying. A genuine trusted interaction removes `SY` and prevents `NI`; it does not cancel real hard evidence or make automation human.
+**Decision safeguards:** cap correlated geometry at 1, graphics at 1 and inactivity/synthetic-only at 2. Consider requiring at least three distinct soft/behavior families to reach `suspicious` (with the listed weights, fast navigation + inactivity + one environment family does so). These caps/guards are recommendations beyond the simplest sum in the detector design; preserve them or document the false-positive tradeoff if simplifying. A genuine trusted interaction removes `SY` and prevents `NI`; it does not cancel real hard evidence or make automation human.
 
 Example score implications: reading quietly = 2 → human; PDF-disabled/software-GPU privacy user with a common resolution and no input = at most 4 → human; fast navigation + no input = 5 → human; fast navigation + no input + one weak environment family = 6 → suspicious. The requested AutomationControlled-disabled fast-click bot may therefore slip through if it uses plausible browser input and a normal environment. Record that honestly. **Do not increase weights just to force that fixture to pass:** the same short navigation pattern is achievable by a real person.
 

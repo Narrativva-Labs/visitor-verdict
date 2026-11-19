@@ -1,294 +1,427 @@
 /* Override these defaults with window.trafficClassConfig before loading. */
 (function (w, d, n) {
   'use strict';
-  var config = {
-    idleMs: 8000, fastNavMs: 2000, fastNavCount: 3,
-    suspiciousThreshold: 6, debug: false, dataLayerName: 'dataLayer',
-    agentTokens: [
-      'ChatGPT-User', 'OAI-SearchBot', 'OAI-AdsBot', 'GPTBot',
-      'Claude-Agent', 'Claude-User', 'Claude-SearchBot', 'ClaudeBot',
-      'Perplexity-User', 'PerplexityBot', 'Google-Agent', 'Google-CloudVertexBot',
-      'Google-GeminiNotebook', 'Google-NotebookLM', 'MistralAI-User',
-      'MistralAI-Index', 'MistralAI-Training', 'DuckAssistBot', 'Applebot',
-      'Bytespider', 'meta-externalagent', 'meta-externalfetcher', 'meta-webindexer',
-      'CCBot', 'Amazonbot', 'Amzn-SearchBot'
-    ]
-  };
-  if (w.__trafficClass) { return; }
-  var key, overrides = w.trafficClassConfig || {};
-  for (key in config) {
-    if (Object.prototype.hasOwnProperty.call(overrides, key)) { config[key] = overrides[key]; }
+  var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
+  // Frames must not probe, publish, or touch this tab's storage.
+  if (w.top !== w) { return; }
+  var existing = Object.getOwnPropertyDescriptor(w, '__trafficClass');
+  var marker = existing && shapeValue(existing.value) && Object.getOwnPropertyDescriptor(existing.value, '__tcDetector');
+  if (existing &&
+      own.call(w, '__trafficClass') && marker && marker.value === true) { return; }
+  var state = {};
+  Object.defineProperty(state, '__tcDetector', {value: true});
+  Object.defineProperty(w, '__trafficClass', {value: state, configurable: true, writable: true});
+  function activate() {
+    if (d.prerendering === true) { return; }
+    removeListener(d, 'prerenderingchange', activate, true);
+    start();
   }
-  var signals = [], families = {}, score = 0, hard = false, declared = false;
-  var done = false, initial, elapsed = 0, started = null, timer;
-  var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
-  var ua = n.userAgent || '', mobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua) ||
-    (n.maxTouchPoints > 1 && /Macintosh/i.test(ua));
-  var embedded = /; wv\)|WebView|FBAN|FBAV|Instagram/i.test(ua);
-  var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
-  var chromium = false, brands = n.userAgentData && n.userAgentData.brands, i;
-  var events = 'mousemove pointermove pointerdown pointercancel touchstart scroll keydown wheel click'.split(' ');
-  // Bounded transient state only: no trajectories, rates or input objects retained.
-  var move = null, clicked = null, pointerKind = '', teleport = false;
-  var tpPages = 0, repeatedTeleport = false, lastStoredClass = '';
-  var worker = null, workerURL = null, workerTimer, workerMismatch = false, workerHeadless = false;
-  var urlAPI = w.URL || w.webkitURL;
-  function stopWorker() {
-    w.clearTimeout(workerTimer);
-    if (worker) {
-      worker.onmessage = worker.onerror = null;
-      try { worker.terminate(); } catch (ignore) {}
-      worker = null;
-    }
-    if (workerURL) {
-      try { urlAPI.revokeObjectURL(workerURL); } catch (ignore) {}
-      workerURL = null;
-    }
+  if (d.prerendering === true) { addListener(d, 'prerenderingchange', activate, true); }
+  else { start(); }
+  function canListen(target) {
+    return !!target && typeof target.addEventListener === 'function' && typeof target.removeEventListener === 'function';
   }
-  function startWorker() {
+  function addListener(target, name, handler, options) {
     try {
-      if (!w.Worker || !w.Blob || !urlAPI || !urlAPI.createObjectURL) { return; }
-      // Main values travel only to this local worker; its reply contains booleans.
-      // No OffscreenCanvas probe: avoid another graphics context and its cost.
-      var code = 'onmessage=function(e){var a=e.data,n=navigator,m=false;' +
-        'try{if(a.ua&&n.userAgent&&a.ua!==n.userAgent)m=true;' +
-        'if(typeof a.wd==="boolean"&&typeof n.webdriver==="boolean"&&a.wd!==n.webdriver)m=true;' +
-        'if(a.la&&a.la.length&&n.languages&&n.languages.length&&a.la.join("|")!==Array.prototype.join.call(n.languages,"|"))m=true;' +
-        'if(a.hc>0&&n.hardwareConcurrency>0&&a.hc!==n.hardwareConcurrency)m=true;' +
-        'postMessage({m:m,h:/(?:^|[^A-Za-z0-9_-])HeadlessChrome(?=$|[^A-Za-z0-9_-])/i.test(n.userAgent||"")});' +
-        '}catch(x){postMessage({m:false,h:false});}close();}';
-      workerURL = urlAPI.createObjectURL(new w.Blob([code], {type: 'text/javascript'}));
-      worker = new w.Worker(workerURL);
-      worker.onmessage = function (event) {
-        if (!done && event.data) {
-          workerMismatch = event.data.m === true;
-          workerHeadless = event.data.h === true;
-        }
-        stopWorker();
-      };
-      worker.onerror = function (event) { if (event.preventDefault) { event.preventDefault(); } stopWorker(); };
-      workerTimer = w.setTimeout(stopWorker, Math.min(1500, config.idleMs));
-      worker.postMessage({ua: n.userAgent || '', wd: n.webdriver,
-        la: n.languages ? Array.prototype.slice.call(n.languages) : null, hc: n.hardwareConcurrency});
-    } catch (ignore) { stopWorker(); }
+      // An add without a matching remove would leave a permanent listener.
+      if (canListen(target)) { target.addEventListener(name, handler, options); return true; }
+    } catch (ignore) {}
+    return false;
   }
-  function far(a, x, y) {
-    return (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y) > 1600;
-  }
-  function pointer(event) {
-    if (event.type === 'pointerdown') {
-      pointerKind = event.isTrusted === true && event.pointerType === 'mouse' ? 'mouse' : '';
-      return;
-    }
-    if (/^(touchstart|pointercancel|keydown)$/.test(event.type)) { pointerKind = ''; return; }
-    var mouseDown = false;
-    if (event.type === 'click') { mouseDown = pointerKind === 'mouse'; pointerKind = ''; }
-    if (event.isTrusted !== true) { return; }
-    var movement = event.type === (w.PointerEvent ? 'pointermove' : 'mousemove');
-    if (movement && (!w.PointerEvent || event.pointerType === 'mouse')) {
-      var now = Date.now();
-      if (move && now - move.t <= 1000) {
-        if (move.x === event.clientX && move.y === event.clientY) { return; }
-      }
-      move = {x: event.clientX, y: event.clientY, t: now, previous: move ? move.t : null};
-    }
-    if (event.type === 'click' && event.detail > 0 && mouseDown && (!event.pointerType || event.pointerType === 'mouse') &&
-        typeof event.clientX === 'number' && typeof event.clientY === 'number') {
-      // Repeated clicks at the same point, and a cursor rested there for >1s,
-      // are exempt. A single instantaneous move followed by a click is sparse.
-      if ((!clicked || far(clicked, event.clientX, event.clientY)) &&
-          (!move || far(move, event.clientX, event.clientY) ||
-          (Date.now() - move.t <= 1000 && (move.previous === null || Date.now() - move.previous > 1000)))) {
-        if (!teleport) { teleport = true; recordTeleport(); }
-      }
-      clicked = {x: event.clientX, y: event.clientY};
-    }
-  }
-  function add(code, weight, family) {
-    if (signals.indexOf(code) !== -1) { return; }
-    signals.push(code);
-    if (weight === 100) { if (code === 'AG') { declared = true; } else { hard = true; } }
-    else if (weight) {
-      score += Math.max(0, weight - (families[family] || 0));
-      families[family] = Math.max(weight, families[family] || 0);
-    }
-  }
-  function bounded(pattern) {
-    try { return new RegExp('(?:^|[^A-Za-z0-9_-])(?:' + pattern + ')(?=$|[^A-Za-z0-9_-])', 'i').test(ua); }
-    catch (ignore) { return false; }
-  }
-  function shape(object, name) {
+  function removeListener(target, name, handler, options) {
     try {
-      var prop = Object.getOwnPropertyDescriptor(object, name), value = prop && prop.value;
-      return !!value && (typeof value === 'object' || typeof value === 'function');
-    } catch (ignore) { return false; }
-  }
-  function playwright() {
-    var names = '__playwright__binding__ __playwright__binding__controller__ __pwInitScripts'.split(' ');
-    for (var j = 0; j < names.length; j++) { if (shape(w, names[j])) { add('PW', 100); } }
-  }
-  function geometry() {
-    try {
-      if (d.visibilityState !== 'hidden' && d.hasFocus() && w.top === w &&
-          ((w.screen.width === 0 && w.screen.height === 0) ||
-          (w.innerWidth === 0 && w.innerHeight === 0) || (w.outerWidth === 0 && w.outerHeight === 0))) {
-        add('G0', 1, 'geometry');
-      }
+      if (target && typeof target.removeEventListener === 'function') { target.removeEventListener(name, handler, options); }
     } catch (ignore) {}
   }
-  function boundedTP(value) {
-    return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 255 &&
-      Math.floor(value) === value ? value : 0;
-  }
-  function storedTP() {
+  function shapeValue(value) {
     try {
-      var record = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}');
-      return boundedTP(record && record.tpPages);
-    } catch (ignore) { return 0; }
-  }
-  function save(lastClass) {
-    lastStoredClass = lastClass;
-    try {
-      // Preserve a newer same-tab document's counter when this document finalizes.
-      tpPages = Math.max(tpPages, storedTP());
-      w.sessionStorage.setItem('traffic_class', JSON.stringify({timestamps: timestamps, lastClass: lastClass, tpPages: tpPages}));
-      return true;
+      if (!value || value === w || value.window === value || value.nodeType || value.ownerDocument) { return false; }
+      var kind = tag.call(value), proto;
+      if (kind === '[object Function]' || kind === '[object Array]') { return true; }
+      if (kind !== '[object Object]') { return false; }
+      proto = Object.getPrototypeOf(value);
+      return proto === null || Object.getPrototypeOf(proto) === null;
     } catch (ignore) { return false; }
   }
-  function recordTeleport() {
-    // Called once per document, in click capture, before navigation/pagehide.
-    tpPages = Math.min(255, Math.max(tpPages, storedTP()) + 1);
-    if (tpPages >= 2) { repeatedTeleport = true; add('TR', 0); }
-    save(lastStoredClass);
-  }
-  function publish(phase) {
-    var result = declared ? 'declared_agent' : hard ? 'automated' :
-      repeatedTeleport || (score >= config.suspiciousThreshold && Object.keys(families).length >= 3) ? 'suspicious' : 'human';
-    if (phase === 'final' && (initial === 'automated' || initial === 'declared_agent')) { result = initial; }
-    var total = hard || declared ? 100 : score;
-    var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase, traffic_score: total};
-    w.__trafficClass = {'class': result, score: total, phase: phase};
-    if (config.debug) { event.traffic_signals = signals.slice(0); w.__trafficClass.signals = signals.slice(0); }
-    if (phase === 'final') { save(result); }
-    w[config.dataLayerName] = w[config.dataLayerName] || [];
-    w[config.dataLayerName].push(event);
-    return result;
-  }
-  for (i = 0; i < config.agentTokens.length; i++) { if (bounded(config.agentTokens[i])) { add('AG', 100); break; } }
-  if (n.webdriver === true) { add('WD', 100); }
-  if (bounded('HeadlessChrome')) { add('HL', 100); }
-  if (brands) {
-    for (i = 0; i < brands.length; i++) {
-      if (/HeadlessChrome/i.test(brands[i].brand)) { add('HL', 100); }
-      if (/Chromium|Google Chrome|Microsoft Edge/i.test(brands[i].brand)) { chromium = true; }
+  function start() {
+    var config = {
+      idleMs: 8000, fastNavMs: 2000, fastNavCount: 3,
+      suspiciousThreshold: 6, debug: false, webgl: false, worker: false, dataLayerName: 'dataLayer',
+      agentTokens: [
+        'ChatGPT-User', 'OAI-SearchBot', 'OAI-AdsBot', 'GPTBot',
+        'Claude-Agent', 'Claude-User', 'Claude-SearchBot', 'ClaudeBot',
+        'Perplexity-User', 'PerplexityBot', 'Google-Agent', 'Google-CloudVertexBot',
+        'Google-GeminiNotebook', 'Google-NotebookLM', 'MistralAI-User',
+        'MistralAI-Index', 'MistralAI-Training', 'DuckAssistBot', 'Applebot',
+        'Bytespider', 'meta-externalagent', 'meta-externalfetcher', 'meta-webindexer',
+        'CCBot', 'Amazonbot', 'Amzn-SearchBot'
+      ]
+    };
+    var key, overrides = w.trafficClassConfig || {};
+    for (key in config) {
+      if (own.call(overrides, key)) {
+        var value = overrides[key];
+        if (key === 'agentTokens') {
+          if (tag.call(value) === '[object Array]') { config[key] = value.slice(0, 64); }
+        } else if (key === 'dataLayerName') {
+          if (typeof value === 'string' && value.length > 0 && value.length <= 128 &&
+              !/^(?:__proto__|prototype|constructor)$/.test(value)) { config[key] = value; }
+        } else if (typeof config[key] === 'number') {
+          var max = key === 'idleMs' ? 3600000 : key === 'fastNavMs' ? 60000 : key === 'fastNavCount' ? 20 : 1000;
+          if (typeof value === 'number' && isFinite(value) && value >= (key === 'fastNavCount' ? 2 : 1) &&
+              value <= max && Math.floor(value) === value) { config[key] = value; }
+        } else { config[key] = value === true; }
+      }
     }
-  }
-  if (bounded('PhantomJS|Chrome-Lighthouse|Lighthouse|GTmetrix|Google-PageRenderer') ||
-      /(?:^|[^A-Za-z0-9_-])PTST\/[0-9]/i.test(ua)) { add('AU', 100); }
-  try {
-    var names = Object.getOwnPropertyNames(w);
-    for (i = 0; i < names.length; i++) {
-      if (/^(callPhantom|_phantom|__nightmare|domAutomation|domAutomationController|cdc_[A-Za-z0-9]+_(Array|Promise|Symbol|Object|Proxy|JSON|Window))$/.test(names[i]) && shape(w, names[i])) { add('GL', 100); }
+    var signals = [], families = {}, score = 0, hard = false, declared = false, direct = false;
+    var done = false, initial, elapsed = 0, started = null, timer;
+    var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
+    var inputTarget = canListen(w) ? w : canListen(d) ? d : null, observesInput = true;
+    var visibilityTarget = canListen(d) ? d : w;
+    var ua = n.userAgent || '', mobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua) ||
+      (n.maxTouchPoints > 1 && /Macintosh/i.test(ua));
+    var embedded = /; wv\)|WebView|FBAN|FBAV|Instagram/i.test(ua);
+    var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
+    var chromium = false, brands = n.userAgentData && n.userAgentData.brands, i;
+    var events = 'mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin'.split(' ');
+    // Bounded transient state only: no trajectories, rates or input objects retained.
+    var move = null, clicked = null, pointerKind = '', downAt = 0, teleport = false;
+    var tpPages = 0, pageTime = Math.floor(Date.now() / 100) * 100;
+    var classSnapshot = null, tpSnapshot = 0;
+    var worker = null, workerURL = null, workerTimer, workerMismatch = false, workerHeadless = false;
+    var urlAPI = w.URL || w.webkitURL;
+    function stopWorker() {
+      w.clearTimeout(workerTimer);
+      if (worker) {
+        worker.onmessage = worker.onerror = null;
+        try { worker.terminate(); } catch (ignore) {}
+        worker = null;
+      }
+      if (workerURL) {
+        try { urlAPI.revokeObjectURL(workerURL); } catch (ignore) {}
+        workerURL = null;
+      }
     }
-    names = Object.getOwnPropertyNames(d);
-    for (i = 0; i < names.length; i++) {
-      if (/^(?:__(?:selenium|webdriver|driver|fxdriver)_(?:evaluate|unwrapped)$|__webdriver_script_(?:fn|func|function)$|__\$webdriverAsyncExecutor$|\$cdc_|\$wdc_)/.test(names[i]) && shape(d, names[i])) { add('GL', 100); }
+    function startWorker() {
+      if (!config.worker || done) { return; }
+      var ready = false;
+      try {
+        if (!w.Worker || !w.Blob || !urlAPI || !urlAPI.createObjectURL) { return; }
+        // Main values travel only to this local worker; its reply contains booleans.
+        // No OffscreenCanvas probe: avoid another graphics context and its cost.
+        var code = 'onmessage=function(e){var a=e.data,n=navigator,m=false;' +
+          'try{if(a.ua&&n.userAgent&&a.ua!==n.userAgent)m=true;' +
+          'if(typeof a.wd==="boolean"&&typeof n.webdriver==="boolean"&&a.wd!==n.webdriver)m=true;' +
+          'if(a.la&&a.la.length&&n.languages&&n.languages.length&&a.la.join("|")!==Array.prototype.join.call(n.languages,"|"))m=true;' +
+          'if(a.hc>0&&n.hardwareConcurrency>0&&a.hc!==n.hardwareConcurrency)m=true;' +
+          'postMessage({m:m,h:/(?:^|[^A-Za-z0-9_-])HeadlessChrome(?=$|[^A-Za-z0-9_-])/i.test(n.userAgent||"")});' +
+          '}catch(x){postMessage({m:false,h:false});}close();}';
+        workerURL = urlAPI.createObjectURL(new w.Blob([code], {type: 'text/javascript'}));
+        worker = new w.Worker(workerURL);
+        worker.onmessage = function (event) {
+          try {
+            if (!done && event.data) {
+              workerMismatch = event.data.m === true;
+              workerHeadless = event.data.h === true;
+            }
+          } finally { stopWorker(); }
+        };
+        worker.onerror = function (event) {
+          try { if (event.preventDefault) { event.preventDefault(); } } finally { stopWorker(); }
+        };
+        workerTimer = w.setTimeout(stopWorker, Math.min(1500, config.idleMs));
+        worker.postMessage({ua: n.userAgent || '', wd: n.webdriver,
+          la: n.languages ? Array.prototype.slice.call(n.languages) : null, hc: n.hardwareConcurrency});
+        ready = true;
+      } catch (ignore) {} finally { if (!ready) { stopWorker(); } }
     }
-    names = null;
-  } catch (ignore) {}
-  playwright(); geometry();
-  var screen = w.screen || {};
-  if ((screen.width === 800 && screen.height === 600) ||
-      (screen.width === 1280 && screen.height === 720 && w.innerWidth === 1280 && w.innerHeight === 720)) { add('GS', 1, 'geometry'); }
-  if ((!n.languages || !n.languages.length) && !(n.language || n.userLanguage || n.browserLanguage || n.systemLanguage)) { add('LA', 1, 'language'); }
-  if (desktop && (chromium || w.chrome) && n.plugins && !n.plugins.length && n.pdfViewerEnabled !== false) { add('PL', 1, 'plugins'); }
-  try {
-    var canvas = d.createElement('canvas'), gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    if (!gl) { add('WG', 1, 'graphics'); }
-    else {
-      var extension = gl.getExtension('WEBGL_debug_renderer_info');
-      if (extension && /(?:^|[ (])(?:SwiftShader|llvmpipe|softpipe)(?:$|[ )])|^Mesa OffScreen$/i.test(gl.getParameter(extension.UNMASKED_RENDERER_WEBGL))) { add('WG', 1, 'graphics'); }
-      extension = gl.getExtension('WEBGL_lose_context');
-      if (extension) { extension.loseContext(); }
+    function distance(a, x, y) {
+      return (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y);
     }
-    gl = null; canvas = null; extension = null;
-  } catch (ignore) {}
-  if (desktop && chromium && !w.chrome) { add('CH', 1, 'chrome'); }
-  if (!n.hardwareConcurrency) { add('HC', 0); }
-  try {
-    if (chromium && w.isSecureContext && w.top === w && w.Notification &&
-        w.Notification.permission === 'denied' && n.permissions && n.permissions.query) {
-      n.permissions.query({name: 'notifications'}).then(function (status) {
-        if (!done && status.state === 'prompt') { mismatch = true; }
-      }, function () {});
+    function pointer(event) {
+      var now = Date.now();
+      if (event.type === 'pointerdown') {
+        pointerKind = event.isTrusted === true && event.pointerType === 'mouse' ? 'mouse' : '';
+        downAt = now;
+        return;
+      }
+      if (/^(touchstart|touchend|touchcancel|pointercancel|keydown|keyup)$/.test(event.type)) { pointerKind = ''; return; }
+      var mouseDown = false;
+      if (event.type === 'click') { mouseDown = pointerKind === 'mouse' && now - downAt <= 600; pointerKind = ''; }
+      if (event.isTrusted !== true || typeof event.clientX !== 'number' || typeof event.clientY !== 'number') { return; }
+      // Use mousemove only: Pointer Events also emit a compatibility mousemove.
+      if (event.type === 'mousemove') {
+        if (move && distance(move, event.clientX, event.clientY) === 0) { return; }
+        var recent = move && now - move.t <= 600;
+        var jump = (typeof event.movementX === 'number' && typeof event.movementY === 'number' &&
+          event.movementX * event.movementX + event.movementY * event.movementY > 40000) ||
+          (recent && distance(move, event.clientX, event.clientY) > 40000);
+        var path = recent && now - move.t <= 120 ? Math.min(3, move.path + 1) : 1;
+        move = {x: event.clientX, y: event.clientY, t: now, jump: !!jump && path < 3, path: path};
+      }
+      if (event.type === 'click' && event.detail > 0 && mouseDown && (!event.pointerType || event.pointerType === 'mouse') &&
+          move && move.jump && now - move.t <= 600 && distance(move, event.clientX, event.clientY) <= 4 &&
+          (!clicked || distance(clicked, event.clientX, event.clientY) > 1600)) {
+        if (!teleport) { teleport = true; recordTeleport(); }
+      }
+      if (event.type === 'click') { clicked = {x: event.clientX, y: event.clientY}; move = null; }
     }
-  } catch (ignore) {}
-  try {
-    var saved = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}') || {};
-    tpPages = boundedTP(saved.tpPages);
-    if (tpPages >= 2) { repeatedTeleport = true; add('TR', 0); }
-    if (saved.lastClass === 'automated') { add('CA', 100); }
-    var now = Date.now(), list = saved.timestamps, last = -Infinity;
-    if (Object.prototype.toString.call(list) === '[object Array]') {
-      for (i = 0; i < list.length; i++) {
-        if (typeof list[i] === 'number' && isFinite(list[i]) && list[i] >= 0 && list[i] <= now && list[i] > last) {
-          timestamps.push(list[i]); last = list[i];
+    function add(code, weight, family) {
+      if (signals.indexOf(code) !== -1) { return; }
+      signals.push(code);
+      if (weight === 100) { if (code !== 'CA') { direct = true; } if (code === 'AG') { declared = true; } else { hard = true; } }
+      else if (weight) {
+        score += Math.max(0, weight - (families[family] || 0));
+        families[family] = Math.max(weight, families[family] || 0);
+      }
+    }
+    function bounded(pattern) {
+      try { return new RegExp('(?:^|[^A-Za-z0-9_-])(?:' + pattern + ')(?=$|[^A-Za-z0-9_-])', 'i').test(ua); }
+      catch (ignore) { return false; }
+    }
+    function shape(object, name) {
+      try {
+        var prop = Object.getOwnPropertyDescriptor(object, name), value = prop && prop.value;
+        return shapeValue(value);
+      } catch (ignore) { return false; }
+    }
+    function playwright() {
+      var names = '__playwright__binding__ __playwright__binding__controller__ __pwInitScripts'.split(' ');
+      for (var j = 0; j < names.length; j++) { if (shape(w, names[j])) { add('PW', 100); } }
+    }
+    function geometry() {
+      try {
+        if (d.visibilityState !== 'hidden' && d.hasFocus() && w.top === w &&
+            ((w.screen.width === 0 && w.screen.height === 0) ||
+            (w.innerWidth === 0 && w.innerHeight === 0) || (w.outerWidth === 0 && w.outerHeight === 0))) {
+          add('G0', 1, 'geometry');
+        }
+      } catch (ignore) {}
+    }
+    function boundedTP(value) {
+      return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 255 &&
+        Math.floor(value) === value ? value : 0;
+    }
+    function cleanClass(value) {
+      if (value === 'human' || value === 'suspicious' || value === 'automated' || value === 'declared_agent') { return value; }
+      if (value && tag.call(value) === '[object Object]' && value.direct === true && typeof value.value === 'string' &&
+          (value.value === 'automated' || value.value === 'declared_agent')) { return {value: value.value, direct: true}; }
+      return '';
+    }
+    function classText(value) {
+      value = cleanClass(value);
+      return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true}';
+    }
+    function readStore() {
+      var record = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}');
+      record = record && tag.call(record) === '[object Object]' ? record : {};
+      return {timestamps: record.timestamps, lastClass: cleanClass(record.lastClass), tpPages: boundedTP(record.tpPages)};
+    }
+    function mergeTimes(list) {
+      var merged = [], now = Date.now(), j, value;
+      list = timestamps.concat(tag.call(list) === '[object Array]' ? list : []);
+      for (j = 0; j < list.length; j++) {
+        value = list[j];
+        if (typeof value === 'number' && isFinite(value) && value >= 0 && value <= now) {
+          value = Math.floor(value / 100) * 100;
+          if (merged.indexOf(value) === -1) { merged.push(value); }
         }
       }
+      merged.sort(function (a, b) { return a - b; });
+      return merged.slice(-config.fastNavCount);
     }
-    timestamps = timestamps.slice(-20);
-    var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
-    var revisit = navigation ? /reload|back_forward/.test(navigation.type) :
-      w.performance && w.performance.navigation && w.performance.navigation.type;
-    if (!revisit && now > last) {
-      timestamps = timestamps.slice(-19); timestamps.push(now);
-      var count = 1;
-      for (i = timestamps.length - 1; i > 0; i--) {
-        var gap = timestamps[i] - timestamps[i - 1];
-        if (gap <= 0 || gap >= config.fastNavMs) { break; }
-        count++;
+    function save(lastClass, change) {
+      try {
+        // Every write reads current state: stale finalizers cannot restore old
+        // timestamps, a decayed counter, or an older document's class/provenance.
+        var saved;
+        try { saved = readStore(); } catch (ignore) { saved = {}; }
+        timestamps = mergeTimes(saved.timestamps);
+        var newer = (timestamps.length && timestamps[timestamps.length - 1] > pageTime) ||
+          (classSnapshot !== null && classText(saved.lastClass) !== classSnapshot);
+        tpPages = boundedTP(saved.tpPages);
+        if (change === 'tp') { tpPages = Math.min(255, tpPages + 1); }
+        if (change === 'decay' && !newer && tpPages === tpSnapshot) { tpPages = Math.max(0, tpPages - 1); }
+        var nextClass = cleanClass(lastClass !== null && !newer ? lastClass : saved.lastClass);
+        // All components have been reduced to bounded numbers or fixed enums.
+        // This also repairs writable storage when a legacy browser lacks JSON.
+        w.sessionStorage.setItem('traffic_class', '{"timestamps":[' + timestamps.join(',') +
+          '],"lastClass":' + classText(nextClass) + ',"tpPages":' + tpPages + '}');
+        if (!newer) { classSnapshot = classText(nextClass); tpSnapshot = tpPages; }
+        return true;
+      } catch (ignore) { return false; }
+    }
+    function recordTeleport() {
+      // Called once per document, in click capture, before navigation/pagehide.
+      if (!save(null, 'tp')) { tpPages = 1; }
+    }
+    function suspicious() {
+      var env = 0, family;
+      for (family in families) {
+        if (/^(geometry|language|plugins|graphics|chrome|permissions)$/.test(family)) { env++; }
       }
-      fast = count >= config.fastNavCount;
+      return score >= config.suspiciousThreshold && Object.keys(families).length >= 3 &&
+        (families.pointer || signals.indexOf('SY') !== -1 || families.worker ||
+        (env >= 2 && (families.interaction || families.navigation)));
     }
-    if (!save(/^(human|suspicious|automated|declared_agent)$/.test(saved.lastClass) ? saved.lastClass : '')) { fast = false; }
-  } catch (ignore) { fast = false; }
-  function interact(event) {
-    if (done || d.visibilityState === 'hidden') { return; }
-    pointer(event);
-    if (event.isTrusted === true && event.type !== 'pointercancel') { active = true; }
-    if (/^(mousemove|pointerdown|touchstart)$/.test(event.type) && event.isTrusted === false) { synthetic = true; }
-  }
-  function exposure() {
-    if (started !== null) { elapsed += Math.max(0, Date.now() - started); started = null; }
-    w.clearTimeout(timer);
-  }
-  function finish() {
-    if (done) { return; }
-    exposure(); done = true; stopWorker();
+    function publish(phase) {
+      var result = declared ? 'declared_agent' : hard ? 'automated' :
+        suspicious() ? 'suspicious' : 'human';
+      if (phase === 'final' && (initial === 'automated' || initial === 'declared_agent')) { result = initial; }
+      var total = hard || declared ? 100 : score;
+      var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase, traffic_score: total};
+      state['class'] = result; state.score = total; state.phase = phase;
+      if (config.debug) { event.traffic_signals = signals.slice(0); state.signals = signals.slice(0); }
+      // Only direct evidence can seed one grace document. A CA-only final stores
+      // no provenance, so the second consecutive document without hard proof is clean.
+      if (phase === 'final') { save(direct ? {value: result, direct: true} : result); }
+      try {
+        var layer = w[config.dataLayerName];
+        if (layer === undefined || layer === null) { layer = w[config.dataLayerName] = []; }
+        if (typeof layer.length === 'number' && isFinite(layer.length) && layer.length >= 0 &&
+            Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); }
+      } catch (ignore) {}
+      return result;
+    }
+    for (i = 0; i < config.agentTokens.length; i++) {
+      var token = config.agentTokens[i];
+      if (typeof token === 'string' && token.length > 0 && token.length <= 128 &&
+          bounded(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))) { add('AG', 100); break; }
+    }
+    if (n.webdriver === true) { add('WD', 100); }
+    if (bounded('HeadlessChrome')) { add('HL', 100); }
+    if (brands) {
+      for (i = 0; i < brands.length; i++) {
+        if (/HeadlessChrome/i.test(brands[i].brand)) { add('HL', 100); }
+        if (/Chromium|Google Chrome|Microsoft Edge/i.test(brands[i].brand)) { chromium = true; }
+      }
+    }
+    if (bounded('PhantomJS|Chrome-Lighthouse|Lighthouse|GTmetrix|Google-PageRenderer') ||
+        /(?:^|[^A-Za-z0-9_-])PTST\/[0-9]/i.test(ua)) { add('AU', 100); }
+    try {
+      var names = Object.getOwnPropertyNames(w);
+      for (i = 0; i < names.length; i++) {
+        if (/^(callPhantom|_phantom|__nightmare|domAutomation|domAutomationController|cdc_[A-Za-z0-9]+_(Array|Promise|Symbol|Object|Proxy|JSON|Window))$/.test(names[i]) && shape(w, names[i])) { add('GL', 100); }
+      }
+      names = Object.getOwnPropertyNames(d);
+      for (i = 0; i < names.length; i++) {
+        if (/^(?:__(?:selenium|webdriver|driver|fxdriver)_(?:evaluate|unwrapped)$|__webdriver_script_(?:fn|func|function)$|__\$webdriverAsyncExecutor$|\$cdc_|\$wdc_)/.test(names[i]) && shape(d, names[i])) { add('GL', 100); }
+      }
+      names = null;
+    } catch (ignore) {}
     playwright(); geometry();
-    for (i = 0; i < events.length; i++) { d.removeEventListener(events[i], interact, true); }
-    d.removeEventListener('visibilitychange', visibility); w.removeEventListener('pagehide', finish);
-    if (!active && elapsed >= config.idleMs) { add('NI', 2, 'interaction'); }
-    if (fast) { add('FN', 3, 'navigation'); }
-    if (synthetic && !active) { add('SY', 2, 'interaction'); }
-    if (mismatch) { add('NP', 1, 'permissions'); }
-    if (teleport) { add('TP', 3, 'pointer'); }
-    if (workerMismatch) { add('WK', 2, 'worker'); }
-    if (workerHeadless) { add('HL', 100); }
-    move = clicked = null; pointerKind = '';
-    publish('final'); signals = []; families = {};
-  }
-  function visibility() {
-    pointerKind = '';
-    if (done) { return; }
-    exposure();
-    if (d.visibilityState !== 'hidden') {
-      started = Date.now(); timer = w.setTimeout(finish, Math.max(0, config.idleMs - elapsed));
+    var screen = w.screen || {};
+    if ((screen.width === 800 && screen.height === 600) ||
+        (screen.width === 1280 && screen.height === 720 && w.innerWidth === 1280 && w.innerHeight === 720)) { add('GS', 1, 'geometry'); }
+    if ((!n.languages || !n.languages.length) && !(n.language || n.userLanguage || n.browserLanguage || n.systemLanguage)) { add('LA', 1, 'language'); }
+    if (desktop && (chromium || w.chrome) && n.plugins && !n.plugins.length && n.pdfViewerEnabled !== false) { add('PL', 1, 'plugins'); }
+    if (config.webgl) {
+      var canvas, gl, extension;
+      try {
+        canvas = d.createElement('canvas'); gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) { add('WG', 1, 'graphics'); }
+        else {
+          extension = gl.getExtension('WEBGL_debug_renderer_info');
+          if (extension && /(?:^|[ (])(?:SwiftShader|llvmpipe|softpipe)(?:$|[ )])|^Mesa OffScreen$/i.test(gl.getParameter(extension.UNMASKED_RENDERER_WEBGL))) { add('WG', 1, 'graphics'); }
+        }
+      } catch (ignore) {} finally {
+        try { extension = gl && gl.getExtension('WEBGL_lose_context'); if (extension) { extension.loseContext(); } } catch (ignore) {}
+        gl = canvas = extension = null;
+      }
     }
+    if (desktop && chromium && !w.chrome) { add('CH', 1, 'chrome'); }
+    if (!n.hardwareConcurrency) { add('HC', 0); }
+    try {
+      if (chromium && w.isSecureContext && w.top === w && w.Notification &&
+          w.Notification.permission === 'denied' && n.permissions && n.permissions.query) {
+        n.permissions.query({name: 'notifications'}).then(function (status) {
+          if (!done && status.state === 'prompt') { mismatch = true; }
+        }, function () {});
+      }
+    } catch (ignore) {}
+    try {
+      var saved;
+      try { saved = readStore(); } catch (ignore) { saved = {}; }
+      tpPages = boundedTP(saved.tpPages);
+      classSnapshot = classText(saved.lastClass); tpSnapshot = tpPages;
+      if (saved.lastClass && saved.lastClass.direct === true &&
+          /^(automated|declared_agent)$/.test(saved.lastClass.value)) { add('CA', 100); }
+      timestamps = mergeTimes(saved.timestamps);
+      var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
+      var revisit = navigation ? /reload|back_forward/.test(navigation.type) :
+        w.performance && w.performance.navigation && w.performance.navigation.type;
+      if (!revisit) {
+        timestamps = mergeTimes([pageTime]);
+        var count = 1;
+        for (i = timestamps.length - 1; i > 0; i--) {
+          var gap = timestamps[i] - timestamps[i - 1];
+          if (gap <= 0 || gap >= config.fastNavMs) { break; }
+          count++;
+        }
+        fast = count >= config.fastNavCount;
+      }
+      // Consume provenance now, including when this document never fires pagehide.
+      // A carried class itself cannot seed another carried document.
+      if (!save(saved.lastClass && saved.lastClass.direct === true ? saved.lastClass.value : null)) { fast = false; }
+    } catch (ignore) { fast = false; }
+    function interact(event) {
+      if (done || d.visibilityState === 'hidden') { return; }
+      pointer(event);
+      if ((event.isTrusted === true || event.isTrusted === undefined) && event.type !== 'pointercancel') { active = true; }
+      if (/^(mousemove|pointerdown|touchstart)$/.test(event.type) && event.isTrusted === false) { synthetic = true; }
+    }
+    function exposure() {
+      if (started !== null) { elapsed += Math.max(0, Date.now() - started); started = null; }
+      w.clearTimeout(timer);
+    }
+    function cleanup() {
+      exposure(); stopWorker();
+      for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
+      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); removeListener(w, 'pagehide', finish, listenerOptions);
+    }
+    function finish() {
+      if (done) { return; }
+      done = true; cleanup();
+      playwright(); geometry();
+      if (observesInput && !active && elapsed >= config.idleMs) { add('NI', 2, 'interaction'); }
+      if (fast) { add('FN', 3, 'navigation'); }
+      if (synthetic && !active) { add('SY', 2, 'interaction'); }
+      if (mismatch) { add('NP', 1, 'permissions'); }
+      if (teleport) { add('TP', 3, 'pointer'); }
+      if (workerMismatch) { add('WK', 2, 'worker'); }
+      if (workerHeadless) { add('HL', 100); }
+      // Warp-on-click accessibility tools share TP's pattern. History is only
+      // a final-phase pointer weight (2), capped at 3 together with current TP.
+      // Any trusted input without TP repays one page of history.
+      try { tpPages = boundedTP(readStore().tpPages); } catch (ignore) { tpPages = teleport ? 1 : 0; }
+      if (active && !teleport) { save(null, 'decay'); }
+      if (tpPages >= 2) { add('TR', 2, 'pointer'); }
+      move = clicked = null; pointerKind = '';
+      try { publish('final'); } finally { signals = []; families = {}; }
+    }
+    function visibility() {
+      pointerKind = '';
+      if (done) { return; }
+      exposure();
+      if (d.visibilityState !== 'hidden') {
+        started = Date.now(); timer = w.setTimeout(finish, Math.max(0, config.idleMs - elapsed));
+      }
+    }
+    var listenerOptions = true;
+    try {
+      var passive = Object.defineProperty({}, 'passive', {get: function () { listenerOptions = {capture: true, passive: true}; }});
+      if (!addListener(inputTarget, 'tc-passive', noop, passive)) { listenerOptions = true; }
+      removeListener(inputTarget, 'tc-passive', noop, passive);
+    } catch (ignore) { listenerOptions = true; }
+    function noop() {}
+    try {
+      for (i = 0; i < events.length; i++) {
+        if (!addListener(inputTarget, events[i], interact, listenerOptions)) { observesInput = false; }
+      }
+      addListener(w, 'pagehide', finish, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      visibility();
+      initial = publish('initial'); ua = ''; brands = null;
+      startWorker();
+    } catch (ignore) { done = true; cleanup(); }
   }
-  for (i = 0; i < events.length; i++) { d.addEventListener(events[i], interact, true); }
-  w.addEventListener('pagehide', finish); d.addEventListener('visibilitychange', visibility);
-  initial = publish('initial'); ua = ''; brands = null;
-  startWorker();
-  visibility();
 }(window, document, navigator));

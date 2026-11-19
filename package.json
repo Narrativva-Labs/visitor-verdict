@@ -1,16 +1,17 @@
 {
   "name": "traffic-class",
   "version": "1.0.0",
-  "description": "Local browser traffic classification for GTM and GA4",
+  "description": "Privacy-minimising browser traffic classification for Google Tag Manager and GA4",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node test/run.mjs",
     "test:contracts": "node test/contracts.mjs",
     "serve": "node test/server.mjs",
-    "test:extended": "node test/run-extended.mjs"
+    "test:extended": "node test/run-extended.mjs",
+    "build:container": "node scripts/build-container.mjs"
   },
   "keywords": [],
-  "author": "",
+  "author": "František Bujnovský",
   "private": true,
   "type": "module",
   "devDependencies": {
@@ -20,5 +21,10 @@
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "terser": "^5.44.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Narrativva-Labs/traffic-class.git"
   }
 }

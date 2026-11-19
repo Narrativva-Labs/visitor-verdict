@@ -20,9 +20,11 @@ const scenarios = [
   {name: '3 Chromium headed', engine: chromium, launch: {headless: false}},
   {name: '4 Firefox headless', engine: firefox},
   {name: '5 WebKit headless', engine: webkit},
-  {name: '6 Chromium stealth headless', engine: stealth},
+  {name: '6 Chromium stealth headless', engine: stealth, informational: true, category: 'known limit',
+    note: 'Known limit after F1/F3: stealth with only benign environment signals plus fast navigation/inactivity can remain human.'},
   {name: '7 Chromium automation flag disabled, fast navigation', engine: chromium,
-    launch: {headless: false, args: quiet}, noInteraction: true},
+    launch: {headless: false, args: quiet}, noInteraction: true, informational: true, category: 'known limit',
+    note: 'Known limit after F1/F3: no positive pointer evidence and only one environment family can leave rapid idle navigation human.'},
   {name: '8 Fetch without JavaScript', fetch: true},
   {name: '9 ChatGPT-User', engine: chromium, context: {userAgent: 'ChatGPT-User'}, declared: true},
   {name: '10 Human desktop Chrome', engine: chromium, human: true, category: 'clean-human',
@@ -46,20 +48,20 @@ const catalog = {
   HL: 'HeadlessChrome UA/brands (100, hard)', AU: 'Bounded known automation/audit UA (100, hard)',
   GL: 'Shape-checked legacy/Selenium/ChromeDriver globals (100, hard)',
   PW: 'Three exact shape-checked Playwright names, initial and final (100, hard; feature-dependent, natural coverage unverified)',
-  CA: 'Previous final automated class (100, inherited)',
+  CA: 'Direct hard/declaration provenance from previous document; consumed once, second clean page human (100, inherited)',
   G0: 'Both dimensions zero, visible focused top-level only; rechecked final (1, geometry)',
   GS: '800×600 screen or matching 1280×720 screen/viewport (1, geometry)',
   LA: 'Empty languages and all language fallbacks absent (1, language)',
   PL: 'Desktop Chromium empty plugins; excludes mobile/WebView/PDF disabled (1, plugins)',
-  WG: 'Unavailable WebGL or exact software-renderer family; missing debug extension alone ignored (1, graphics)',
+  WG: 'Opt-in WebGL: unavailable WebGL or exact software-renderer family; missing debug extension alone ignored (1, graphics)',
   CH: 'Desktop Chromium corroborated by brands, missing chrome (1, chrome)',
   NP: 'Secure top-level Chromium denied/prompt notification mismatch (1, permissions; final only)',
   HC: 'Missing/zero cores (0, debug only)', NI: 'No trusted activity after at least 8000 visible ms (2, interaction)',
   FN: 'Consecutive positive rapid intervals; timestamp dedupe, reload/back-forward excluded (3, navigation)',
   SY: 'Synthetic pointer input without any trusted input modality (2, interaction)',
-  TP: 'Trusted mouse click with sparse/discontinuous approach; rest/repeat exemptions (3, pointer)',
-  WK: 'Supported main/worker navigator mismatch; unknown ignored (2, worker)',
-  TR: 'At least 2 TP documents in this tab session; direct suspicious override, no numeric weight (never hard)'
+  TP: 'Positive one-event mouse jump over 200px, click within 600ms at that point, explicit mouse pointerdown (3, pointer)',
+  WK: 'Opt-in Worker: supported main/worker navigator mismatch; unknown ignored (2, worker)',
+  TR: 'Final-only repeat-TP weight 2 in pointer family, capped at 3 with TP; never a direct class override; decays on any trusted-input document without TP'
 };
 const results = [];
 let server, origin, serverError;
@@ -91,7 +93,7 @@ async function humanStay(page, touch, duration) {
 }
 try {
   for (let iteration = 1; iteration <= repeat; iteration++) for (const scenario of scenarios) {
-    const row = {iteration, category: scenario.category || 'bot', informational: !!scenario.informational, noteOnly: !!scenario.noteOnly, name: scenario.name, expected: scenario.noteOnly ? 'limitation' : scenario.informational ? 'not-human-or-human (informational)' : scenario.fetch ? 'no event' : scenario.human ? 'human' : scenario.declared ? 'declared_agent' : 'not human', pages: [], notes: []};
+    const row = {iteration, category: scenario.category || 'bot', informational: !!scenario.informational, noteOnly: !!scenario.noteOnly, name: scenario.name, expected: scenario.noteOnly ? 'limitation' : scenario.informational ? 'not-human-or-human (informational)' : scenario.fetch ? 'no event' : scenario.human ? 'human' : scenario.declared ? 'declared_agent' : 'not human', pages: [], notes: scenario.note ? [scenario.note] : []};
     let browser;
     try {
       if (scenario.noteOnly) { row.status = 'SKIP'; row.notes.push(scenario.note); results.push(row); continue; }
@@ -191,7 +193,7 @@ try {
       row.notes.push(String(error.stack || error));
     } finally { if (browser) await browser.close().catch(() => {}); }
     results.push(row);
-    console.log(`${row.status}: ${row.name} — ${row.initial || '—'} → ${row.final || '—'} [${row.signals || ''}]`);
+    console.log(`${row.status}: ${row.name} — ${row.initial || '—'} → ${row.final || '—'} [${row.signals || ''}]${row.category === 'known limit' ? ' Known limit: ' + scenario.note : ''}`);
   }
   const contracts = await runContracts();
   const fired = new Set(results.flatMap(r => r.signals || []));
@@ -210,7 +212,7 @@ try {
     results.map(r => `| ${[`${r.name} (run ${r.iteration})`, r.category, (r.signals || []).join(', '), r.initial, r.final, r.expected, botdCell(r.botd), r.status].map(cell).join(' | ')} |`).join('\n') +
     '\n\nFlaky scenarios: ' + (repeat < 2 ? 'not assessed (single run)' : report.flakiness.filter(r => r.flaky).map(r => r.name).join(', ') || 'none') + '\n\nHuman controls require initial and final human on **every** page. JSON contains all page events. Each last page stays 10 seconds.\n\n' +
     results.filter(r => r.notes.length).map(r => `- **${r.name}:** ${r.notes.map(cell).join(' ')}`).join('\n') +
-    '\n\nPolicy: threshold 6 AND at least 3 distinct positive-weight families. Geometry capped at 1, graphics at 1, NI/SY at 2. Hard/declared/inherited score is sentinel 100. Fast navigation plus inactivity alone scores 5 and remains human. TR independently makes repeated TP sessions suspicious without the ordinary score/family gate; no extra numeric weight and never automated from TR alone. Scenario 7 is allowed to slip through.\n\n## What each signal catches\n\n' + Object.entries(catalog).map(([code, text]) => `- \`${code}\`: ${text}. Observed: ${fired.has(code) ? 'yes' : 'no'}.`).join('\n') +
+    '\n\nPolicy: threshold 6 AND at least 3 positive-weight families AND either TP/TR/SY/WK or two distinct environment families plus behaviour. Geometry capped at 1, graphics at 1, NI/SY at 2. Hard/declared/inherited score is sentinel 100. Fast navigation plus inactivity alone scores 5 and remains human. TR contributes 2 in the pointer family, capped at 3 together with TP, only at final. It uses the ordinary score/family gate; tpPages alone never starts a document suspicious. Any trusted input without TP decays history by one. Assistive warp-on-click can fire TP/TR while remaining human when navigation is slow and keyboard input prevents NI. FN+NI+WG and FN+NI+GS now remain human. Scenarios 6/7 and extended 25 may change from suspicious to human when they have only one environment family plus fast navigation and inactivity; GS+NI+FN+WK still qualifies. Locator scenarios with no recorded jump, a first movement with zero deltas, or nearby targets can now slip through intentionally. WebGL/Worker default off in the library; test site and GTM example explicitly enable both. Browser re-runs are required to establish actual changed outcomes.\n\n## What each signal catches\n\n' + Object.entries(catalog).map(([code, text]) => `- \`${code}\`: ${text}. Observed: ${fired.has(code) ? 'yes' : 'no'}.`).join('\n') +
     '\n\nOnly completed scenarios contribute observations; SKIP means unavailable setup/launch, never a detection PASS. ERROR means execution did not complete.\n\nNever fired in natural scenarios (injected contract checks excluded): ' + never.map(s => '`' + s + '`').join(', ') + '.\n\n' +
     '## Contract checks\n\n' + contracts.map(c => `- ${c.status}: ${c.name}${c.error ? ' — ' + c.error : ''}`).join('\n') +
     '\n\n## Known limits\n\n- Real logged-in browsers operated by agents can look human. No identity, fingerprint, or certainty about humanity is inferred.\n- Fetch/curl and crawlers that do not execute JavaScript are invisible to this detector and client GA4.\n- Clean Chromium/Chrome controls have no stealth or webdriver init patches. Mobile controls are emulation, not physical devices. Unpatched WebKit remains an explicit limitation note. Stealth human-like cases are informational, not human controls.\n- Default dimensions, software WebGL, missing APIs and inactivity are weak evidence. Full 8 seconds visible are required for NI; early pagehide never manufactures inactivity. Reload/back-forward navigation does not inflate timestamps; BFCache retains one final per document.\n- Pagehide final events may not reach GA4 before unload; blocked storage removes navigation/carry signals.\n- Exact Playwright markers are feature-dependent; natural runtime coverage remains unverified when scenarios are skipped. The Puppeteer sourceURL label is not probed as a global. Current default runtimes may expose none.\n- Test site alone posts debug events to the loopback /log sink; production detector makes no requests.\n';

@@ -1,0 +1,283 @@
+{
+  "exportFormatVersion": 2,
+  "containerVersion": {
+    "accountId": "0",
+    "containerId": "0",
+    "containerVersionId": "0",
+    "container": {
+      "accountId": "0",
+      "containerId": "0",
+      "name": "traffic-class",
+      "publicId": "GTM-XXXXXXX",
+      "usageContext": [
+        "WEB"
+      ]
+    },
+    "tag": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "1",
+        "name": "TC - detector traffic_class",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\nwindow.trafficClassConfig = {\n  idleMs: 8000,\n  fastNavMs: 2000,\n  fastNavCount: 3,\n  suspiciousThreshold: 6,\n  webgl: true, // optional probe; detector default is false\n  worker: true, // optional probe; detector default is false\n  debug: false,\n  dataLayerName: 'dataLayer'\n  // agentTokens: ['your-literal-token'] // replaces the default array\n};\n!function(e,t,n){\"use strict\";var a=Object.prototype.hasOwnProperty,r=Object.prototype.toString;if(e.top===e){var i=Object.getOwnPropertyDescriptor(e,\"__trafficClass\"),o=i&&f(i.value)&&Object.getOwnPropertyDescriptor(i.value,\"__tcDetector\");if(!(i&&a.call(e,\"__trafficClass\")&&o&&!0===o.value)){var s={};Object.defineProperty(s,\"__tcDetector\",{value:!0}),Object.defineProperty(e,\"__trafficClass\",{value:s,configurable:!0,writable:!0}),!0===t.prerendering?c(t,\"prerenderingchange\",function e(){!0!==t.prerendering&&(u(t,\"prerenderingchange\",e,!0),p())},!0):p()}}function l(e){return!!e&&\"function\"==typeof e.addEventListener&&\"function\"==typeof e.removeEventListener}function c(e,t,n,a){try{if(l(e))return e.addEventListener(t,n,a),!0}catch(e){}return!1}function u(e,t,n,a){try{e&&\"function\"==typeof e.removeEventListener&&e.removeEventListener(t,n,a)}catch(e){}}function f(t){try{if(!t||t===e||t.window===t||t.nodeType||t.ownerDocument)return!1;var n,a=r.call(t);return\"[object Function]\"===a||\"[object Array]\"===a||\"[object Object]\"===a&&(null===(n=Object.getPrototypeOf(t))||null===Object.getPrototypeOf(n))}catch(e){return!1}}function p(){var i,o={idleMs:8e3,fastNavMs:2e3,fastNavCount:3,suspiciousThreshold:6,debug:!1,webgl:!1,worker:!1,dataLayerName:\"dataLayer\",agentTokens:[\"ChatGPT-User\",\"OAI-SearchBot\",\"OAI-AdsBot\",\"GPTBot\",\"Claude-Agent\",\"Claude-User\",\"Claude-SearchBot\",\"ClaudeBot\",\"Perplexity-User\",\"PerplexityBot\",\"Google-Agent\",\"Google-CloudVertexBot\",\"Google-GeminiNotebook\",\"Google-NotebookLM\",\"MistralAI-User\",\"MistralAI-Index\",\"MistralAI-Training\",\"DuckAssistBot\",\"Applebot\",\"Bytespider\",\"meta-externalagent\",\"meta-externalfetcher\",\"meta-webindexer\",\"CCBot\",\"Amazonbot\",\"Amzn-SearchBot\"]},p=e.trafficClassConfig||{};for(i in o)if(a.call(p,i)){var g=p[i];if(\"agentTokens\"===i)\"[object Array]\"===r.call(g)&&(o[i]=g.slice(0,64));else if(\"dataLayerName\"===i)\"string\"==typeof g&&g.length>0&&g.length<=128&&!/^(?:__proto__|prototype|constructor)$/.test(g)&&(o[i]=g);else if(\"number\"==typeof o[i]){var h=\"idleMs\"===i?36e5:\"fastNavMs\"===i?6e4:\"fastNavCount\"===i?20:1e3;\"number\"==typeof g&&isFinite(g)&&g>=(\"fastNavCount\"===i?2:1)&&g<=h&&Math.floor(g)===g&&(o[i]=g)}else o[i]=!0===g}var m,d,y,v,b=[],_={},w=0,C=!1,A=!1,O=!1,P=!1,x=0,j=null,M=!1,L=!1,T=!1,k=[],N=!1,S=l(e)?e:l(t)?t:null,E=!0,G=l(t)?t:e,B=n.userAgent||\"\",D=/Mobile|Android|iPhone|iPad|iPod/i.test(B)||n.maxTouchPoints>1&&/Macintosh/i.test(B),$=/; wv\\)|WebView|FBAN|FBAV|Instagram/i.test(B),W=!D&&!$&&/Chrome\\//i.test(B),Y=!1,H=n.userAgentData&&n.userAgentData.brands,I=\"mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin\".split(\" \"),R=null,U=null,X=\"\",F=0,z=!1,Z=0,V=100*Math.floor(Date.now()/100),J=null,q=0,K=null,Q=null,ee=!1,te=!1,ne=e.URL||e.webkitURL;function ae(){if(e.clearTimeout(v),K){K.onmessage=K.onerror=null;try{K.terminate()}catch(e){}K=null}if(Q){try{ne.revokeObjectURL(Q)}catch(e){}Q=null}}function re(e,t,n){return(e.x-t)*(e.x-t)+(e.y-n)*(e.y-n)}function ie(e,t,n){-1===b.indexOf(e)&&(b.push(e),100===t?(\"CA\"!==e&&(O=!0),\"AG\"===e?A=!0:C=!0):t&&(w+=Math.max(0,t-(_[n]||0)),_[n]=Math.max(t,_[n]||0)))}function oe(e){try{return new RegExp(\"(?:^|[^A-Za-z0-9_-])(?:\"+e+\")(?=$|[^A-Za-z0-9_-])\",\"i\").test(B)}catch(e){return!1}}function se(e,t){try{var n=Object.getOwnPropertyDescriptor(e,t);return f(n&&n.value)}catch(e){return!1}}function le(){for(var t=\"__playwright__binding__ __playwright__binding__controller__ __pwInitScripts\".split(\" \"),n=0;n<t.length;n++)se(e,t[n])&&ie(\"PW\",100)}function ce(){try{\"hidden\"!==t.visibilityState&&t.hasFocus()&&e.top===e&&(0===e.screen.width&&0===e.screen.height||0===e.innerWidth&&0===e.innerHeight||0===e.outerWidth&&0===e.outerHeight)&&ie(\"G0\",1,\"geometry\")}catch(e){}}function ue(e){return\"number\"==typeof e&&isFinite(e)&&e>=0&&e<=255&&Math.floor(e)===e?e:0}function fe(e){return\"human\"===e||\"suspicious\"===e||\"automated\"===e||\"declared_agent\"===e?e:!e||\"[object Object]\"!==r.call(e)||!0!==e.direct||\"string\"!=typeof e.value||\"automated\"!==e.value&&\"declared_agent\"!==e.value?\"\":{value:e.value,direct:!0}}function pe(e){return\"string\"==typeof(e=fe(e))?'\"'+e+'\"':'{\"value\":\"'+e.value+'\",\"direct\":true}'}function ge(){var t=JSON.parse(e.sessionStorage.getItem(\"traffic_class\")||\"{}\");return{timestamps:(t=t&&\"[object Object]\"===r.call(t)?t:{}).timestamps,lastClass:fe(t.lastClass),tpPages:ue(t.tpPages)}}function he(e){var t,n,a=[],i=Date.now();for(e=k.concat(\"[object Array]\"===r.call(e)?e:[]),t=0;t<e.length;t++)\"number\"==typeof(n=e[t])&&isFinite(n)&&n>=0&&n<=i&&(n=100*Math.floor(n/100),-1===a.indexOf(n)&&a.push(n));return a.sort(function(e,t){return e-t}),a.slice(-o.fastNavCount)}function me(t,n){try{var a;try{a=ge()}catch(e){a={}}var r=(k=he(a.timestamps)).length&&k[k.length-1]>V||null!==J&&pe(a.lastClass)!==J;Z=ue(a.tpPages),\"tp\"===n&&(Z=Math.min(255,Z+1)),\"decay\"!==n||r||Z!==q||(Z=Math.max(0,Z-1));var i=fe(null===t||r?a.lastClass:t);return e.sessionStorage.setItem(\"traffic_class\",'{\"timestamps\":['+k.join(\",\")+'],\"lastClass\":'+pe(i)+',\"tpPages\":'+Z+\"}\"),r||(J=pe(i),q=Z),!0}catch(e){return!1}}function de(t){var n=A?\"declared_agent\":C?\"automated\":function(){var e,t=0;for(e in _)/^(geometry|language|plugins|graphics|chrome|permissions)$/.test(e)&&t++;return w>=o.suspiciousThreshold&&Object.keys(_).length>=3&&(_.pointer||-1!==b.indexOf(\"SY\")||_.worker||t>=2&&(_.interaction||_.navigation))}()?\"suspicious\":\"human\";\"final\"!==t||\"automated\"!==m&&\"declared_agent\"!==m||(n=m);var a=C||A?100:w,r={event:\"traffic_class\",traffic_class:n,traffic_phase:t,traffic_score:a};s.class=n,s.score=a,s.phase=t,o.debug&&(r.traffic_signals=b.slice(0),s.signals=b.slice(0)),\"final\"===t&&me(O?{value:n,direct:!0}:n);try{var i=e[o.dataLayerName];null==i&&(i=e[o.dataLayerName]=[]),\"number\"==typeof i.length&&isFinite(i.length)&&i.length>=0&&Math.floor(i.length)===i.length&&\"function\"==typeof i.push&&i.push(r)}catch(e){}return n}for(y=0;y<o.agentTokens.length;y++){var ye=o.agentTokens[y];if(\"string\"==typeof ye&&ye.length>0&&ye.length<=128&&oe(ye.replace(/[.*+?^${}()|[\\]\\\\]/g,\"\\\\$&\"))){ie(\"AG\",100);break}}if(!0===n.webdriver&&ie(\"WD\",100),oe(\"HeadlessChrome\")&&ie(\"HL\",100),H)for(y=0;y<H.length;y++)/HeadlessChrome/i.test(H[y].brand)&&ie(\"HL\",100),/Chromium|Google Chrome|Microsoft Edge/i.test(H[y].brand)&&(Y=!0);(oe(\"PhantomJS|Chrome-Lighthouse|Lighthouse|GTmetrix|Google-PageRenderer\")||/(?:^|[^A-Za-z0-9_-])PTST\\/[0-9]/i.test(B))&&ie(\"AU\",100);try{var ve=Object.getOwnPropertyNames(e);for(y=0;y<ve.length;y++)/^(callPhantom|_phantom|__nightmare|domAutomation|domAutomationController|cdc_[A-Za-z0-9]+_(Array|Promise|Symbol|Object|Proxy|JSON|Window))$/.test(ve[y])&&se(e,ve[y])&&ie(\"GL\",100);for(ve=Object.getOwnPropertyNames(t),y=0;y<ve.length;y++)/^(?:__(?:selenium|webdriver|driver|fxdriver)_(?:evaluate|unwrapped)$|__webdriver_script_(?:fn|func|function)$|__\\$webdriverAsyncExecutor$|\\$cdc_|\\$wdc_)/.test(ve[y])&&se(t,ve[y])&&ie(\"GL\",100);ve=null}catch(e){}le(),ce();var be,_e,we,Ce=e.screen||{};if((800===Ce.width&&600===Ce.height||1280===Ce.width&&720===Ce.height&&1280===e.innerWidth&&720===e.innerHeight)&&ie(\"GS\",1,\"geometry\"),n.languages&&n.languages.length||n.language||n.userLanguage||n.browserLanguage||n.systemLanguage||ie(\"LA\",1,\"language\"),W&&(Y||e.chrome)&&n.plugins&&!n.plugins.length&&!1!==n.pdfViewerEnabled&&ie(\"PL\",1,\"plugins\"),o.webgl)try{(_e=(be=t.createElement(\"canvas\")).getContext(\"webgl\")||be.getContext(\"experimental-webgl\"))?(we=_e.getExtension(\"WEBGL_debug_renderer_info\"))&&/(?:^|[ (])(?:SwiftShader|llvmpipe|softpipe)(?:$|[ )])|^Mesa OffScreen$/i.test(_e.getParameter(we.UNMASKED_RENDERER_WEBGL))&&ie(\"WG\",1,\"graphics\"):ie(\"WG\",1,\"graphics\")}catch(e){}finally{try{(we=_e&&_e.getExtension(\"WEBGL_lose_context\"))&&we.loseContext()}catch(e){}_e=be=we=null}W&&Y&&!e.chrome&&ie(\"CH\",1,\"chrome\"),n.hardwareConcurrency||ie(\"HC\",0);try{Y&&e.isSecureContext&&e.top===e&&e.Notification&&\"denied\"===e.Notification.permission&&n.permissions&&n.permissions.query&&n.permissions.query({name:\"notifications\"}).then(function(e){P||\"prompt\"!==e.state||(T=!0)},function(){})}catch(e){}try{var Ae;try{Ae=ge()}catch(e){Ae={}}Z=ue(Ae.tpPages),J=pe(Ae.lastClass),q=Z,Ae.lastClass&&!0===Ae.lastClass.direct&&/^(automated|declared_agent)$/.test(Ae.lastClass.value)&&ie(\"CA\",100),k=he(Ae.timestamps);var Oe=e.performance&&e.performance.getEntriesByType&&e.performance.getEntriesByType(\"navigation\")[0];if(!(Oe?/reload|back_forward/.test(Oe.type):e.performance&&e.performance.navigation&&e.performance.navigation.type)){k=he([V]);var Pe=1;for(y=k.length-1;y>0;y--){var xe=k[y]-k[y-1];if(xe<=0||xe>=o.fastNavMs)break;Pe++}N=Pe>=o.fastNavCount}me(Ae.lastClass&&!0===Ae.lastClass.direct?Ae.lastClass.value:null)||(N=!1)}catch(e){N=!1}function je(e){P||\"hidden\"===t.visibilityState||(function(e){var t=Date.now();if(\"pointerdown\"===e.type)return X=!0===e.isTrusted&&\"mouse\"===e.pointerType?\"mouse\":\"\",void(F=t);if(/^(touchstart|touchend|touchcancel|pointercancel|keydown|keyup)$/.test(e.type))X=\"\";else{var n=!1;if(\"click\"===e.type&&(n=\"mouse\"===X&&t-F<=600,X=\"\"),!0===e.isTrusted&&\"number\"==typeof e.clientX&&\"number\"==typeof e.clientY){if(\"mousemove\"===e.type){if(R&&0===re(R,e.clientX,e.clientY))return;var a=R&&t-R.t<=600,r=\"number\"==typeof e.movementX&&\"number\"==typeof e.movementY&&e.movementX*e.movementX+e.movementY*e.movementY>4e4||a&&re(R,e.clientX,e.clientY)>4e4,i=a&&t-R.t<=120?Math.min(3,R.path+1):1;R={x:e.clientX,y:e.clientY,t:t,jump:!!r&&i<3,path:i}}\"click\"===e.type&&e.detail>0&&n&&(!e.pointerType||\"mouse\"===e.pointerType)&&R&&R.jump&&t-R.t<=600&&re(R,e.clientX,e.clientY)<=4&&(!U||re(U,e.clientX,e.clientY)>1600)&&(z||(z=!0,me(null,\"tp\")||(Z=1))),\"click\"===e.type&&(U={x:e.clientX,y:e.clientY},R=null)}}}(e),!0!==e.isTrusted&&void 0!==e.isTrusted||\"pointercancel\"===e.type||(M=!0),/^(mousemove|pointerdown|touchstart)$/.test(e.type)&&!1===e.isTrusted&&(L=!0))}function Me(){null!==j&&(x+=Math.max(0,Date.now()-j),j=null),e.clearTimeout(d)}function Le(){for(Me(),ae(),y=0;y<I.length;y++)u(S,I[y],je,Ne);u(G,\"visibilitychange\",ke,Ne),u(e,\"pagehide\",Te,Ne)}function Te(){if(!P){P=!0,Le(),le(),ce(),E&&!M&&x>=o.idleMs&&ie(\"NI\",2,\"interaction\"),N&&ie(\"FN\",3,\"navigation\"),L&&!M&&ie(\"SY\",2,\"interaction\"),T&&ie(\"NP\",1,\"permissions\"),z&&ie(\"TP\",3,\"pointer\"),ee&&ie(\"WK\",2,\"worker\"),te&&ie(\"HL\",100);try{Z=ue(ge().tpPages)}catch(e){Z=z?1:0}M&&!z&&me(null,\"decay\"),Z>=2&&ie(\"TR\",2,\"pointer\"),R=U=null,X=\"\";try{de(\"final\")}finally{b=[],_={}}}}function ke(){X=\"\",P||(Me(),\"hidden\"!==t.visibilityState&&(j=Date.now(),d=e.setTimeout(Te,Math.max(0,o.idleMs-x))))}var Ne=!0;try{var Se=Object.defineProperty({},\"passive\",{get:function(){Ne={capture:!0,passive:!0}}});c(S,\"tc-passive\",Ee,Se)||(Ne=!0),u(S,\"tc-passive\",Ee,Se)}catch(e){Ne=!0}function Ee(){}try{for(y=0;y<I.length;y++)c(S,I[y],je,Ne)||(E=!1);c(e,\"pagehide\",Te,Ne),c(G,\"visibilitychange\",ke,Ne),ke(),m=de(\"initial\"),B=\"\",H=null,function(){if(o.worker&&!P){var t=!1;try{if(!(e.Worker&&e.Blob&&ne&&ne.createObjectURL))return;Q=ne.createObjectURL(new e.Blob(['onmessage=function(e){var a=e.data,n=navigator,m=false;try{if(a.ua&&n.userAgent&&a.ua!==n.userAgent)m=true;if(typeof a.wd===\"boolean\"&&typeof n.webdriver===\"boolean\"&&a.wd!==n.webdriver)m=true;if(a.la&&a.la.length&&n.languages&&n.languages.length&&a.la.join(\"|\")!==Array.prototype.join.call(n.languages,\"|\"))m=true;if(a.hc>0&&n.hardwareConcurrency>0&&a.hc!==n.hardwareConcurrency)m=true;postMessage({m:m,h:/(?:^|[^A-Za-z0-9_-])HeadlessChrome(?=$|[^A-Za-z0-9_-])/i.test(n.userAgent||\"\")});}catch(x){postMessage({m:false,h:false});}close();}'],{type:\"text/javascript\"})),(K=new e.Worker(Q)).onmessage=function(e){try{!P&&e.data&&(ee=!0===e.data.m,te=!0===e.data.h)}finally{ae()}},K.onerror=function(e){try{e.preventDefault&&e.preventDefault()}finally{ae()}},v=e.setTimeout(ae,Math.min(1500,o.idleMs)),K.postMessage({ua:n.userAgent||\"\",wd:n.webdriver,la:n.languages?Array.prototype.slice.call(n.languages):null,hc:n.hardwareConcurrency}),t=!0}catch(e){}finally{t||ae()}}}()}catch(e){P=!0,Le()}}}(window,document,navigator);\n</script>\n"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "priority": {
+          "type": "INTEGER",
+          "value": "100"
+        },
+        "firingTriggerId": [
+          "2147479553"
+        ],
+        "tagFiringOption": "ONCE_PER_LOAD",
+        "consentSettings": {
+          "consentStatus": "NOT_NEEDED"
+        }
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "2",
+        "name": "GA4 - traffic_class",
+        "type": "gaawe",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "traffic_class"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{traffic_class}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "traffic_phase"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{traffic_phase}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "traffic_score"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{traffic_score}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "LIST",
+            "key": "userProperties",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "traffic_class"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{traffic_class}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "traffic_class"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "{{TC - GA4 measurement ID}}"
+          }
+        ],
+        "firingTriggerId": [
+          "3"
+        ],
+        "tagFiringOption": "ONCE_PER_EVENT",
+        "consentSettings": {
+          "consentStatus": "NOT_SET"
+        }
+      }
+    ],
+    "trigger": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "3",
+        "name": "traffic_class final",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "traffic_class"
+              }
+            ]
+          }
+        ],
+        "filter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{traffic_phase}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "final"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "variable": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "4",
+        "name": "traffic_class",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "traffic_class"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "5",
+        "name": "traffic_phase",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "traffic_phase"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "6",
+        "name": "traffic_score",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "traffic_score"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "7",
+        "name": "TC - GA4 measurement ID",
+        "type": "c",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "value",
+            "value": "G-XXXXXXXXXX"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,4 +1,25 @@
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Arm the destination waiter before an action can initiate navigation. Waiting
+// for the current document's already-complete load is not a navigation barrier.
+export async function navigateAndWait(page, targetURL, action) {
+  await Promise.all([page.waitForURL(targetURL, {waitUntil: 'load'}), Promise.resolve().then(action)]);
+}
+export function observationDwell(spec, last, step = 0) {
+  if (spec.mode === 'rapid') return last ? 12000 : 0;
+  // Distinct 100ms timestamp buckets, with margin under the real 2000ms limit.
+  if (['benign', 'cdp-agent'].includes(spec.mode)) return last ? 10000 : 250;
+  if (spec.mode === 'history') return last ? 10000 : step < 3 ? 0 : 2500;
+  if (spec.cdp) return last ? 10000 : 1150;
+  if (!spec.human && !spec.dwell) return last ? 10000 : 0;
+  return spec.dwell || (last ? 10000 : 2800);
+}
+export function performanceSummary(samplesMs, budgetMs) {
+  if (!samplesMs.length || samplesMs.some(ms => !Number.isFinite(ms) || ms < 0)) throw Error('Invalid performance samples');
+  const sorted = [...samplesMs].sort((a, b) => a - b), middle = Math.floor(sorted.length / 2);
+  const medianMs = sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  return {samplesMs, medianMs, budgetMs: budgetMs ?? null,
+    status: budgetMs === undefined ? 'INFO' : medianMs < budgetMs ? 'PASS' : 'FAIL'};
+}
 export function options(args = process.argv.slice(2)) {
   let repeat = 1;
   for (let i = 0; i < args.length; i++) {

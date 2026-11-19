@@ -1,0 +1,6 @@
+undetected-chromedriver==3.5.5
+selenium==4.32.0
+nodriver==0.47.0
+camoufox==0.4.11
+# undetected-chromedriver imports distutils; setuptools supplies it on Python 3.12+.
+setuptools==80.9.0

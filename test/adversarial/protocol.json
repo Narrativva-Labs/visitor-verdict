@@ -1,0 +1,6 @@
+{
+  "paths": ["/index.html", "/page2.html", "/page3.html"],
+  "readEvents": "JSON.stringify(JSON.parse(sessionStorage.getItem('tc_test_events') || '[]'))",
+  "ready": "location.pathname === PATH && document.readyState === 'complete' && document.visibilityState === 'visible' && !!sessionStorage.getItem('tc_test_events')",
+  "target": "JSON.stringify((function () { var a = document.querySelector(SELECTOR); if (!a) throw Error('Missing navigation link'); var b = a.getBoundingClientRect(); return {x: b.x + b.width / 2, y: b.y + b.height / 2}; })())"
+}
