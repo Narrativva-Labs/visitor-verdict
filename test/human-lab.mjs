@@ -38,7 +38,7 @@ function parseHits(req) {
   const base = new URLSearchParams(u.split('?')[1] || ''); const hits = [];
   for (const line of (req.postData() || '').split('\n').concat([''])) {
     const q = new URLSearchParams(line); const en = q.get('en') || base.get('en');
-    if (en) hits.push({ en, traffic_class: q.get('ep.traffic_class') || base.get('ep.traffic_class') || null, traffic_phase: q.get('ep.traffic_phase') || base.get('ep.traffic_phase') || null, up: q.get('up.traffic_class') || base.get('up.traffic_class') || null, gcs: base.get('gcs') });
+    if (en) hits.push({ en, traffic_class: q.get('ep.traffic_class') || base.get('ep.traffic_class') || null, traffic_phase: q.get('ep.traffic_phase') || base.get('ep.traffic_phase') || null, traffic_version: q.get('ep.traffic_version') || base.get('ep.traffic_version') || null, up: q.get('up.traffic_class') || base.get('up.traffic_class') || null, gcs: base.get('gcs') });
     if (!line) break;
   }
   return hits;
@@ -51,9 +51,9 @@ function watch(page) {
 context.pages().forEach(watch); context.on('page', watch);
 
 const snapshot = page => page.evaluate(() => {
-  let storage = null; try { storage = sessionStorage.getItem('traffic_class'); } catch (e) { storage = 'blocked'; }
-  const tc = window.__trafficClass ? { class: window.__trafficClass['class'], score: window.__trafficClass.score, phase: window.__trafficClass.phase, signals: window.__trafficClass.signals || null } : null;
-  const events = (window.dataLayer || []).filter(e => e && e.event === 'traffic_class').map(e => ({ phase: e.traffic_phase, class: e.traffic_class, score: e.traffic_score, signals: e.traffic_signals || null }));
+  let storage = null; try { storage = sessionStorage.getItem('visitor_verdict'); } catch (e) { storage = 'blocked'; }
+  const tc = window.__visitorVerdict ? { class: window.__visitorVerdict['class'], score: window.__visitorVerdict.score, phase: window.__visitorVerdict.phase, version: window.__visitorVerdict.version, signals: (window.dataLayer || []).filter(e => e && e.event === 'traffic_class').at(-1)?.traffic_signals || null } : null;
+  const events = (window.dataLayer || []).filter(e => e && e.event === 'traffic_class').map(e => ({ phase: e.traffic_phase, class: e.traffic_class, score: e.traffic_score, version: e.traffic_version, signals: e.traffic_signals || null }));
   return { url: location.href, tc, events, storage, visibility: document.visibilityState };
 }).catch(() => null);
 

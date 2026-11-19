@@ -4,7 +4,7 @@ var nativeJSON = JSON;
 var spec = nativeJSON.parse(__spec);
 var now = 1800000000000, nextTimer = 1, timers = [], captured = [], writes = [], faults = [];
 var storage = Object.create(null);
-storage.traffic_class = spec.storage;
+storage.visitor_verdict = spec.storage;
 var DateOriginal = Date;
 Date.now = function () { return now; };
 function target(object) {
@@ -70,6 +70,8 @@ window.navigator = navigator;
 function Element() { this.nodeType = 1; this.ownerDocument = document; }
 var document = target({visibilityState: 'visible', hasFocus: function () { return true; }});
 window.document = document;
+document.createEvent = function () { return {initEvent: function (type) { this.type = type; }}; };
+document.dispatchEvent = function (event) { dispatch(document, event.type, event); return true; };
 document.createElement = function () {
   var el = new Element();
   el.getContext = function () {
@@ -90,16 +92,18 @@ window.Worker = function () {
   }, 1); };
   this.terminate = function () { worker.onmessage = null; };
 };
-window.trafficClassConfig = CONFIG_EXPRESSION;
-var cfg = window.trafficClassConfig;
+window.visitorVerdictConfig = CONFIG_EXPRESSION;
+var cfg = window.visitorVerdictConfig;
 var layerName = cfg && typeof cfg.dataLayerName === 'string' && cfg.dataLayerName.length > 0 && cfg.dataLayerName.length <= 128 && !/^(?:__proto__|prototype|constructor)$/.test(cfg.dataLayerName) ? cfg.dataLayerName : 'dataLayer';
 window[layerName] = [];
 window[layerName].push = function (event) { captured.push(event); return Array.prototype.push.call(this, event); };
 if (spec.soft) { navigator.languages = []; navigator.language = ''; navigator.plugins = []; window.chrome = undefined; window.screen = {width:800,height:600}; }
 (spec.pollution || []).forEach(function (p) {
   var value = new Element();
+  if (p.kind === 'plain') { value = {}; }
+  if (p.kind === 'array') { value = []; }
   if (p.kind === 'collection') { value = Object.create({item:function(){}}); value.length = 1; value[0] = new Element(); Object.defineProperty(value, Symbol.toStringTag, {value:'HTMLCollection'}); }
-  if (p.name === '__trafficClass') { value.__tcDetector = true; }
+  if (p.name === '__visitorVerdict') { value.__tcDetector = true; }
   (p.target === 'document' ? document : window)[p.name] = value;
 });
 var old = spec.old || [];
@@ -145,4 +149,19 @@ stale.forEach(function (t) { t.fn(); });
 dispatch(window, 'pageshow', {persisted:true}); dispatch(window, 'pagehide');
 `;
 
-export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__trafficClass,now:now})`;
+export const poison = String.raw`
+var beforePoison = window.__visitorVerdict;
+var beforeDescriptor = Object.getOwnPropertyDescriptor(window, '__visitorVerdict');
+var beforeFrozen = Object.isFrozen(beforePoison);
+if (spec.poisonSnapshot) {
+  try { window.__visitorVerdict = {class:'alien',score:Infinity,phase:'final',version:'poison'}; } catch (e) {}
+  try { beforePoison.class = 'automated'; beforePoison.score = NaN; beforePoison.phase = 'final'; beforePoison.version = 'poison'; } catch (e) {}
+  try { Object.defineProperty(window, '__visitorVerdict', {value:{class:'automated'}}); } catch (e) {}
+  try { delete window.__visitorVerdict; } catch (e) {}
+}
+`;
+export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
+  beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
+  readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
+  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.0.0',
+  previous:window.__visitorVerdictLast})`;

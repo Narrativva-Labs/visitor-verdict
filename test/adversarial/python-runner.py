@@ -171,7 +171,7 @@ async def run_camoufox():
                 return
             event = entry['event']
             clean = {'path': entry['path'], 'event': {key: event.get(key) for key in
-                     ('event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_signals')}}
+                     ('event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_signals')}}
             console_events.append(clean)
             # Storage remains authoritative, with console supplying missing unload events.
             keys = {(e['path'], e['event']['traffic_phase']) for e in RESULT['events']}

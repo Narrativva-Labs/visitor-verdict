@@ -13,18 +13,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const HUMAN_ARGS = ['--disable-blink-features=AutomationControlled'];
 
 const scenarios = [
-  { id: 'L1', name: 'Chromium headless, souhlas ODMÍTNUT', engine: chromium, launch: { headless: true }, consent: 'necessary', expect: 'none' },
+  { id: 'L1', name: 'Chromium headless, souhlas ODMÍTNUT', engine: chromium, launch: { headless: true }, consent: 'necessary', expect: 'automated' },
   { id: 'L2', name: 'Chromium headless, souhlas přijat', engine: chromium, launch: { headless: true }, consent: 'all', expect: 'automated' },
   { id: 'L3', name: 'Firefox headless, souhlas přijat', engine: firefox, launch: { headless: true }, consent: 'all', expect: 'automated' },
   { id: 'L4', name: 'WebKit headless, souhlas přijat', engine: webkit, launch: { headless: true }, consent: 'all', expect: 'automated' },
   { id: 'L5', name: 'Chrome stealth, lidské chování', engine: chromiumExtra, launch: { headless: false, channel: 'chrome', args: HUMAN_ARGS }, consent: 'all', human: true, expect: 'human' },
   { id: 'L6', name: 'Pixel 7 stealth, lidské chování', engine: chromiumExtra, launch: { headless: false, args: HUMAN_ARGS }, context: { ...devices['Pixel 7'] }, consent: 'all', human: true, touch: true, expect: 'human' },
-  { id: 'L7', name: 'UA ChatGPT-User, headless', engine: chromium, launch: { headless: true }, context: { userAgent: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot' }, consent: 'all', expect: 'declared_agent' },
+  { id: 'L7', name: 'UA ChatGPT-User, headless', engine: chromium, launch: { headless: true }, context: { userAgent: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot' }, consent: 'all', expect: 'automated' },
   { id: 'L8', name: 'Chromium stealth headless, bez interakce', engine: chromiumExtra, launch: { headless: true, args: HUMAN_ARGS }, consent: 'all', expect: 'not human' },
 ];
 
 const only = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
-const pick = s => { const o = {}; for (const p of decodeURIComponent(s).split('&')) { const i = p.indexOf('='); const k = p.slice(0, i); if (/^(en|gcs|ep\.traffic_class|up\.traffic_class|ep\.page_type)$/.test(k)) o[k] = p.slice(i + 1); } return o; };
+const pick = s => { const o = {}; for (const p of decodeURIComponent(s).split('&')) { const i = p.indexOf('='); const k = p.slice(0, i); if (/^(en|gcs|ep\.traffic_class|ep\.traffic_phase|ep\.traffic_version|up\.traffic_class|ep\.page_type)$/.test(k)) o[k] = p.slice(i + 1); } return o; };
 
 async function humanStay(page, ms, touch) {
   const end = Date.now() + ms;
@@ -73,9 +73,9 @@ for (const sc of scenarios) {
       if (sc.human) await humanStay(page, STAY, sc.touch); else await sleep(STAY);
       row.pages.push(await page.evaluate(() => ({
         path: location.pathname,
-        tc: window.__trafficClass || null,
+        tc: window.__visitorVerdict || null,
         events: (window.dataLayer || []).filter(e => e && e.event === 'traffic_class').map(e => e.traffic_phase + ':' + e.traffic_class),
-        storage: (() => { try { return sessionStorage.getItem('traffic_class'); } catch (e) { return 'ERR'; } })(),
+        storage: (() => { try { return sessionStorage.getItem('visitor_verdict'); } catch (e) { return 'ERR'; } })(),
       })));
     }
     await page.goto(ORIGIN + '/hledat.html', { waitUntil: 'load' }); // flush last page

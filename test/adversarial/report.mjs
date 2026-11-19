@@ -3,7 +3,7 @@ const cell = value => String(value ?? '—').replaceAll('|', '\\|').replaceAll('
 const classes = new Set(['human', 'suspicious', 'automated', 'declared_agent']);
 function cleanEvent(event) {
   return {traffic_class: event.traffic_class, traffic_phase: event.traffic_phase,
-    traffic_score: event.traffic_score,
+    traffic_score: event.traffic_score, traffic_version: event.traffic_version,
     traffic_signals: Array.isArray(event.traffic_signals) ? event.traffic_signals.filter(s => typeof s === 'string') : []};
 }
 export function summarize(raw) {
@@ -15,7 +15,7 @@ export function summarize(raw) {
     const final = entries.filter(e => e.traffic_phase === 'final');
     if (initial.length !== 1 || final.length !== 1) issues.push(`${path}: ${initial.length} initial, ${final.length} final events (expected one each)`);
     for (const event of entries) {
-      if (!classes.has(event.traffic_class) || !Number.isFinite(event.traffic_score) || !Array.isArray(event.traffic_signals) || event.traffic_signals.some(s => typeof s !== 'string')) issues.push(`${path}: malformed detector event or debug signals missing`);
+      if (event.traffic_version !== '1.0.0' || !classes.has(event.traffic_class) || !Number.isFinite(event.traffic_score) || !Array.isArray(event.traffic_signals) || event.traffic_signals.some(s => typeof s !== 'string')) issues.push(`${path}: malformed detector event or debug signals missing`);
     }
     return {path, initial: initial[0] ? cleanEvent(initial[0]) : null, final: final[0] ? cleanEvent(final[0]) : null,
       initialCount: initial.length, finalCount: final.length};

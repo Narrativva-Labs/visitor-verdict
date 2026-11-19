@@ -26,7 +26,9 @@ const scenarios = [
     launch: {headless: false, args: quiet}, noInteraction: true, informational: true, category: 'known limit',
     note: 'Known limit after F1/F3: no positive pointer evidence and only one environment family can leave rapid idle navigation human.'},
   {name: '8 Fetch without JavaScript', fetch: true},
-  {name: '9 ChatGPT-User', engine: chromium, context: {userAgent: 'ChatGPT-User'}, declared: true},
+  {name: '9 ChatGPT-User plus webdriver', engine: chromium, context: {userAgent: 'ChatGPT-User'}, expected: 'automated'},
+  {name: '9b Declared ChatGPT-User without hard evidence', engine: chromium,
+    launch: {headless: false, args: quiet}, context: {userAgent: 'ChatGPT-User'}, expected: 'declared_agent'},
   {name: '10 Human desktop Chrome', engine: chromium, human: true, category: 'clean-human',
     launch: {channel: 'chrome', headless: false, args: quiet}, context: {viewport: {width: 1440, height: 900}}},
   {name: '10b Human bundled Chromium', engine: chromium, human: true, category: 'clean-human',
@@ -46,9 +48,10 @@ const scenarios = [
 const catalog = {
   AG: 'Boundary-matched declared UA (100, declared)', WD: 'Strict webdriver true (100, hard)',
   HL: 'HeadlessChrome UA/brands (100, hard)', AU: 'Bounded known automation/audit UA (100, hard)',
-  GL: 'Shape-checked legacy/Selenium/ChromeDriver globals (100, hard)',
-  PW: 'Three exact shape-checked Playwright names, initial and final (100, hard; feature-dependent, natural coverage unverified)',
-  CA: 'Direct hard/declaration provenance from previous document; consumed once, second clean page human (100, inherited)',
+  GL: 'Callable shape-checked legacy/Selenium/ChromeDriver globals; plain data ignored (100, hard)',
+  PW: 'Callable values at three exact shape-checked Playwright names; plain data ignored, initial and final (100, hard; feature-dependent, natural coverage unverified)',
+  CA: 'Previous direct automated class; consumed once, second clean page human (100, inherited automated)',
+  CD: 'Previous direct declared_agent class; consumed once, never hard proof; current hard evidence wins (100, inherited declaration)',
   G0: 'Both dimensions zero, visible focused top-level only; rechecked final (1, geometry)',
   GS: '800×600 screen or matching 1280×720 screen/viewport (1, geometry)',
   HW: 'Focused visible desktop: outer=inner=screen and full available screen, excluding fullscreen/standalone (2, benign geometry)',
@@ -95,7 +98,7 @@ async function humanStay(page, touch, duration) {
 }
 try {
   for (let iteration = 1; iteration <= repeat; iteration++) for (const scenario of scenarios) {
-    const row = {iteration, category: scenario.category || 'bot', informational: !!scenario.informational, noteOnly: !!scenario.noteOnly, name: scenario.name, expected: scenario.noteOnly ? 'limitation' : scenario.informational ? 'not-human-or-human (informational)' : scenario.fetch ? 'no event' : scenario.human ? 'human' : scenario.declared ? 'declared_agent' : 'not human', pages: [], notes: scenario.note ? [scenario.note] : []};
+    const row = {iteration, category: scenario.category || 'bot', informational: !!scenario.informational, noteOnly: !!scenario.noteOnly, name: scenario.name, expected: scenario.noteOnly ? 'limitation' : scenario.informational ? 'not-human-or-human (informational)' : scenario.fetch ? 'no event' : scenario.human ? 'human' : scenario.expected || 'not human', pages: [], notes: scenario.note ? [scenario.note] : []};
     let browser;
     try {
       if (scenario.noteOnly) { row.status = 'SKIP'; row.notes.push(scenario.note); results.push(row); continue; }
@@ -186,7 +189,7 @@ try {
         row.initial = row.pages[2].initial.traffic_class;
         row.final = row.pages[2].final.traffic_class;
         row.signals = [...new Set(row.pages.flatMap(p => [...p.initial.traffic_signals, ...p.final.traffic_signals]))];
-        row.status = scenario.informational ? 'INFO' : (scenario.human ? row.pages.every(p => p.initial.traffic_class === 'human' && p.final.traffic_class === 'human') : scenario.declared ? row.final === 'declared_agent' : row.final !== 'human') ? 'PASS' : 'FAIL';
+        row.status = scenario.informational ? 'INFO' : (scenario.human ? row.pages.every(p => p.initial.traffic_class === 'human' && p.final.traffic_class === 'human') : scenario.expected ? row.final === scenario.expected : row.final !== 'human') ? 'PASS' : 'FAIL';
         if (row.status === 'FAIL') row.notes.push('Observed result differs from expectation; see signals and page evidence.');
       }
     } catch (error) {

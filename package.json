@@ -4,11 +4,13 @@
   "description": "Privacy-minimising browser traffic classification for Google Tag Manager and GA4",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node test/run.mjs",
+    "test": "node test/contracts.mjs && node test/runner-contracts.mjs",
     "test:contracts": "node test/contracts.mjs",
     "serve": "node test/server.mjs",
     "test:extended": "node test/run-extended.mjs",
-    "build:container": "node scripts/build-container.mjs"
+    "build:container": "node scripts/build-container.mjs",
+    "test:fuzz": "node test/fuzz/run.mjs",
+    "test:browsers": "node test/run.mjs"
   },
   "keywords": [],
   "author": "František Bujnovský",
@@ -26,5 +28,14 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Narrativva-Labs/visitor-verdict.git"
+  },
+  "main": "./dist/visitor-verdict.min.js",
+  "files": [
+    "dist/visitor-verdict.min.js",
+    "dist/visitor-verdict.min.js.sri"
+  ],
+  "exports": {
+    ".": "./dist/visitor-verdict.min.js",
+    "./visitor-verdict.min.js": "./dist/visitor-verdict.min.js"
   }
 }

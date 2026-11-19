@@ -42,8 +42,10 @@ const specs = [
   {name: '25d GS+NI+FN+WK corroborated combination', category: 'regression', engine: chromium, mode: 'benign', environment: 'GS', uaSwitcher: true,
     expectedFinal: 'suspicious', expectedDescription: 'last final suspicious', launch: {headless: false, args: quiet},
     context: {viewport: {width: 800, height: 600}, screen: {width: 800, height: 600}}},
-  {name: '26a Claude-Agent UA', engine: chromium, context: {userAgent: 'Claude-Agent/1.0'}, expected: 'declared_agent'},
-  {name: '26b Google-Agent UA', engine: chromium, context: {userAgent: 'Google-Agent'}, expected: 'declared_agent'},
+  {name: '26a Claude-Agent UA plus webdriver', engine: chromium, context: {userAgent: 'Claude-Agent/1.0'}, expected: 'automated'},
+  {name: '26b Google-Agent UA plus webdriver', engine: chromium, context: {userAgent: 'Google-Agent'}, expected: 'automated'},
+  {name: '26c Claude-Agent UA without hard evidence', engine: chromium, launch: {headless: false, args: quiet},
+    context: {userAgent: 'Claude-Agent/1.0'}, expected: 'declared_agent'},
   {name: '27 Chrome-Lighthouse UA', engine: chromium, context: {userAgent: 'Chrome-Lighthouse/1.0'}, expected: 'automated'},
   {...human, name: '28 Human cursor rested before navigation', mode: 'rest'},
   {...human, name: '29 Human repeated clicks at same spot', mode: 'repeat-click'},
@@ -138,13 +140,13 @@ async function snapshot(page) {
   return page.evaluate(() => ({
     initial: window.dataLayer?.find(e => e.traffic_phase === 'initial'),
     finals: window.dataLayer?.filter(e => e.traffic_phase === 'final') || [],
-    state: window.__trafficClass,
+    state: window.__visitorVerdict,
     activity: {...window.__tcTestActivity?.observed},
     navigationGapsMs: (() => {try {
-      const times = JSON.parse(sessionStorage.getItem('traffic_class') || '{}').timestamps || [];
+      const times = JSON.parse(sessionStorage.getItem('visitor_verdict') || '{}').timestamps || [];
       return times.slice(1).map((time, index) => time - times[index]);
     } catch {return [];}})(),
-    tpPages: (() => {try {return JSON.parse(sessionStorage.getItem('traffic_class') || '{}').tpPages || 0;} catch {return null;}})(),
+    tpPages: (() => {try {return JSON.parse(sessionStorage.getItem('visitor_verdict') || '{}').tpPages || 0;} catch {return null;}})(),
     cursor: (() => {try {return JSON.parse(sessionStorage.getItem('tc_test_events') || '[]').length;} catch {return null;}})()
   }));
 }
@@ -239,7 +241,7 @@ try {
           window.addEventListener(type, event => {
             if (event.isTrusted === false || document.visibilityState === 'hidden') return;
             evidence.lastInputAt = performance.now();
-            if (window.__trafficClass?.phase === 'initial' && type !== 'pointercancel') {
+            if (window.__visitorVerdict?.phase === 'initial' && type !== 'pointercancel') {
               evidence.observed[type] = Math.min(255, (evidence.observed[type] || 0) + 1);
             }
           }, {capture: true, passive: true});
@@ -291,12 +293,12 @@ try {
         window.tcTestConfig = {debug: true, webgl: graphics, worker};
       }, {graphics: spec.environment === 'WG', worker: !!spec.uaSwitcher});
       if (spec.mode === 'decay') await page.addInitScript(() => {
-        if (location.pathname === '/index.html') sessionStorage.setItem('traffic_class', JSON.stringify({tpPages: 2}));
+        if (location.pathname === '/index.html') sessionStorage.setItem('visitor_verdict', JSON.stringify({tpPages: 2}));
       });
       if (spec.mode === 'named') await context.route('**/*.html', async route => {
         const response = await route.fetch();
         const html = (await response.text()).replace('<body>', `<body>
-          <div id="__trafficClass"></div><form name="callPhantom"></form>
+          <div id="__visitorVerdict"></div><form name="callPhantom"></form>
           <div id="__playwright__binding__"></div><form name="__pwInitScripts"></form><form name="__pwInitScripts"></form>
           <iframe name="__playwright__binding__controller__" hidden></iframe>`);
         await route.fulfill({response, body: html});
@@ -325,7 +327,7 @@ try {
           const sample = await context.newPage();
           try {
             await sample.goto(`${origin}/blank.html`);
-            await sample.evaluate(probes => {window.trafficClassConfig = probes ? {webgl: true, worker: true} : {};}, !!spec.probes);
+            await sample.evaluate(probes => {window.visitorVerdictConfig = probes ? {webgl: true, worker: true} : {};}, !!spec.probes);
             samples.push(await sample.evaluate(text => {
               const start = performance.now(); (0, eval)(text); return performance.now() - start;
             }, source));
@@ -339,7 +341,7 @@ try {
         row.botd = await botd(page);
       } else if (spec.mode === 'iframe') {
         await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
-        const storedBefore = await page.evaluate(() => sessionStorage.getItem('traffic_class'));
+        const storedBefore = await page.evaluate(() => sessionStorage.getItem('visitor_verdict'));
         const handle = await page.evaluateHandle(() => {
           const iframe = document.createElement('iframe'); iframe.width = '0'; iframe.height = '0'; iframe.src = '/page2.html'; document.body.appendChild(iframe); return iframe;
         });
@@ -348,14 +350,14 @@ try {
         await sleep(10000);
         const state = await snapshot(frame);
         check(!state.initial && !state.finals.length && !state.state, 'Iframe must not start the detector');
-        check(await page.evaluate(() => sessionStorage.getItem('traffic_class')) === storedBefore, 'Iframe changed detector storage');
+        check(await page.evaluate(() => sessionStorage.getItem('visitor_verdict')) === storedBefore, 'Iframe changed detector storage');
         row.notes.push('Zero-size subframe emitted no phases and created no detector state or storage writes.');
         row.botd = await botd(frame);
         await handle.evaluate(node => node.remove()); await handle.dispose();
         row.status = 'PASS';
       } else if (['publication', 'prerender'].includes(spec.mode)) {
         if (spec.mode === 'prerender') {
-          check(!await page.evaluate(() => window.dataLayer.length || sessionStorage.getItem('traffic_class')), 'Prerender emitted or stored before activation');
+          check(!await page.evaluate(() => window.dataLayer.length || sessionStorage.getItem('visitor_verdict')), 'Prerender emitted or stored before activation');
           await page.evaluate(() => {
             Object.defineProperty(document, 'prerendering', {value: false, configurable: true});
             document.dispatchEvent(new Event('prerenderingchange'));
@@ -363,7 +365,7 @@ try {
           row.notes.push('Property/event fixture exercises real browser event scheduling; this is not a native speculation-rules prerender claim.');
         }
         row.initial = (await snapshot(page)).state.class;
-        await page.waitForFunction(() => window.__trafficClass.phase === 'final', null, {timeout: 12000});
+        await page.waitForFunction(() => window.__visitorVerdict.phase === 'final', null, {timeout: 12000});
         const state = await snapshot(page);
         check(state.state.class === 'human', 'Publication/prerender control must stay human');
         if (spec.mode === 'prerender') check(state.initial && state.finals.length === 1, 'Activation phases missing or duplicated');
@@ -403,7 +405,7 @@ try {
               await sleep(15000);
               const hidden = await snapshot(page);
               check(hidden.state.phase === 'initial', 'Hidden wall time incorrectly finalized detector');
-              check(!hidden.state.signals.includes('NI'), 'Hidden wall time incorrectly added NI');
+              check(!hidden.initial.traffic_signals.includes('NI'), 'Hidden wall time incorrectly added NI');
               await page.bringToFront(); await input(page, spec); await other.close();
               row.notes.push('Verified hidden for 15s, still initial before returning.');
             }
@@ -451,7 +453,7 @@ try {
                 await sleep(700);
               }
             }
-            if (last) await page.waitForFunction(() => window.__trafficClass?.phase === 'final', null, {timeout: 12000});
+            if (last) await page.waitForFunction(() => window.__visitorVerdict?.phase === 'final', null, {timeout: 12000});
             const before = await snapshot(page), oldPath = new URL(page.url()).pathname;
             check(before.initial, 'Missing synchronous initial classification');
             if (last) {

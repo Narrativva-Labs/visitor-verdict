@@ -1,0 +1,76 @@
+name: False positive
+description: Report a human visit classified as suspicious, automated or declared_agent.
+title: "[False positive] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include URLs, IP addresses, visitor data, cookies, identifiers, analytics payloads or raw browser-property dumps. Use a synthetic reproduction and short debug signal codes only. For a data-leak bug, use a private security advisory instead of this form.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Chrome 142
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: OS and device type
+      description: General OS/version and desktop, phone or tablet; no device identifiers.
+    validations:
+      required: true
+  - type: dropdown
+    id: assistive-tech
+    attributes:
+      label: Was assistive technology in use?
+      options:
+        - 'Yes'
+        - 'No'
+        - Prefer not to say
+    validations:
+      required: true
+  - type: dropdown
+    id: class
+    attributes:
+      label: Observed class
+      options:
+        - suspicious
+        - automated
+        - declared_agent
+    validations:
+      required: true
+  - type: input
+    id: signals
+    attributes:
+      label: Debug signal codes and phase
+      description: Short codes only, such as TP, FN; initial/final. Write unknown if unavailable. Do not paste full data-layer events.
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: Installation
+      options:
+        - GTM import
+        - GTM Custom HTML
+        - Direct script
+    validations:
+      required: true
+  - type: dropdown
+    id: consent
+    attributes:
+      label: When did the detector load relative to analytics consent?
+      options:
+        - Before consent
+        - After consent
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Version, configuration and synthetic reproduction
+      description: Include the release version, non-default options and steps using a local example. No URLs or visitor data.
+    validations:
+      required: true

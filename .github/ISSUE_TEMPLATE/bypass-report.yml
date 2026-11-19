@@ -1,0 +1,41 @@
+name: Publicly known bypass
+description: Document a publicly known evasion or detection limit.
+title: "[Bypass] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Evasion is an expected limitation of client-side classification. Report publicly known techniques here. Data leaks belong in a private security advisory. Do not include target URLs, IPs, visitor data, identifiers or raw browser-property dumps. Public upstream documentation links are welcome.
+  - type: input
+    id: version
+    attributes:
+      label: Visitor Verdict version
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Tool, browser and OS versions
+    validations:
+      required: true
+  - type: textarea
+    id: public-reference
+    attributes:
+      label: Public reference
+      description: Link to public upstream documentation or describe where the technique is already documented. No target-site links.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Synthetic local reproduction and configuration
+      description: Describe input behaviour, probe options and installation method without real visitor data.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed initial/final classes and debug codes
+      description: Short signal codes only. Separate completed classifications from launch failures or missing events.
+    validations:
+      required: true

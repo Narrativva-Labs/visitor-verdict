@@ -1,5 +1,5 @@
 /* Test harness only: the production detector never makes network requests. */
-window.trafficClassConfig = window.tcTestConfig || {debug: true, webgl: true, worker: true};
+window.visitorVerdictConfig = window.tcTestConfig || {debug: true, webgl: true, worker: true};
 window.dataLayer = [];
 window.dataLayer.push = function (event) {
   Array.prototype.push.call(this, event);

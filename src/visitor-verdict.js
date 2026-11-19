@@ -1,23 +1,54 @@
-/* Override these defaults with window.trafficClassConfig before loading. */
+/* Override these defaults with window.visitorVerdictConfig before loading. */
 (function (w, d, n) {
   'use strict';
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var existing = Object.getOwnPropertyDescriptor(w, '__trafficClass');
-  var marker = existing && shapeValue(existing.value) && Object.getOwnPropertyDescriptor(existing.value, '__tcDetector');
-  if (existing &&
-      own.call(w, '__trafficClass') && marker && marker.value === true) { return; }
-  var state = {};
-  Object.defineProperty(state, '__tcDetector', {value: true});
-  Object.defineProperty(w, '__trafficClass', {value: state, configurable: true, writable: true});
+  var version = '1.0.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  // Keep the per-document inclusion marker in an event listener's closure.
+  // Predefined public globals (even non-configurable ones) cannot claim it.
+  function claim(event) {
+    if (claimed && typeof event.vvClaim === 'function') { event.vvClaim(); }
+  }
+  try {
+    if (canListen(d) && typeof d.createEvent === 'function' && typeof d.dispatchEvent === 'function') {
+      var probe = d.createEvent('Event');
+      probe.initEvent('visitor-verdict:claim', false, false);
+      probe.vvClaim = function () { duplicate = true; };
+      d.dispatchEvent(probe);
+      if (duplicate) { return; }
+      claimListener = addListener(d, 'visitor-verdict:claim', claim, true);
+      claimed = claimListener;
+    }
+  } catch (ignore) {}
+  // Legacy hosts without an event API can still recognise our accessor's
+  // closure handshake. Plain data properties never qualify as an owner.
+  // An accessor lets each publication replace the frozen snapshot while the
+  // public property itself stays non-configurable and has no setter.
+  function current(probe) {
+    if (probe === current) { return claimed; }
+    return snapshot;
+  }
+  var existing = Object.getOwnPropertyDescriptor(w, '__visitorVerdict');
+  try {
+    if (!claimListener && existing && !existing.configurable && !existing.set && existing.get &&
+        existing.get(existing.get) === true) { return; }
+  } catch (ignore) {}
+  try {
+    Object.defineProperty(w, '__visitorVerdict', {get: current, configurable: false, enumerable: true});
+    claimed = true;
+  } catch (ignore) {
+    // A preloaded non-configurable global cannot be repaired in this realm.
+    // Do not trust its contents or let it disable data-layer publication.
+  }
   function activate() {
-    if (d.prerendering === true) { return; }
+    if (activated || d.prerendering === true) { return; }
+    activated = true;
     removeListener(d, 'prerenderingchange', activate, true);
     start();
   }
   if (d.prerendering === true) { addListener(d, 'prerenderingchange', activate, true); }
-  else { start(); }
+  else { activate(); }
   function canListen(target) {
     return !!target && typeof target.addEventListener === 'function' && typeof target.removeEventListener === 'function';
   }
@@ -57,7 +88,7 @@
         'CCBot', 'Amazonbot', 'Amzn-SearchBot'
       ]
     };
-    var key, overrides = w.trafficClassConfig || {};
+    var key, overrides = w.visitorVerdictConfig || {};
     for (key in config) {
       if (own.call(overrides, key)) {
         var value = overrides[key];
@@ -74,7 +105,7 @@
       }
     }
     var signals = [], families = {}, score = 0, hard = false, declared = false, direct = false;
-    var done = false, initial, elapsed = 0, started = null, timer;
+    var done = false, initial, initialPublished = false, finalPublished = false, elapsed = 0, started = null, timer;
     var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
     var inputTarget = canListen(w) ? w : canListen(d) ? d : null, observesInput = true;
     var visibilityTarget = canListen(d) ? d : w;
@@ -175,7 +206,10 @@
     function add(code, weight, family) {
       if (signals.indexOf(code) !== -1) { return; }
       signals.push(code);
-      if (weight === 100) { if (code !== 'CA') { direct = true; } if (code === 'AG') { declared = true; } else { hard = true; } }
+      if (weight === 100) {
+        if (code !== 'CA' && code !== 'CD') { direct = true; }
+        if (code === 'AG' || code === 'CD') { declared = true; } else { hard = true; }
+      }
       else if (weight) {
         score += Math.max(0, weight - (families[family] || 0));
         families[family] = Math.max(weight, families[family] || 0);
@@ -188,7 +222,10 @@
     function shape(object, name) {
       try {
         var prop = Object.getOwnPropertyDescriptor(object, name), value = prop && prop.value;
-        return shapeValue(value);
+        // Plain objects/arrays are common application data and can be planted
+        // under any name. Require executable evidence, retaining host checks.
+        // Page-authored functions can still imitate real automation bindings.
+        return typeof value === 'function' && shapeValue(value);
       } catch (ignore) { return false; }
     }
     function playwright() {
@@ -228,13 +265,19 @@
       return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true}';
     }
     function readStore() {
-      var record = JSON.parse(w.sessionStorage.getItem('traffic_class') || '{}');
+      // Our bounded schema fits comfortably below this cap. Ignore oversized
+      // planted records before parsing or iterating attacker-controlled arrays.
+      var raw = w.sessionStorage.getItem('visitor_verdict');
+      var record = {};
+      if (typeof raw === 'string' && raw.length <= 2048 && raw) { record = JSON.parse(raw); }
       record = record && tag.call(record) === '[object Object]' ? record : {};
       return {timestamps: record.timestamps, lastClass: cleanClass(record.lastClass), tpPages: boundedTP(record.tpPages)};
     }
     function mergeTimes(list) {
       var merged = [], now = Date.now(), j, value;
-      list = timestamps.concat(tag.call(list) === '[object Array]' ? list : []);
+      // Only the approved 20-entry tail may enter the merge. With our own
+      // bounded history this limits validation, deduplication and sort to 40.
+      list = timestamps.concat(tag.call(list) === '[object Array]' ? list.slice(-20) : []);
       for (j = 0; j < list.length; j++) {
         value = list[j];
         if (typeof value === 'number' && isFinite(value) && value >= 0 && value <= now) {
@@ -260,7 +303,7 @@
         var nextClass = cleanClass(lastClass !== null && !newer ? lastClass : saved.lastClass);
         // All components have been reduced to bounded numbers or fixed enums.
         // This also repairs writable storage when a legacy browser lacks JSON.
-        w.sessionStorage.setItem('traffic_class', '{"timestamps":[' + timestamps.join(',') +
+        w.sessionStorage.setItem('visitor_verdict', '{"timestamps":[' + timestamps.join(',') +
           '],"lastClass":' + classText(nextClass) + ',"tpPages":' + tpPages + '}');
         if (!newer) { classSnapshot = classText(nextClass); tpSnapshot = tpPages; }
         return true;
@@ -281,15 +324,23 @@
         (env >= 2 && (families.interaction || families.navigation)));
     }
     function publish(phase) {
-      var result = declared ? 'declared_agent' : hard ? 'automated' :
+      if (phase === 'initial' ? initialPublished : phase !== 'final' || finalPublished || !initialPublished) { return initial; }
+      var result = hard ? 'automated' : declared ? 'declared_agent' :
         suspicious() ? 'suspicious' : 'human';
-      if (phase === 'final' && (initial === 'automated' || initial === 'declared_agent')) { result = initial; }
+      if (phase === 'final' && initial === 'automated') { result = initial; }
+      else if (phase === 'final' && initial === 'declared_agent' && !hard) { result = initial; }
       var total = hard || declared ? 100 : score;
-      var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase, traffic_score: total};
-      state['class'] = result; state.score = total; state.phase = phase;
-      if (config.debug) { event.traffic_signals = signals.slice(0); state.signals = signals.slice(0); }
-      // Only direct evidence can seed one grace document. A CA-only final stores
-      // no provenance, so the second consecutive document without hard proof is clean.
+      if (typeof cleanClass(result) !== 'string' || !cleanClass(result) ||
+          typeof total !== 'number' || !isFinite(total)) { return initial; }
+      // Mark before any consumer callback can reenter. Never read public state.
+      if (phase === 'initial') { initialPublished = true; initial = result; }
+      else { finalPublished = true; }
+      snapshot = Object.freeze({'class': result, score: total, phase: phase, version: version});
+      var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase,
+        traffic_score: total, traffic_version: version};
+      if (config.debug) { event.traffic_signals = signals.slice(0); }
+      // Only direct evidence can seed one grace document. CA/CD alone store no
+      // provenance, so a carried class cannot seed another grace document.
       if (phase === 'final') { save(direct ? {value: result, direct: true} : result); }
       try {
         var layer = w[config.dataLayerName];
@@ -360,10 +411,16 @@
     try {
       var saved;
       try { saved = readStore(); } catch (ignore) { saved = {}; }
+      var previous = cleanClass(saved.lastClass);
+      if (previous && typeof previous !== 'string') { previous = previous.value; }
+      try { Object.defineProperty(w, '__visitorVerdictLast', {value: previous || undefined, configurable: false, writable: false}); }
+      catch (ignore) {}
       tpPages = boundedTP(saved.tpPages);
       classSnapshot = classText(saved.lastClass); tpSnapshot = tpPages;
-      if (saved.lastClass && saved.lastClass.direct === true &&
-          /^(automated|declared_agent)$/.test(saved.lastClass.value)) { add('CA', 100); }
+      if (saved.lastClass && saved.lastClass.direct === true) {
+        if (saved.lastClass.value === 'automated') { add('CA', 100); }
+        else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); }
+      }
       timestamps = mergeTimes(saved.timestamps);
       var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
       var revisit = navigation ? /reload|back_forward/.test(navigation.type) :

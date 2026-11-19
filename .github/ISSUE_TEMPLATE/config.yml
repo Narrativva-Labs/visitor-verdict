@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Private data-leak report
+    url: https://github.com/Narrativva-Labs/visitor-verdict/security/advisories/new
+    about: Report unexpected collection, storage or export of data privately.
