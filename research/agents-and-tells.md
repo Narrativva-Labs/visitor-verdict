@@ -1,6 +1,6 @@
 # AI website visitors and browser automation tells
 
-Research date: **2026-11-18**. Scope: evidence for the small, ES5, local-only detector described in the detector design. This is desk research, not a browser benchmark. No framework/browser combinations were executed for this document. Recommendations below are proposed calibration, not measured accuracy.
+Research date: **2026-11-18**. Scope: evidence for the small, ES5, local-only detector described in the detector design. The initial research is desk research, not a browser benchmark; dated field observations below were added on 2026-11-19/20. Recommendations below are proposed calibration, not measured accuracy.
 
 Dates beside sources mean publication/update dates when explicitly available. Otherwise **accessed 2026-11-18** applies to every link, including live documentation and repository `main`/`master`. Moving source branches are not release guarantees; pin versions and record actual browser versions in the eventual test report. An absent documented identifier means “not established by this research”, not “proved absent in every request”.
 
@@ -64,7 +64,7 @@ Match stable tokens case-insensitively, not complete UA strings or Chrome versio
 
 ### Field observations, v1.0 (2026-11-19)
 
-Real agent runs against our own test shop, with the debug badge; each agent added a product to the cart and idled in the cart until the final verdict.
+Observations on 2026-11-19/20 against our own test shop, with the debug badge; each agent added a product to the cart and idled in the cart until the final verdict.
 
 | Agent | Runs | Verdict | Signals | Page × worker difference |
 |---|---|---|---|---|
@@ -76,9 +76,11 @@ Real agent runs against our own test shop, with the debug badge; each agent adde
 
 **Not promoted to a direct `suspicious` rule.** An adversarial review reproduced the identical prefix pattern on an ordinary Chrome with a main-world locale-switcher extension (extensions cannot override `WorkerNavigator`), and a narrower "page list is a prefix of the worker list" rule does not separate the two. `WK` stays at weight 2 behind the corroboration gate. Follow-up: measure how often `WK` appears with a `human` verdict in field data; identify the ChatGPT agent server-side via signed requests (Phase 2).
 
-**Server-side end to end (2026-11-20):** the ChatGPT agent's cloud browser signs every request with Web Bot Auth (`Signature-Agent: "https://chatgpt.com"`), including script loads, fetch, sendBeacon and CORS preflights to a first-party analytics subdomain; 32 of 32 captured signatures verified against the operator's key directory. With the [server verifier](../server/README.md) running in a self-hosted collector (labelling only), the agent's GA4 events arrived with `agent_verification=signature_valid`, `agent_operator=openai`, `agent_claim=signature_agent` (GA4 Realtime). Practical note: the key directory took about 0.9 s to fetch from a European VPS, so key fetches must outlive the per-hit deadline and the cache should be warmed. The Grok agent does not sign (HeadlessChrome user agent, cloud IP).
+**Server-side smoke test (2026-11-20, one demo shop):** in one header-capture run, the ChatGPT agent cloud browser sent 32 signed requests (`Signature-Agent: "https://chatgpt.com"`): navigation, script, image, fetch GET/POST, sendBeacon and CORS preflight. All 32 signatures verified against the operator's key directory. These are requests from one run, not 32 independent visits. The five badge runs above covered personal and business accounts; no per-account split is available for the header-capture or GA4 samples.
 
-Combined fields (same day, 12:53): with the browser class forwarded by the collector, the agent's events carried `traffic_class=human` (browser) together with `agent_verification=signature_valid` (server) in GA4 Realtime — a verified agent that looks human in the browser. After warming the key cache, 5 of 5 `view_cart` events carried the server label (1 of 5 before warming). Only 1 of 5 carried the browser class, because the collector sends early events before the detector (loaded through GTM) has published; evaluate the browser class per session.
+With the [server verifier](../server/README.md) in a self-hosted collector (labelling only), GA4 Realtime showed `agent_verification=signature_valid`, `agent_operator=openai`, `agent_claim=signature_agent` on 5/5 `view_cart` events after warming the key cache, compared with 1/5 before. Only 1/5 carried the browser class (`traffic_class=human`): early events reached the collector before the GTM-loaded detector published. Missing browser labels are missing coverage, not human evidence. The key directory took about 0.9 s to fetch from a European VPS in this test, motivating cache warming and fetches that outlive the per-hit deadline.
+
+**Controls and limits:** masked headless returned `no_signature` with `traffic_class=automated`. The two Grok agent runs were unsigned. The signature and GA4 results cover one operator (OpenAI), one site and a short test window; they do not establish universal signing, detection accuracy or traffic prevalence. Realtime confirms event arrival and labels only. Standard GA4 reports, BigQuery export, advertising attribution and stability across days or regions have not been verified for these agent events.
 
 **Own-browser agents** (an agent driving the user's real Chrome) carry no browser-side tell and are indistinguishable from the user in the page. This is a stated Phase 1 limit.
 
@@ -94,7 +96,7 @@ Web Bot Auth builds agent identity on **HTTP Message Signatures (RFC 9421)**. Th
 | Amazon Bedrock AgentCore Browser | Preview and **opt-in at Browser Tool creation**; when enabled, browser requests are signed. This is not evidence that all Nova Act local sessions sign. [AWS configuration](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-web-bot-auth.html). |
 | Anthropic hosted browsers | Official reference documents UA plus published IPs in SAIL. Do not relabel SAIL as RFC 9421 signing without separate evidence. [Anthropic](https://support.claude.com/en/articles/18234133-how-do-anthropic-hosted-browsers-identify-themselves-when-they-browse-the-web-on-a-user-s-behalf). |
 
-Cloudflare documents a structured-string `Signature-Agent` format and verification requirements. Signed identity means an operator made the request, not that the visitor is human or authorized for a purchase. [Cloudflare Web Bot Auth](https://developers.cloudflare.com/bots/reference/bot-verification/web-bot-auth/), 2026 live docs. Do not implement WBA network/key fetching inside this repository's detector. A later server integration would need an explicit design and is outside this phase.
+Cloudflare documents a structured-string `Signature-Agent` format and verification requirements. Signed identity means an operator made the request, not that the visitor is human or authorized for a purchase. [Cloudflare Web Bot Auth](https://developers.cloudflare.com/bots/reference/bot-verification/web-bot-auth/), 2026 live docs. Do not implement WBA network/key fetching inside this repository's detector. The separate [server preview](../server/README.md) implements verification; it is outside the browser detector.
 
 ## 2. Browser-side tells: useful positives, conditional leaks, patched heuristics
 

@@ -97,13 +97,13 @@ export const additionalOperators: Operator[] = [
     operator: 'baidu',
     verifiedByCapture: false,
     checked,
-    source: 'https://ziyuan.baidu.com/college/articleinfo?id=3457',
+    source: 'https://help.baidu.com/question?class=476&id=2996&prod_id=99',
     extraUaTokens: ['Baiduspider'],
     ipLists: [],
     reverseDns: dns(
       ['Baiduspider'],
       ['baidu.com', 'baidu.jp'],
-      'https://ziyuan.baidu.com/college/articleinfo?id=3457',
+      'https://help.baidu.com/question?class=476&id=2996&prod_id=99',
     ),
   },
   {
@@ -136,7 +136,7 @@ export const additionalOperators: Operator[] = [
     operator: 'amazon',
     verifiedByCapture: false,
     checked,
-    source: 'https://developer.amazon.com/amazonbot',
+    source: 'https://developer.amazon.com/docs/amazonbot/amazonbot.html',
     extraUaTokens: ['Amazonbot', 'Amzn-SearchBot', 'Amzn-User'],
     ipLists: [],
     // Published addresses are currently HTML-wrapped; no guessed JSON endpoint or DNS suffix.
@@ -152,10 +152,34 @@ export const additionalOperators: Operator[] = [
   },
   // Claims below are intentionally NOT a verification capability or confirmed wire identity.
   {
+    operator: 'meta',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
+    extraUaTokens: ['meta-externalagent', 'meta-externalfetcher', 'meta-webindexer'],
+    evidence: [
+      {
+        level: 'documented',
+        source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
+        checked,
+        note: 'Documented UA claims; no published verification feed or suffix confirmed for these tokens.',
+      },
+    ],
+    ipLists: [],
+  },
+  {
     operator: 'you',
     verifiedByCapture: false,
     checked,
-    source: 'https://docs.you.com/youbot',
+    source: 'https://radar.cloudflare.com/bots/directory/youbot',
+    evidence: [
+      {
+        level: 'observed',
+        source: 'https://radar.cloudflare.com/bots/directory/youbot',
+        checked,
+        note: 'Observed UA claim; former operator documentation docs.you.com/youbot is unavailable. No verification method established.',
+      },
+    ],
     extraUaTokens: ['YouBot'],
     ipLists: [],
   },

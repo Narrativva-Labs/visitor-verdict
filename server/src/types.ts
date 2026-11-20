@@ -34,6 +34,17 @@ export interface Operator {
   reverseDns?: readonly ReverseDnsRule[];
   /** Documented product purpose, applied only after operator verification. */
   purposes?: PurposePolicy;
+  /** Provenance of individual registry claims; descriptive, never a verification bypass. */
+  evidence?: readonly RegistryEvidence[];
+}
+/** Documented operator facts, observed wire behavior, or explicitly inferred mappings. */
+export interface RegistryEvidence {
+  level: 'documented' | 'observed' | 'inferred';
+  source: string;
+  checked: string;
+  note: string;
+  /** Omit for evidence applying to the entry as a whole. */
+  uaTokens?: readonly string[];
 }
 /** Operator-declared product role; never a finding about a person's intent or authorization. */
 export type AgentPurpose = 'user_directed' | 'crawler' | 'unknown';

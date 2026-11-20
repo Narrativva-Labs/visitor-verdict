@@ -1,6 +1,28 @@
 import { additionalOperators } from './registry-extra.js';
 import { purposePolicies } from './registry-purposes.js';
 import type { Registry } from './types.js';
+const googleCommonTokens = [
+  'Googlebot',
+  'Googlebot-Image',
+  'Googlebot-Video',
+  'Storebot-Google',
+  'Google-InspectionTool',
+  'GoogleOther',
+  'GoogleOther-Image',
+  'GoogleOther-Video',
+  'Google-CloudVertexBot',
+];
+const googleFetcherTokens = [
+  'Google-GeminiNotebook',
+  'Google-NotebookLM',
+  'Gemini-Deep-Research',
+  'Google-Pinpoint',
+  'Google-Read-Aloud',
+  'GoogleProducer',
+  'Google-Site-Verification',
+  'Google-CWS',
+  'FeedFetcher-Google',
+];
 // Exact operator identities and endpoints; no discovery from request-controlled URLs.
 const operators: Registry = [
   ...additionalOperators,
@@ -38,13 +60,14 @@ const operators: Registry = [
     verifiedByCapture: false,
     checked: '2026-11-20',
     source: 'https://www.bing.com/webmasters/help/how-to-verify-bingbot-3905dc26',
-    extraUaTokens: ['bingbot'],
+    extraUaTokens: ['bingbot', 'AdIdxBot', 'BingPreview', 'MicrosoftPreview', 'BingVideoPreview'],
     ipLists: [
       { name: 'bingbot', url: 'https://www.bing.com/toolbox/bingbot.json', uaTokens: ['bingbot'] },
     ],
   },
   {
     operator: 'mistral',
+    extraUaTokens: ['MistralAI-Training'],
     verifiedByCapture: false,
     checked: '2026-11-20',
     source: 'https://docs.mistral.ai/robots',
@@ -63,6 +86,20 @@ const operators: Registry = [
   },
   {
     operator: 'duckduckgo',
+    evidence: [
+      {
+        level: 'documented',
+        source: 'https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot',
+        checked: '2026-11-20',
+        note: 'DuckAssistBot crawler role and IP list.',
+      },
+      {
+        level: 'observed',
+        source: 'https://radar.cloudflare.com/bots/directory/duckassistbot',
+        checked: '2026-11-20',
+        note: 'Published WBA directory; signature origin has no local request capture.',
+      },
+    ],
     signatureAgent: 'https://assistbot.duckduckgo.com',
     directoryUrl: 'https://assistbot.duckduckgo.com/.well-known/http-message-signatures-directory',
     verifiedByCapture: false,
@@ -96,23 +133,42 @@ const operators: Registry = [
   },
   {
     operator: 'google',
-    extraUaTokens: ['Googlebot'],
+    extraUaTokens: [...googleCommonTokens, ...googleFetcherTokens],
+    evidence: [
+      {
+        level: 'documented',
+        source:
+          'https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests',
+        checked: '2026-11-20',
+        note: 'Common crawlers and managed fetchers; customer GCE DNS is excluded.',
+      },
+      {
+        level: 'observed',
+        source: 'https://knownagents.com/agents/gemini-deep-research',
+        checked: '2026-11-19',
+        uaTokens: ['Gemini-Deep-Research'],
+        note: 'Observed token in Known Agents, Dark Visitors and Cloudflare AI-assistant reporting; not documented by Google.',
+      },
+      {
+        level: 'inferred',
+        source:
+          'https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests',
+        checked: '2026-11-20',
+        uaTokens: ['Gemini-Deep-Research'],
+        note: 'Owner-approved mapping to managed-fetchers and agents feeds and google.com FCrDNS; not a Google-documented token mapping.',
+      },
+    ],
     allowKidAlias: true,
     reverseDns: [
       {
-        uaTokens: [
-          'Google-Agent',
-          'Google-GeminiNotebook',
-          'Google-NotebookLM',
-          'Gemini-Deep-Research',
-        ],
-        suffixes: ['google.com', 'googleusercontent.com'],
+        uaTokens: ['Google-Agent', ...googleFetcherTokens],
+        suffixes: ['google.com'],
         source:
           'https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests',
         checked: '2026-11-20',
       },
       {
-        uaTokens: ['Google-CloudVertexBot', 'Googlebot'],
+        uaTokens: googleCommonTokens,
         suffixes: ['googlebot.com'],
         source:
           'https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests',
@@ -128,17 +184,17 @@ const operators: Registry = [
       {
         name: 'user-triggered-agents',
         url: 'https://developers.google.com/static/crawling/ipranges/user-triggered-agents.json',
-        uaTokens: ['Google-Agent'],
+        uaTokens: ['Google-Agent', 'Gemini-Deep-Research'],
       },
       {
         name: 'user-triggered-fetchers-google',
         url: 'https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers-google.json',
-        uaTokens: ['Google-GeminiNotebook', 'Google-NotebookLM', 'Gemini-Deep-Research'],
+        uaTokens: googleFetcherTokens,
       },
       {
         name: 'common-crawlers',
         url: 'https://developers.google.com/static/crawling/ipranges/common-crawlers.json',
-        uaTokens: ['Google-CloudVertexBot', 'Googlebot'],
+        uaTokens: googleCommonTokens,
       },
       {
         name: 'user-triggered-fetchers',
@@ -149,6 +205,14 @@ const operators: Registry = [
   },
   {
     operator: 'browserbase',
+    evidence: [
+      {
+        level: 'observed',
+        source: 'https://radar.cloudflare.com/bots/directory/browserbase',
+        checked: '2026-11-20',
+        note: 'WBA identity and directory observed by Cloudflare; no local request capture.',
+      },
+    ],
     signatureAgent: 'https://www.browserbase.com',
     directoryUrl: 'https://www.browserbase.com/.well-known/http-message-signatures-directory',
     verifiedByCapture: false,
@@ -158,6 +222,14 @@ const operators: Registry = [
   },
   {
     operator: 'manus',
+    evidence: [
+      {
+        level: 'observed',
+        source: 'https://radar.cloudflare.com/bots/directory/manus-bot',
+        checked: '2026-11-20',
+        note: 'WBA identity and directory observed by Cloudflare; old operator help URL is unavailable.',
+      },
+    ],
     signatureAgent: 'https://api.manus.im',
     directoryUrl: 'https://api.manus.im/.well-known/http-message-signatures-directory',
     verifiedByCapture: false,
@@ -206,5 +278,25 @@ const operators: Registry = [
 ];
 export const defaultRegistry: Registry = operators.map((operator) => ({
   ...operator,
+  evidence: operator.evidence ?? [
+    {
+      level:
+        operator.ipLists.length ||
+        operator.reverseDns?.length ||
+        operator.staticPrefixes?.length ||
+        operator.directoryUrl
+          ? 'documented'
+          : 'inferred',
+      source: operator.source,
+      checked: operator.checked,
+      note:
+        operator.ipLists.length ||
+        operator.reverseDns?.length ||
+        operator.staticPrefixes?.length ||
+        operator.directoryUrl
+          ? 'Operator documentation for the configured verification methods; verifiedByCapture is independent.'
+          : 'Claim-only attribution; the linked source does not establish a verification method.',
+    },
+  ],
   purposes: purposePolicies[operator.operator],
 }));

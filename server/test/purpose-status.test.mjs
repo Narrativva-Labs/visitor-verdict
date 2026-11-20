@@ -27,7 +27,7 @@ for (const [id, token, list, expected] of [
   ['openai', 'ChatGPT-User', 'chatgpt-user', 'user_directed'],
   ['openai', 'GPTBot', 'gptbot', 'crawler'],
   ['openai', 'OAI-SearchBot', 'searchbot', 'crawler'],
-  ['openai', 'OAI-AdsBot', 'adsbot', 'unknown'],
+  ['openai', 'OAI-AdsBot', 'adsbot', 'crawler'],
   ['anthropic', 'Claude-Agent', 'sail', 'user_directed'],
   ['anthropic', 'Claude-User', 'bots', 'user_directed'],
   ['anthropic', 'ClaudeBot', 'bots', 'crawler'],
@@ -51,7 +51,7 @@ for (const [id, token, list, expected] of [
   ['naver', 'Yeti', 'naverbot', 'crawler'],
   ['naver', 'Blueno', 'naverbot', 'unknown'],
   ['kagi', 'Kagibot', 'published_static', 'crawler'],
-  ['duckduckgo', 'DuckAssistBot', 'duckassistbot', 'unknown'],
+  ['duckduckgo', 'DuckAssistBot', 'duckassistbot', 'crawler'],
 ])
   test('registry purpose: ' + id + '/' + token, () => {
     assert.equal(purposeFor(evidence(id, token, list), defaultRegistry), expected);

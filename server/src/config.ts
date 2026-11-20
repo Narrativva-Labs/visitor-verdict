@@ -1,7 +1,38 @@
 import { dnsConfig } from './rdns.js';
 import { compilePrefixes } from './ip.js';
 import { normalizeAuthority } from './fields.js';
-import type { Registry, VerifierOptions, Operator, IpList, PurposePolicy } from './types.js';
+import type {
+  Registry,
+  VerifierOptions,
+  Operator,
+  IpList,
+  PurposePolicy,
+  RegistryEvidence,
+} from './types.js';
+
+function registryEvidence(value: readonly RegistryEvidence[] | undefined) {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > 16) throw new TypeError('Invalid registry evidence');
+  return value.map((entry: RegistryEvidence) => {
+    if (
+      !entry ||
+      !['documented', 'observed', 'inferred'].includes(entry.level) ||
+      typeof entry.checked !== 'string' ||
+      entry.checked.length > 32 ||
+      typeof entry.note !== 'string' ||
+      entry.note.length > 2048 ||
+      (entry.uaTokens !== undefined &&
+        (!Array.isArray(entry.uaTokens) ||
+          entry.uaTokens.length > 64 ||
+          !entry.uaTokens.every(
+            (token) => typeof token === 'string' && token.length > 0 && token.length <= 128,
+          )))
+    )
+      throw new TypeError('Invalid registry evidence');
+    httpsUrl(entry.source);
+    return { ...entry, uaTokens: entry.uaTokens ? [...entry.uaTokens] : undefined };
+  });
+}
 
 function purposePolicy(value: PurposePolicy | undefined): PurposePolicy | undefined {
   if (value === undefined) return;
@@ -172,6 +203,7 @@ export function validateConfig(options: VerifierOptions) {
     });
     return {
       ...operator,
+      evidence: registryEvidence(operator.evidence),
       purposes: purposePolicy(operator.purposes),
       ipLists,
       reverseDns,

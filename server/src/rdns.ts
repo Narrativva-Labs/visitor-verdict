@@ -1,11 +1,13 @@
 import { Resolver } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import type { Registry, ReverseDnsOptions, DnsResolver } from './types.js';
+import type { DnsPurposeEvidence } from './purpose.js';
 
 interface Evidence {
   operator?: string;
   unavailable: boolean;
   notConfirmed?: boolean;
+  matched?: DnsPurposeEvidence;
 }
 interface Entry {
   scope: string;
@@ -91,11 +93,13 @@ export class ReverseDnsVerifier {
             rule.uaTokens.some((token) => ua.includes(token)) &&
             (!rule.ipv4Only || isIP(address) === 4),
         )
-        .map((rule) => ({ operator: operator.operator, rule })),
+        .map((rule) => ({ operator, rule })),
     );
     if (!candidates.length) return { unavailable: false };
     const scope = candidates
-      .map(({ operator, rule }) => operator + ':' + rule.suffixes.join(','))
+      .map(({ operator, rule }) =>
+        JSON.stringify([operator.operator, rule.suffixes, rule.uaTokens]),
+      )
       .join('|');
     const cached = this.cache.get(address);
     if (cached && cached.scope === scope && now < cached.until) {
@@ -121,10 +125,7 @@ export class ReverseDnsVerifier {
 
   private async lookup(
     ip: string,
-    candidates: Array<{
-      operator: string;
-      rule: NonNullable<Registry[number]['reverseDns']>[number];
-    }>,
+    candidates: DnsPurposeEvidence[],
     signal: AbortSignal,
   ): Promise<Evidence> {
     const resolver =
@@ -156,7 +157,11 @@ export class ReverseDnsVerifier {
                 typeof value === 'string' && value.length <= 64 && normalizedIp(value) === ip,
             )
           )
-            return { operator: allowed[0].operator, unavailable: false };
+            return {
+              operator: allowed[0].operator.operator,
+              matched: allowed[0],
+              unavailable: false,
+            };
         } catch (error) {
           const code = (error as { code?: string })?.code;
           if (code !== 'ENODATA' && code !== 'ENOTFOUND') hadError = true;

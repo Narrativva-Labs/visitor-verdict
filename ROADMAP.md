@@ -1,6 +1,6 @@
 # Roadmap
 
-Visitor Verdict grows in small, verified steps. A phase starts only after the previous one has been validated on real traffic.
+Phase 1 field validation and its exit criterion remain open. Phase 2 started early as separate design and lab/demo work on branch `phase2-verifier`; its server package is not released. Production use of Phase 2 waits for Phase 1 validation.
 
 ## Phase 1 — Label clear automation in GA4 (current)
 
@@ -15,15 +15,15 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [ ] Lightweight field validation, 2–4 weeks on a few live sites: share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
 - [ ] Publish the results, including what is missed
 
-**Exit criterion:** field results show clear automation is labelled and real visitors are not, on every validated site.
+**Exit criterion (open):** field results show clear automation is labelled and real visitors are not, on every validated site.
 
 ## Phase 2 — Recognise and measure AI agents on the server (in progress)
 
-Goal: recognise and measure AI agents and verified bots, keep their conversions and label them. Conversions are routed by how the conversion itself is verified (paid order, confirmed lead), not dropped because an agent made them. See [conversion guidance](docs/conversion-guidance.md).
+Goal: recognise and measure AI agents and verified bots, keep their conversions and label them. Planned conversion routing uses how the conversion itself is verified (paid order, confirmed lead); routing is not implemented in the library or collector. See [conversion guidance](docs/conversion-guidance.md).
 
-- [x] Measurement: the ChatGPT agent's cloud browser signs every request with Web Bot Auth, including analytics hits to a first-party subdomain (2026-11-20)
+- [x] Smoke test on one demo shop (2026-11-20): 32/32 signed requests verified in one ChatGPT agent header-capture run, including analytics requests to a first-party subdomain; [sample and limits](research/agents-and-tells.md#field-observations-v10-2026-11-19)
 - [x] Server verifier library in [`server/`](server/README.md): Web Bot Auth signatures, operators' published IP ranges, optional reverse DNS; browser evidence, claimed identity and server verification kept as separate fields
-- [x] Label hits in the self-hosted collector (GA4 field `agent_verification`), nothing withheld; first end-to-end test with the ChatGPT agent on the demo shop (2026-11-20)
+- [x] Label hits in the self-hosted collector (GA4 field `agent_verification`), nothing withheld; ChatGPT agent smoke test on one demo shop (2026-11-20): GA4 Realtime showed the server label on 5/5 `view_cart` events after warming, 1/5 before; standard reports and BigQuery not verified
 - [x] Warm the key cache and serve cached keys while refreshing
 - [ ] Longer field test on live sites
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing

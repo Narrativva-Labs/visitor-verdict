@@ -91,10 +91,10 @@ advertising routing is implemented here or in Vanilla; Vanilla sends directly to
 
 ## Why
 
-- **Agents acting for a person produce real revenue.** Purchases need the person's approval, payment networks accept agent-initiated payments as ordinary transactions, and the merchant remains the merchant of record. Withholding them would under-report ROAS and remove real signals.
-- **"No ad click, so no attribution" is false.** Meta Conversions API matches on user data (email, phone, fbp/fbc) and Google Enhanced Conversions matches hashed data to signed-in accounts. A purchase an agent makes with the customer's email can be credited to an ad that person saw or clicked, correctly.
-- **Unverified leads are the real risk.** Google states that its filters do not stop invalid leads on their own and recommends form protection, double opt-in and bidding on qualified leads. Lead spam is an order of magnitude more common than agent conversions today.
-- **Spam rarely signs.** Fraudulent automation hides; the server verifier does not catch it. Browser evidence, CAPTCHA and the platforms' own invalid-traffic systems remain necessary.
+- **Settled orders can represent real revenue.** Use backend payment settlement and merchant fraud checks to establish this. An operator signature alone proves neither purchase approval nor payment legitimacy.
+- **Attribution remains unverified here.** Customer matching may connect a purchase in a separate agent browser to an earlier eligible ad interaction, subject to consent, match quality and platform rules. It does not create an ad interaction. This project has not measured attribution or credit rates for agent purchases.
+- **Unverified leads need qualification.** A form submission or a valid operator signature does not establish lead quality. No comparative rate of lead spam versus agent conversions has been measured here.
+- **Unsigned traffic can still be automated.** The masked-headless negative control returned `no_signature` and `automated`; signatures do not cover all automation. No relationship between signing and spam prevalence has been measured here.
 
 ## Sources
 

@@ -4,6 +4,12 @@ Label clear browser automation in GA4 with a privacy-minimal, client-side detect
 
 Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering lets through. It does not try to catch operators who deliberately disguise automation and makes no accuracy guarantee. It is a first, privacy-minimal layer.
 
+## Phase 2 (server-side verification, in progress)
+
+On branch `phase2-verifier`, the [`server/` preview library](server/README.md) verifies operator HTTP signatures and published IP evidence independently of the browser class. The server package is not released or published to npm. Design and lab/demo work started before Phase 1 field validation; production use waits for that validation.
+
+In a 2026-11-20 ChatGPT agent smoke test on one demo shop, 32 captured requests from one header-capture run had valid signatures. GA4 Realtime showed `signature_valid` on 5/5 `view_cart` events after cache warming (1/5 before). This is one operator on one site, not an accuracy or attribution study. See [field observations](research/agents-and-tells.md#field-observations-v10-2026-11-19) and the [conversion reference design](docs/conversion-guidance.md).
+
 ## What you get
 
 | | v1.0.0 |
@@ -46,7 +52,11 @@ The integrity value comes from [dist/visitor-verdict.min.js.sri](dist/visitor-ve
 - [Privacy, storage and consent](docs/privacy.md)
 - [GTM setup and GA4 reporting](docs/ga4-reporting.md)
 - [Tests, adversarial benchmark and known limits](docs/benchmark.md)
-- [Lightweight field-validation protocol](docs/study/protocol.md) — prospective; no field results yet
+- [Lightweight field-validation protocol](docs/study/protocol.md) — prospective; Phase 1 field validation remains open
+- [Server verifier preview](server/README.md)
+- [Conversion reference design](docs/conversion-guidance.md)
+- [Agent research and field observations](research/agents-and-tells.md)
+- [Session analysis SQL (not yet validated against a live export)](docs/analysis/session-classification.sql)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 

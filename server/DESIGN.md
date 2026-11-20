@@ -49,3 +49,8 @@ conversion routing. Cache health exposes only endpoint counts and the most recen
 refresh outcome/time; a document can be loaded without an active key. Refresh callbacks carry
 kind/outcome/time/reason only and cannot affect verification. Logging and rate limiting of
 operational warnings belong to the integrator.
+
+Registry provenance uses documented/observed/inferred evidence with source and date.
+Purpose attribution retains the winning DNS rule in the bounded DNS cache and
+uses only that rule's eligible tokens. Shared-feed tokens with unknown roles
+remain part of ambiguity resolution. Google customer cloud DNS is excluded.

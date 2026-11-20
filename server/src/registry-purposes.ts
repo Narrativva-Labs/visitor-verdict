@@ -4,8 +4,18 @@ const checked = '2026-11-20';
 export const purposePolicies: Record<string, PurposePolicy> = {
   openai: {
     signatureAgent: 'user_directed',
-    ipLists: { 'chatgpt-user': 'user_directed', searchbot: 'crawler', gptbot: 'crawler' },
-    uaTokens: { 'ChatGPT-User': 'user_directed', 'OAI-SearchBot': 'crawler', GPTBot: 'crawler' },
+    ipLists: {
+      'chatgpt-user': 'user_directed',
+      searchbot: 'crawler',
+      gptbot: 'crawler',
+      adsbot: 'crawler',
+    },
+    uaTokens: {
+      'ChatGPT-User': 'user_directed',
+      'OAI-SearchBot': 'crawler',
+      GPTBot: 'crawler',
+      'OAI-AdsBot': 'crawler',
+    },
     sources: [
       'https://developers.openai.com/api/docs/bots',
       'https://developers.openai.com/commerce/agent-access',
@@ -25,8 +35,21 @@ export const purposePolicies: Record<string, PurposePolicy> = {
       'Google-GeminiNotebook': 'user_directed',
       'Google-NotebookLM': 'user_directed',
       'Gemini-Deep-Research': 'user_directed',
+      'Google-Pinpoint': 'user_directed',
+      'Google-Read-Aloud': 'user_directed',
+      GoogleProducer: 'user_directed',
+      'Google-Site-Verification': 'user_directed',
+      'Google-CWS': 'user_directed',
+      'FeedFetcher-Google': 'user_directed',
       Googlebot: 'crawler',
       'Google-CloudVertexBot': 'crawler',
+      'Googlebot-Image': 'crawler',
+      'Googlebot-Video': 'crawler',
+      'Storebot-Google': 'crawler',
+      'Google-InspectionTool': 'crawler',
+      GoogleOther: 'crawler',
+      'GoogleOther-Image': 'crawler',
+      'GoogleOther-Video': 'crawler',
     },
     sources: [
       'https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers',
@@ -44,7 +67,7 @@ export const purposePolicies: Record<string, PurposePolicy> = {
     },
     sources: [
       'https://claude.com/.well-known/sail',
-      'https://privacy.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler',
+      'https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler',
     ],
     checked,
   },
@@ -56,7 +79,11 @@ export const purposePolicies: Record<string, PurposePolicy> = {
   },
   mistral: {
     ipLists: { 'mistralai-user': 'user_directed', 'mistralai-index': 'crawler' },
-    uaTokens: { 'MistralAI-User': 'user_directed', 'MistralAI-Index': 'crawler' },
+    uaTokens: {
+      'MistralAI-User': 'user_directed',
+      'MistralAI-Index': 'crawler',
+      'MistralAI-Training': 'crawler',
+    },
     sources: ['https://docs.mistral.ai/robots'],
     checked,
   },
@@ -91,9 +118,37 @@ export const purposePolicies: Record<string, PurposePolicy> = {
     checked,
   },
   naver: {
-    uaTokens: { Yeti: 'crawler' },
-    sources: ['https://searchadvisor.naver.com/guide/seo-basic-firewall'],
+    uaTokens: { Yeti: 'crawler', 'Ads-Naver': 'crawler' },
+    sources: [
+      'https://searchadvisor.naver.com/guide/seo-basic-firewall',
+      'https://ads.naver.com/help/faq/994',
+    ],
     checked,
   },
   kagi: { uaTokens: { Kagibot: 'crawler' }, sources: ['https://kagi.com/bot'], checked },
+  baidu: {
+    uaTokens: { Baiduspider: 'crawler' },
+    sources: ['https://help.baidu.com/question?class=476&id=2996&prod_id=99'],
+    checked,
+  },
+  petal: {
+    uaTokens: { PetalBot: 'crawler' },
+    sources: ['https://webmaster.petalsearch.com/site/petalbot'],
+    checked,
+  },
+  yandex: {
+    uaTokens: { YandexBot: 'crawler', YandexAdditional: 'crawler' },
+    sources: ['https://yandex.com/support/webmaster/en/robot-workings/check-yandex-robots'],
+    checked,
+  },
+  amazonads: {
+    uaTokens: { AmazonAdBot: 'crawler' },
+    sources: ['https://adbot.amazon.com/'],
+    checked,
+  },
+  duckduckgo: {
+    uaTokens: { DuckAssistBot: 'crawler' },
+    sources: ['https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot'],
+    checked,
+  },
 };

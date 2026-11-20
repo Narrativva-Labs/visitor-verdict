@@ -11,7 +11,7 @@ import { evaluateSignature } from './signature.js';
 import { ReverseDnsVerifier } from './rdns.js';
 import { staticBlocks, ipEvidence, decodeList, decodeSail } from './ip.js';
 import { publicKeys } from './keys.js';
-import { purposeFor } from './purpose.js';
+import { purposeFor, type DnsPurposeEvidence } from './purpose.js';
 import type {
   AgentRequest,
   AgentVerdict,
@@ -81,6 +81,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     cacheOnly: boolean,
   ): Promise<AgentVerdict> {
     let presented = false;
+    let dnsPurpose: DnsPurposeEvidence | undefined;
     try {
       const h = headers(input.headers);
       presented = h.has('signature') || h.has('signature-input');
@@ -152,8 +153,10 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         ipCacheMiss = evidence.cacheMiss === true;
         if (!verdict.ip && !verdict.verified && rdns && !cacheOnly) {
           const dns = await rdns.verify(input.clientIp, claims.uaTokens, now, signal);
-          if (dns.operator) verdict.rdns = { operator: dns.operator };
-          else if (dns.unavailable && !ipUnavailable) dnsUnavailable = true;
+          if (dns.operator) {
+            verdict.rdns = { operator: dns.operator };
+            dnsPurpose = dns.matched;
+          } else if (dns.unavailable && !ipUnavailable) dnsUnavailable = true;
           else if (dns.notConfirmed) dnsNotConfirmed = true;
         }
       }
@@ -188,7 +191,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       verdict.reason = f.reason;
       verdict.verified = undefined;
     }
-    verdict.agent_purpose = purposeFor(verdict, config.registry);
+    verdict.agent_purpose = purposeFor(verdict, config.registry, dnsPurpose);
     return verdict;
   }
 
