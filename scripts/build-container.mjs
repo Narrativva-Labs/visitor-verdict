@@ -66,14 +66,21 @@ const container = {
           parameter('eventName', 'traffic_class'),
           parameter('measurementIdOverride', reference('VV - GA4 measurement ID'))
         ],
-        firingTriggerId: ['3'], tagFiringOption: 'ONCE_PER_EVENT',
+        firingTriggerId: ['3', '12'], tagFiringOption: 'ONCE_PER_EVENT',
         consentSettings: {consentStatus: 'NOT_SET'}}
     ],
-    trigger: [phaseTrigger('3', 'final'), phaseTrigger('10', 'initial'),
+    folder: [{...ids, folderId: '13', name: 'VV - OPTIONAL page_view readiness (OR, once per page)',
+      notes: 'Optional trigger set: attach VV - initial and VV - timer fallback 1s as two ordinary OR firing triggers to the existing Google tag (or explicit page_view tag), replacing its early trigger. Set Once per page. Do not use a trigger group (AND). May delay page_view by up to 1 s; fallback may have no class. Roll back by restoring the original trigger and firing option. Importing does not change site tags. See docs/ga4-reporting.md.'}],
+    trigger: [phaseTrigger('3', 'final'),
+      {...phaseTrigger('12', 'initial'), name: 'VV - initial hard',
+        filter: [equals(dlv('traffic_phase'), 'initial'), matchRegex(dlv('traffic_class'), '^(automated|declared_agent)$')]},
+      {...phaseTrigger('10', 'initial'), parentFolderId: '13',
+        notes: 'Optional page_view readiness set: use this OR VV - timer fallback 1s; set the existing site tag to Once per page. See folder notes.'},
       {...ids, triggerId: '11', name: 'VV - timer fallback 1s', type: 'TIMER',
+        parentFolderId: '13',
         eventName: parameter('eventName', 'gtm.timer'), interval: parameter('interval', '1000'), limit: parameter('limit', '1'),
         autoEventFilter: [matchRegex('{{_event}}', '.*')], // GTM requires a variable as the first argument
-        notes: 'Attach this and VV - initial to the existing site Google tag; set that tag to Once per page. This import creates no Google tag.'}],
+        notes: 'Optional page_view readiness set: use this OR VV - initial on the existing Google tag (or explicit page_view tag), Once per page. May delay page_view by up to 1 s. See folder notes for rollback. This import creates no Google tag.'}],
     variable: [
       {...ids, variableId: '8', name: 'VV - current class', type: 'jsm',
         parameter: [parameter('javascript', currentClass)]},

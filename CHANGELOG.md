@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-11-20
+
+### Changed
+
+- GTM container 1.0.1: the GA4 `traffic_class` tag now sends initial `automated` and `declared_agent` publications in addition to final results for every class, improving coverage when short visits end without final delivery.
+- Clearly labelled optional first-page-view readiness trigger set, with manual setup, one-second fallback, once-per-page firing, timing risks and rollback instructions.
+- Migration instructions, session-level any-hit reporting guidance and container contract coverage. Initial/final duplicates are expected; classification-event counts are not visit counts.
+- Detector JavaScript, distribution, probe settings and `traffic_version: '1.0.0'` are unchanged.
+
 ## [1.0.0] - 2026-11-19
 
 ### Added
