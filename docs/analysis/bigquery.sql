@@ -1,3 +1,5 @@
+-- Phase 1 browser-only study query: traffic_class/traffic_phase remain unchanged.
+-- For the Vanilla two-label format use session-classification.sql (vv_type/vv_detail).
 -- GoogleSQL script. Edit parameters, then run the WHOLE script in BigQuery.
 -- Read-only against the export; creates temporary tables and returns A--I plus evaluation windows.
 -- Dataset identifiers cannot be bound parameters, hence validated dynamic SQL.

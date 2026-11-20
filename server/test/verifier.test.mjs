@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   createVerifier,
   defaultRegistry,
-  toAnalyticsFields,
+  visitorLabels,
   coveredHeaderNames,
 } from '../dist/index.js';
 import { publicKeys } from '../dist/keys.js';
@@ -399,11 +399,9 @@ test('UA-only claim is unverified and analytics fields exclude raw claims', asyn
     headers: { 'user-agent': 'ChatGPT-User' },
   });
   assert.equal(v.verification, 'no_signature');
-  assert.deepEqual(toAnalyticsFields(v), {
-    agent_claim: 'ua_token',
-    agent_verification: 'no_signature',
-    agent_operator: 'none',
-    agent_purpose: 'unknown',
+  assert.deepEqual(visitorLabels({ verdict: v }), {
+    vv_type: 'agent_unverified',
+    vv_detail: 'none|no_signature|unknown|ua_token|-|-',
   });
 });
 for (const parameter of ['type="jwks_uri"', 'type="cimd"', 'type=directory', 'other="x"'])

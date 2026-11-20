@@ -41,3 +41,7 @@ void warmed.warm({ ipLists: true, refreshAhead: true }).then((result) => {
 const health = verifier.status();
 const lastRefresh: boolean | null = health.lastRefreshOk;
 void lastRefresh;
+
+import { visitorLabels, type VisitorType } from '../dist/index.js';
+const label: VisitorType = visitorLabels({ browserClass: 'human', browserPhase: 'final' }).vv_type;
+void label;

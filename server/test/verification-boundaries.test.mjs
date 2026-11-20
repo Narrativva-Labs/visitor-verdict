@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createHash } from 'node:crypto';
-import { createVerifier, toAnalyticsFields } from '../dist/index.js';
+import { createVerifier, visitorLabels } from '../dist/index.js';
 import {
   clock,
   identity,
@@ -234,10 +234,10 @@ test('IP-list purpose uses only UA tokens eligible for that list', async () => {
   assert.equal(verdict.agent_purpose, 'crawler');
 });
 
-test('toAnalyticsFields reports agent_claim signature_agent', async () => {
-  const fields = toAnalyticsFields(await verifier.verify(signed()));
-  assert.equal(fields.agent_claim, 'signature_agent');
-  assert.equal(fields.agent_operator, 'test');
+test('visitorLabels reports agent_claim signature_agent', async () => {
+  const fields = visitorLabels({ verdict: await verifier.verify(signed()) });
+  assert.equal(fields.vv_detail.split('|')[3], 'signature_agent');
+  assert.equal(fields.vv_detail.split('|')[0], 'test');
 });
 
 test('invalid signature from a listed IP exports no operator', async () => {
@@ -258,9 +258,9 @@ test('invalid signature from a listed IP exports no operator', async () => {
   r.headers['user-agent'] = 'TestBot/1.0';
   const verdict = await v.verify(r);
   assert.equal(verdict.verification, 'signature_invalid');
-  const fields = toAnalyticsFields(verdict);
-  assert.equal(fields.agent_operator, 'none');
-  assert.equal(fields.agent_purpose, 'unknown');
+  const fields = visitorLabels({ verdict });
+  assert.equal(fields.vv_detail.split('|')[0], 'none');
+  assert.equal(fields.vv_detail.split('|')[2], 'unknown');
 });
 
 test('UA token needs a left word boundary', async () => {

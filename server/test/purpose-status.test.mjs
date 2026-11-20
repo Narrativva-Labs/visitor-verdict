@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createVerifier, defaultRegistry, toAnalyticsFields } from '../dist/index.js';
+import { createVerifier, defaultRegistry, visitorLabels } from '../dist/index.js';
 import { purposeFor } from '../dist/purpose.js';
 import { clock, operator, jwk, signed, makeVerifier, directoryUrl } from './helpers.mjs';
 
@@ -68,9 +68,33 @@ test('signed identity wins over a different or contradictory unsigned UA claim',
   );
   assert.equal(
     purposeFor(evidence('browserbase', 'ChatGPT-User', undefined, 'signature'), defaultRegistry),
-    'unknown',
+    'user_directed',
   );
 });
+for (const [id, expected, type] of [
+  ['browserbase', 'user_directed', 'agent_verified'],
+  ['manus', 'user_directed', 'agent_verified'],
+  ['duckduckgo', 'crawler', 'crawler_verified'],
+]) {
+  test('signature purpose and labels: ' + id, () => {
+    // No UA claim is needed; purpose follows this operator's verified signature identity.
+    const v = evidence(id, '', undefined, 'signature');
+    v.claimed.signatureAgents = [v.verified.signatureAgent];
+    v.agent_purpose = purposeFor(v, defaultRegistry);
+    assert.equal(v.agent_purpose, expected);
+    assert.deepEqual(visitorLabels({ verdict: v }), {
+      vv_type: type,
+      vv_detail: `${id}|signature_valid|${expected}|signature_agent|-|-`,
+    });
+    // A contradictory unsigned UA cannot replace the signature's policy.
+    v.claimed.uaTokens = expected === 'crawler' ? ['ChatGPT-User'] : ['GPTBot'];
+    assert.equal(purposeFor(v, defaultRegistry), expected);
+    for (const verification of ['signature_invalid', 'none', 'no_signature']) {
+      v.verification = verification;
+      assert.equal(purposeFor(v, defaultRegistry), 'unknown');
+    }
+  });
+}
 test('ambiguous shared-feed claims and unverified outcomes stay unknown', () => {
   const v = evidence('anthropic', 'Claude-User', 'bots');
   v.claimed.uaTokens.push('ClaudeBot');
@@ -79,7 +103,7 @@ test('ambiguous shared-feed claims and unverified outcomes stay unknown', () => 
     v.verification = verification;
     v.agent_purpose = 'user_directed';
     assert.equal(purposeFor(v, defaultRegistry), 'unknown');
-    assert.equal(toAnalyticsFields(v).agent_purpose, 'unknown');
+    assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[2], 'unknown');
   }
 });
 test('purpose is applied by public verification only after evidence and is snapshotted', async () => {
@@ -91,7 +115,10 @@ test('purpose is applied by public verification only after evidence and is snaps
   const v = makeVerifier({ registry: [{ ...operator, purposes }] });
   purposes.signatureAgent = 'crawler';
   assert.equal((await v.verify(signed())).agent_purpose, 'user_directed');
-  assert.equal(toAnalyticsFields(await v.verify(signed())).agent_purpose, 'user_directed');
+  assert.equal(
+    visitorLabels({ verdict: await v.verify(signed()) }).vv_detail.split('|')[2],
+    'user_directed',
+  );
   const broken = signed();
   broken.method = 'POST';
   assert.equal((await v.verify(broken)).agent_purpose, 'unknown');
@@ -114,7 +141,7 @@ test('public IP and static verification exports the purpose of the winning evide
     });
     assert.equal(v.verification, 'ip_match');
     assert.equal(v.agent_purpose, expected);
-    assert.equal(toAnalyticsFields(v).agent_purpose, expected);
+    assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[2], expected);
   }
   const kagi = createVerifier({
     registry: defaultRegistry.filter((entry) => entry.operator === 'kagi'),

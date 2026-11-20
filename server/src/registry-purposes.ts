@@ -146,7 +146,18 @@ export const purposePolicies: Record<string, PurposePolicy> = {
     sources: ['https://adbot.amazon.com/'],
     checked,
   },
+  browserbase: {
+    signatureAgent: 'user_directed',
+    sources: ['https://docs.browserbase.com/welcome/introduction'],
+    checked,
+  },
+  manus: {
+    signatureAgent: 'user_directed',
+    sources: ['https://manus.im/docs/features/cloud-browser'],
+    checked,
+  },
   duckduckgo: {
+    signatureAgent: 'crawler',
     uaTokens: { DuckAssistBot: 'crawler' },
     sources: ['https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot'],
     checked,

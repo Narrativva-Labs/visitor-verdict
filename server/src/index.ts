@@ -253,21 +253,5 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     },
   };
 }
-/** Flat low-cardinality GA4/sGTM fields; raw claims and request data are not exported. */
-export function toAnalyticsFields(
-  verdict: AgentVerdict,
-): Record<'agent_claim' | 'agent_verification' | 'agent_operator' | 'agent_purpose', string> {
-  return {
-    agent_claim: verdict.claimed.signatureAgents.length
-      ? 'signature_agent'
-      : verdict.claimed.uaTokens.length
-        ? 'ua_token'
-        : 'none',
-    agent_verification: verdict.verification,
-    agent_operator: verdict.verified?.operator ?? 'none',
-    agent_purpose:
-      verdict.verified && ['signature_valid', 'ip_match'].includes(verdict.verification)
-        ? (verdict.agent_purpose ?? 'unknown')
-        : 'unknown',
-  };
-}
+export { visitorLabels } from './labels.js';
+export type { VisitorType, VisitorLabelsInput, VisitorLabels } from './labels.js';

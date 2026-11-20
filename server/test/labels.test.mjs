@@ -1,0 +1,118 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { visitorLabels } from '../dist/index.js';
+
+const verifications = ['none', 'no_signature', 'signature_invalid', 'signature_valid', 'ip_match'];
+const purposes = ['unknown', 'crawler', 'user_directed'];
+const browsers = [undefined, 'human', 'suspicious', 'automated', 'declared_agent'];
+const phases = [undefined, 'initial', 'final'];
+const claims = ['none', 'ua_token', 'signature_agent', 'both'];
+const verdict = (verification, purpose, claim) => ({
+  verification,
+  agent_purpose: purpose,
+  claimed: {
+    uaTokens: ['ua_token', 'both'].includes(claim) ? ['RAW UA'] : [],
+    signatureAgents: ['signature_agent', 'both'].includes(claim) ? ['https://raw.example/'] : [],
+  },
+  verified: { operator: 'openai', method: 'signature' },
+  signatures: [],
+  reason: 'PRIVATE REASON',
+});
+// Independent truth table: rows are the five browser classes, columns the four claim forms.
+const fallback = [
+  ['pending', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
+  ['human', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
+  ['bot_suspicious', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
+  ['bot_automation', 'bot_automation', 'bot_automation', 'bot_automation'],
+  ['agent_unverified', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
+];
+for (const verification of verifications)
+  for (const purpose of purposes) {
+    test(`label matrix ${verification}/${purpose}`, () => {
+      for (const [bi, browserClass] of browsers.entries())
+        for (const [ci, claim] of claims.entries())
+          for (const browserPhase of phases) {
+            const verified = ['signature_valid', 'ip_match'].includes(verification);
+            const expected =
+              verification === 'signature_invalid'
+                ? 'bot_spoofed'
+                : verified
+                  ? {
+                      unknown: 'agent_verified',
+                      crawler: 'crawler_verified',
+                      user_directed: 'agent_verified',
+                    }[purpose]
+                  : fallback[bi][ci];
+            const actual = visitorLabels({
+              verdict: verdict(verification, purpose, claim),
+              browserClass,
+              browserPhase,
+            });
+            assert.deepEqual(actual, {
+              vv_type: expected,
+              vv_detail: [
+                verified ? 'openai' : 'none',
+                verification,
+                verified ? purpose : 'unknown',
+                claim === 'both' ? 'signature_agent' : claim,
+                browserClass ?? '-',
+                browserPhase ?? '-',
+              ].join('|'),
+            });
+            assert.ok(actual.vv_detail.length <= 100);
+          }
+    });
+  }
+test('absent evidence, invalid browser values and pure frozen input', () => {
+  assert.deepEqual(visitorLabels(), { vv_type: 'pending', vv_detail: 'none|-|-|-|-|-' });
+  assert.deepEqual(visitorLabels({ browserClass: 'human', browserPhase: 'final' }), {
+    vv_type: 'human',
+    vv_detail: 'none|-|-|-|human|final',
+  });
+  assert.deepEqual(
+    visitorLabels({ browserClass: 'RAW|PRIVATE', browserPhase: 'unknown' }),
+    visitorLabels(),
+  );
+  const v = verdict('signature_valid', 'crawler', 'ua_token');
+  Object.freeze(v.verified);
+  Object.freeze(v.claimed.uaTokens);
+  Object.freeze(v.claimed.signatureAgents);
+  Object.freeze(v.claimed);
+  Object.freeze(v);
+  const input = Object.freeze({ verdict: v });
+  assert.deepEqual(visitorLabels(input), visitorLabels(input));
+});
+test('operator validation and 100-character limit never truncate structural fields', () => {
+  for (const operator of [
+    'x|injected',
+    'PRIVATE ADDRESS',
+    'é',
+    'a'.repeat(33),
+    'a'.repeat(32),
+    '',
+  ]) {
+    const v = verdict('signature_invalid', 'user_directed', 'signature_agent');
+    v.verified.operator = operator;
+    assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[0], 'none');
+    v.verification = 'signature_valid';
+    const result = visitorLabels({
+      verdict: v,
+      browserClass: 'declared_agent',
+      browserPhase: 'initial',
+    });
+    assert.ok(result.vv_detail.length <= 100);
+    assert.equal(result.vv_detail.split('|').length, 6);
+    assert.equal(result.vv_detail.split('|')[0], 'none');
+  }
+  const v = verdict('signature_valid', 'user_directed', 'signature_agent');
+  v.verified.operator = 'a'.repeat(24);
+  const bounded = visitorLabels({
+    verdict: v,
+    browserClass: 'declared_agent',
+    browserPhase: 'initial',
+  });
+  assert.equal(bounded.vv_detail.split('|')[0], 'a'.repeat(24));
+  assert.ok(bounded.vv_detail.length <= 100);
+  v.verified.operator += 'a';
+  assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[0], 'none');
+});

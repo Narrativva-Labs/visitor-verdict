@@ -13,14 +13,14 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.2.1.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
 ## API
 
 ```ts
-import { createVerifier, defaultRegistry, toAnalyticsFields } from './dist/index.js';
+import { createVerifier, defaultRegistry, visitorLabels } from './dist/index.js';
 
 // Construct once at application startup; invalid configuration throws.
 const verifier = createVerifier({
@@ -37,7 +37,7 @@ const verdict = await verifier.verify({
   clientIp: trustedTransportIp,
   target: req.url, // preserve raw escapes, dot segments and query
 });
-const fields = toAnalyticsFields(verdict);
+const fields = visitorLabels({ verdict, browserClass: 'human', browserPhase: 'final' });
 ```
 
 `createVerifier` snapshots the registry and owns its cache. `maxLifetimeSeconds` defaults to 86400; reverseDns is optional and disabled by default (details below). Reuse the verifier across requests. There is no global cache keyed by incidental object/function identity, no `mode` option, and no legacy `verifyAgentRequest` API.
@@ -65,7 +65,7 @@ Transport adapters must supply the external host and genuine client IP from a tr
 
 ## Purpose and health
 
-`verdict.agent_purpose` and `toAnalyticsFields(verdict).agent_purpose` are
+`verdict.agent_purpose` and the purpose segment in `visitorLabels({ verdict }).vv_detail` are
 `user_directed`, `crawler` or `unknown`. Only signature_valid/ip_match can carry a
 known purpose. This describes the documented product role, not whether this request
 has a real customer behind it. A signed identity wins over unsigned UA claims;
@@ -81,7 +81,12 @@ primary-source URLs and a checked date. See [registry-purposes.ts](src/registry-
 [Mistral](https://docs.mistral.ai/robots) and
 [Kimi](https://www.kimi.ai/policies/kimi-crawlers) distinguish user fetches from crawlers.
 The other crawler mappings cite their operator's bot documentation in that file.
-Browserbase, Manus and unlisted roles remain unknown; verified DuckAssistBot feed matches are crawlers. Purpose does not
+Verified [Browserbase](https://docs.browserbase.com/welcome/introduction) and
+[Manus](https://manus.im/docs/features/cloud-browser) signature identities map to
+`user_directed` as cloud browsers for AI agents (owner policy based on their documented
+products). DuckDuckGo's signature identity maps to `crawler`, consistent with its
+[DuckAssistBot policy](https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot)
+and verified feed matches. Unlisted purposes remain `unknown`. Purpose does not
 expand verification capability: Google's currently unassigned user-triggered-fetchers
 feed still has no eligible tokens in the default registry.
 
@@ -160,7 +165,28 @@ Other/absent signature tags are reported per-label as none/ignored_non_wba and d
 
 Selection is pure and tested: valid signature wins; otherwise definitive invalid wins over indeterminate. An invalid presented signature never becomes ip_match, though independent IP evidence is attached after evaluable signature failures. Early malformed/resource/context failures avoid further fetches. Unknown WBA Signature-Agent identities trigger no network I/O. Identity claims attached only to ignored non-WBA signatures do not restrict independent IP checks. Unsupported dictionary members are untrusted for their label without poisoning valid peers.
 
-`toAnalyticsFields` exports only flat strings: agent_claim = signature_agent / ua_token / none, agent_verification = the enum, agent_operator = verified operator / none, agent_purpose = user_directed / crawler / unknown. Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
+Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabels({ verdict?, browserClass?, browserPhase? })`. It returns exactly two GA4 event parameters; register both as **event-scoped custom dimensions** (`customEvent:vv_type` and `customEvent:vv_detail` in the Data API).
+
+| `vv_type`          | First matching evidence                                                   |
+| ------------------ | ------------------------------------------------------------------------- |
+| `bot_spoofed`      | Server `signature_invalid`                                                |
+| `agent_verified`   | Server `signature_valid`/`ip_match`, purpose `user_directed` or `unknown` |
+| `crawler_verified` | Server `signature_valid`/`ip_match`, purpose `crawler`                    |
+| `bot_automation`   | Browser `automated`                                                       |
+| `agent_unverified` | Browser `declared_agent` or unverified UA/Signature-Agent claim           |
+| `bot_suspicious`   | Browser `suspicious`                                                      |
+| `human`            | Browser `human`                                                           |
+| `pending`          | No browser class or qualifying server evidence                            |
+
+Every verified result (`signature_valid` or `ip_match`) with unknown purpose yields `agent_verified`, never `pending`, even if browser evidence exists. The purpose segment remains `unknown`: `agent_verified` confirms identity and does not by itself establish a user-directed product role. Only an explicit crawler purpose yields `crawler_verified`.
+
+`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, e.g. `openai|signature_valid|user_directed|signature_agent|human|final`. Missing segments are `-`, unknown operator is `none`. With a verdict, claim is `signature_agent` (takes precedence), `ua_token` or `none`; unverified purpose is `unknown`. Browser classes are `human`, `suspicious`, `automated`, `declared_agent`; phases initial/final. Invalid browser values become `-`. Operators must begin with a lowercase ASCII letter, followed by at most 23 lowercase ASCII letters, digits or underscores; invalid/long configured names become `none`, never truncated. Detail is at most 100 characters, with no version segment or raw claims.
+
+The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, crawler_verified=agent_verified=5, bot_spoofed=6. Equal ranks keep the earlier type. Detail describes the current hit, optionally using a previously verified operator. Scope full events to client_id + session_id and denied pings to page_id, with a bounded memory-only LRU/TTL and no stored IPs.
+
+Filter `vv_type` beginning with `agent_` or `bot_`, or `vv_detail` beginning with `openai|`. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Browser/GTM-only sites keep `traffic_class` for now.
+
+Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
 
 ## Signature profile and key rules
 
@@ -241,6 +267,7 @@ Own code: MIT, LICENSE. Cloudflare fixtures: Apache-2.0, pinned commit and licen
 
 ## Changelog
 
+- **0.3.0 (2026-11-20):** replace `toAnalyticsFields` with bounded pure `visitorLabels`; two event dimensions, verified unknown-purpose agent result and exhaustive label matrix tests.
 - **0.2.1 (2026-11-20):** exclude customer Google Cloud DNS, bind purpose to the matching DNS rule/list, add crawler roles, server-only Google tokens and registry evidence provenance; strengthen signature/cache and delivery boundary coverage.
 - **0.2.0 (2026-11-20):** add verified-only agent_purpose, cache status and public refresh metadata; retain cache-only verification and bounded stale-while-revalidate.
 

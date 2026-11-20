@@ -14,6 +14,7 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [x] Class on the first `page_view` (Google tag fired on the detector's initial result, with a short timer fallback)
 - [ ] Lightweight field validation, 2–4 weeks on a few live sites: share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
 - [ ] Publish the results, including what is missed
+- [ ] Next major version of the browser detector: the GTM tag also sends `vv_type` (only values derivable without a server: `human`, `pending`, `bot_automation`, `bot_suspicious`, `agent_unverified`) and `traffic_class` is phased out after a deprecation period — after the Phase 1 field test.
 
 **Exit criterion (open):** field results show clear automation is labelled and real visitors are not, on every validated site.
 
@@ -23,7 +24,7 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 
 - [x] Smoke test on one demo shop (2026-11-20): 32/32 signed requests verified in one ChatGPT agent header-capture run, including analytics requests to a first-party subdomain; [sample and limits](research/agents-and-tells.md#field-observations-v10-2026-11-19)
 - [x] Server verifier library in [`server/`](server/README.md): Web Bot Auth signatures, operators' published IP ranges, optional reverse DNS; browser evidence, claimed identity and server verification kept as separate fields
-- [x] Label hits in the self-hosted collector (GA4 field `agent_verification`), nothing withheld; ChatGPT agent smoke test on one demo shop (2026-11-20): GA4 Realtime showed the server label on 5/5 `view_cart` events after warming, 1/5 before; standard reports and BigQuery not verified
+- [x] Label hits in the self-hosted collector (GA4 labels `vv_type` and `vv_detail`; earlier smoke test used separate fields), nothing withheld; ChatGPT agent smoke test on one demo shop (2026-11-20): GA4 Realtime showed the server label on 5/5 `view_cart` events after warming, 1/5 before; standard reports and BigQuery not verified
 - [x] Warm the key cache and serve cached keys while refreshing
 - [ ] Longer field test on live sites
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing

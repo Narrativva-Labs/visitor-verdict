@@ -54,3 +54,26 @@ Registry provenance uses documented/observed/inferred evidence with source and d
 Purpose attribution retains the winning DNS rule in the bounded DNS cache and
 uses only that rule's eligible tokens. Shared-feed tokens with unknown roles
 remain part of ambiguity resolution. Google customer cloud DNS is excluded.
+
+## GA4 label API (0.3.0)
+
+`visitorLabels` replaces `toAnalyticsFields` and returns only `vv_type` and `vv_detail`.
+It is pure and stores nothing. Invalid signatures take precedence, followed by verified
+identities (crawler purpose gives `crawler_verified`; `user_directed` or `unknown` gives
+`agent_verified`), browser automation, unverified claims, suspicious behavior, human and
+pending. Unknown purpose never downgrades successful verification to pending: detail
+preserves `unknown`, and `agent_verified` alone does not assert a user-directed role.
+Browserbase and Manus signature identities map to user_directed under the owner policy
+based on their documented cloud browser products; DuckDuckGo's maps to crawler in line
+with DuckAssistBot. Source URLs are recorded in registry-purposes.ts and the README.
+The six pipe-separated detail segments are operator, verification, purpose, claim,
+browser class and phase. Missing is `-`, unknown operator is `none`. Configured operator
+names start with a lowercase ASCII letter and contain at most 24 lowercase ASCII
+letters, digits or underscores; rejecting invalid names preserves separators
+and guarantees the 100-character bound, including a sticky operator in collectors.
+
+Session aggregation belongs to the collector: pending=0, human=1, bot_suspicious=2,
+agent_unverified=3, bot_automation=4, crawler_verified/agent_verified=5, bot_spoofed=6;
+equal ranks keep the prior type. Current-hit detail remains distinct from sticky type.
+Full hits use client_id+session_id, denied pings page_id; bounded memory-only storage
+must expire and clear on close. No library persistence or request waiting is introduced.

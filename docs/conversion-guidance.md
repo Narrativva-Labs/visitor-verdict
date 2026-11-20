@@ -19,8 +19,10 @@ A Web Bot Auth signature proves which operator runs the agent (for example OpenA
 | Clear automation | Browser detector: `automated` (headless, WebDriver), no valid signature |
 | Crawler | Verified or declared crawler with no intent to act (GPTBot, Googlebot, CCBot) |
 
-Use verified `agent_purpose=user_directed` to distinguish user-directed products from
-`crawler`; `unknown` does not settle intent. Unverified ≠ human.
+Use `vv_type=agent_verified` for a verified user-directed product and
+`vv_type=crawler_verified` for a verified crawler. The purpose position in `vv_detail`
+retains `unknown` when the role is unsettled; a verified unknown purpose maps to
+`pending`, not an unverified agent. Unverified ≠ human.
 
 ## Rules
 
@@ -52,8 +54,13 @@ The built-in GA4 Client does not copy these headers to Event Data automatically.
 Create **Request Header** variables for the X-VV-* fields (or use a custom Client
 with [getRequestHeader](https://developers.google.com/tag-platform/tag-manager/server-side/api#getrequestheader)).
 Use those variables directly for trigger conditions, and an **Augment Event**
-Transformation to populate agent_verification, agent_operator, agent_purpose and
-agent_claim for the GA4 tag.
+Transformation to populate only `vv_type` and `vv_detail` for the GA4 tag.
+Compute them in the trusted proxy with `visitorLabels({ verdict, browserClass, browserPhase })`,
+and expose their trusted values to the transformation. Register both as event-scoped
+custom dimensions; the GA4 Data API names are `customEvent:vv_type` and
+`customEvent:vv_detail`. `vv_detail` has the format
+`operator|verification|purpose|claim|browser_class|browser_phase` (at most 100 characters).
+The browser class and phase are inputs to the proxy, not separate GA4 label parameters.
 A Regex Table takes one input: read the trusted X-VV-Route and map it to send/hold/drop.
 Do not expect Transformations to alter trigger conditions. Keep all events in GA4 with their labels.
 
@@ -74,8 +81,8 @@ Add exception triggers to advertising tags for anything other than send, includi
 hold/drop and missing or unknown routes. Hold means the backend
 later emits a confirmed conversion; sGTM is not a durable queue. Use
 [Transformations](https://developers.google.com/tag-platform/tag-manager/server-side/transformations)
-to exclude agent_verification, agent_operator, agent_purpose, agent_claim,
-traffic_class and traffic_phase from Ads/Meta tags, while
+to exclude `vv_type` and `vv_detail` (and any legacy visitor label fields)
+from Ads/Meta tags, while
 leaving GA4 labels available. Omit the agent's IP for Meta, but preserve required
 website UA/source-URL fields as in rule 2. Transformations change only Event Data;
 a CAPI tag template may fall back to getRemoteAddress() or getRequestHeader('user-agent').
