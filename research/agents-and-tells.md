@@ -76,6 +76,8 @@ Real agent runs against our own test shop, with the debug badge; each agent adde
 
 **Not promoted to a direct `suspicious` rule.** An adversarial review reproduced the identical prefix pattern on an ordinary Chrome with a main-world locale-switcher extension (extensions cannot override `WorkerNavigator`), and a narrower "page list is a prefix of the worker list" rule does not separate the two. `WK` stays at weight 2 behind the corroboration gate. Follow-up: measure how often `WK` appears with a `human` verdict in field data; identify the ChatGPT agent server-side via signed requests (Phase 2).
 
+**Server-side end to end (2026-11-20):** the ChatGPT agent's cloud browser signs every request with Web Bot Auth (`Signature-Agent: "https://chatgpt.com"`), including script loads, fetch, sendBeacon and CORS preflights to a first-party analytics subdomain; 32 of 32 captured signatures verified against the operator's key directory. With the [server verifier](../server/README.md) running in a self-hosted collector (labelling only), the agent's GA4 events arrived with `agent_verification=signature_valid`, `agent_operator=openai`, `agent_claim=signature_agent` (GA4 Realtime). Practical note: the key directory took about 0.9 s to fetch from a European VPS, so key fetches must outlive the per-hit deadline and the cache should be warmed. The Grok agent does not sign (HeadlessChrome user agent, cloud IP).
+
 **Own-browser agents** (an agent driving the user's real Chrome) carry no browser-side tell and are indistinguishable from the user in the page. This is a stated Phase 1 limit.
 
 ### Web Bot Auth and `Signature-Agent`

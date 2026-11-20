@@ -22,7 +22,8 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 
 - [x] Measurement: the ChatGPT agent's cloud browser signs every request with Web Bot Auth, including analytics hits to a first-party subdomain (2026-11-20)
 - [x] Server verifier library in [`server/`](server/README.md): Web Bot Auth signatures, operators' published IP ranges, optional reverse DNS; browser evidence, claimed identity and server verification kept as separate fields
-- [ ] Label hits in the self-hosted collector (GA4 field `agent_verification`), nothing withheld; field test with real agents
+- [x] Label hits in the self-hosted collector (GA4 field `agent_verification`), nothing withheld; first end-to-end test with the ChatGPT agent on the demo shop (2026-11-20)
+- [ ] Warm the key cache and serve cached keys while refreshing; longer field test on live sites
 - [ ] Server-side GTM: verification service and optional routing of conversions by verification, built only for a real lead-spam case
 
 ## Later (ideas, not commitments)
