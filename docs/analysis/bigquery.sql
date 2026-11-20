@@ -175,9 +175,11 @@ SELECT user_pseudo_id, ga_session_id,
        ELSE COALESCE(MAX(traffic_version), 'unknown') END AS traffic_version,
   COUNTIF(traffic_version IS NULL) > 0 AS has_unversioned_events,
   COUNT(DISTINCT param_class) > 1 AS class_transition,
-  CASE MAX(CASE param_class WHEN 'declared_agent' THEN 4 WHEN 'automated' THEN 3
+  -- Same precedence as the detector: automated outranks declared_agent
+  -- (initial declared_agent can become final automated, never the reverse).
+  CASE MAX(CASE param_class WHEN 'automated' THEN 4 WHEN 'declared_agent' THEN 3
     WHEN 'suspicious' THEN 2 WHEN 'human' THEN 1 ELSE 0 END)
-    WHEN 4 THEN 'declared_agent' WHEN 3 THEN 'automated'
+    WHEN 4 THEN 'automated' WHEN 3 THEN 'declared_agent'
     WHEN 2 THEN 'suspicious' WHEN 1 THEN 'human' ELSE 'unknown' END AS worst_class,
   DATE(TIMESTAMP_SECONDS(ga_session_id), property_timezone) AS session_day,
   COUNTIF(param_class = 'automated') > 0 AS any_automated,

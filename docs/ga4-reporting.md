@@ -29,7 +29,7 @@ Steps 3–4 above are opt-in; importing the folder does not change the site's Go
 
 This can delay `page_view` by up to **1 s** after GTM starts; browser scheduling or existing consent gates can delay delivery further. The fallback keeps collection available but may send an unlabelled pageview. Delaying the Google tag can also delay other tags that depend on it; check those in Preview.
 
-If the site uses an explicit GA4 `page_view` event tag, leave the Google tag's startup trigger in place, attach the two readiness triggers to the explicit event tag instead, set **Once per page**, and map `traffic_class={{VV - current class}}` on that event. Ensure the Google tag's automatic pageview is disabled so only one pageview is sent. Keep SPA/history pageview triggers separate from this first-page-view recipe.
+If the site uses an explicit GA4 `page_view` event tag, leave the Google tag's startup trigger in place, attach the two readiness triggers to the explicit event tag instead, set **Once per page**, and map `traffic_class={{VV - current class}}` on that event. Ensure the Google tag's automatic pageview is disabled so only one pageview is sent. Keep SPA/history pageviews in a **separate tag** with **Once per event**: Once per page on a shared tag would suppress later virtual pageviews.
 
 To roll back, remove the two readiness triggers from the tag you changed and restore its saved trigger list and firing option. Restore any pageview sending setting changed for the explicit-event variant. The dedicated classification event can remain on initial hard plus final.
 
@@ -40,7 +40,7 @@ To roll back, remove the two readiness triggers from the tag you changed and res
 3. Ensure event parameter `traffic_phase={{VV - DLV traffic_phase}}` exists alongside the existing class/score/version mappings. Keep the publication DLVs and class user property.
 4. Optionally apply the first-page-view recipe above. Preview a hard initial result before closing the browser, all final classes, both readiness paths and one pageview per page, then publish through the site's usual review process. No detector JavaScript update is needed; `traffic_version` remains `1.0.0`.
 
-Initial and final hits for the same hard class are expected. Use **session-level any-hit evidence**; do not interpret `traffic_class` event counts as bot visits. Initial delivery improves short-visit coverage but remains subject to browser, network and consent timing.
+Initial and final hits for the same hard class are expected. Use **session-level any-hit evidence**; do not interpret `traffic_class` event counts as bot visits. Initial delivery improves short-visit coverage but remains subject to browser, network and consent timing. Measured on 20 November 2026 with headless Chromium on three sites: GA4 batches the initial event and sends it about 5 s after the preceding hit; a page becoming hidden flushes the batch immediately (initial and final left within 10 ms). A headless client that navigates away without a visibility change did not flush, so an immediate exit can lose the classification event. The first-page-view recipe is the more robust path for short visits: on the two sites using it, `page_view` carried `automated` and left at 1.0–1.5 s.
 
 ### Publication-event mappings
 
