@@ -27,8 +27,10 @@
 --                        (same as visitor-verdict docs/analysis/bigquery.sql). A later human never erases it.
 --   agent_verification = server verdict per HTTP request; the unit takes the STRONGEST:
 --                        signature_valid > ip_match > signature_invalid > no_signature > none.
---                        Missing (NULL / "(not set)") = verification off, 300 ms timeout, key-directory or
---                        IP-list failure, or label stripped by the 16 KiB rule: unknown, never "human".
+--                        Missing (NULL / "(not set)") = verification off, cache-only miss/operator unavailable,
+--                        label dropped for 25 parameters/16 KiB, or hits before enabling: unknown, never "human".
+--   agent_purpose      = user_directed / crawler / unknown, taken from the SAME winning verified hit
+--                        as verified_operator. Query 1 and Query 2 group by that purpose; missing is unknown.
 --
 -- Caveats:
 --   - Sessions spanning midnight at start_date / end_date boundaries are truncated to the date window.
@@ -61,6 +63,15 @@ SELECT
     SELECT 1 FROM UNNEST(event_params)
     WHERE key = 'agent_verification' AND NULLIF(TRIM(value.string_value), '') IS NOT NULL
   )) AS hits_with_agent_verification,
+  COUNTIF(EXISTS(
+    SELECT 1 FROM UNNEST(event_params)
+    WHERE key = 'agent_purpose' AND NULLIF(TRIM(value.string_value), '') IS NOT NULL
+  )) AS hits_with_agent_purpose,
+  COUNTIF(EXISTS(
+    SELECT 1 FROM UNNEST(event_params)
+    WHERE key = 'agent_purpose' AND value.string_value IS NOT NULL
+      AND value.string_value NOT IN ('user_directed', 'crawler', 'unknown')
+  )) AS hits_with_unknown_purpose_value,
   COUNTIF(EXISTS(
     SELECT 1 FROM UNNEST(event_params)
     WHERE key = 'traffic_class' AND NULLIF(TRIM(value.string_value), '') IS NOT NULL
@@ -96,6 +107,8 @@ WITH ev AS (
     (SELECT value.string_value FROM UNNEST(event_params)
        WHERE key = 'agent_operator' LIMIT 1) AS operator_raw,
     (SELECT value.string_value FROM UNNEST(event_params)
+       WHERE key = 'agent_purpose' LIMIT 1) AS purpose_raw,
+    (SELECT value.string_value FROM UNNEST(event_params)
        WHERE key = 'agent_claim' LIMIT 1) AS claim_raw,
     (SELECT value.string_value FROM UNNEST(event_params)
        WHERE key = 'traffic_class' LIMIT 1) AS tc_raw,
@@ -112,6 +125,7 @@ norm AS (
     -- Only the documented values count; anything else is treated as missing and reported.
     IF(av_raw IN ('signature_valid', 'ip_match', 'signature_invalid', 'no_signature', 'none'),
        av_raw, NULL) AS av,
+    IF(purpose_raw IN ('user_directed', 'crawler', 'unknown'), purpose_raw, NULL) AS purpose,
     IF(tc_raw IN ('human', 'suspicious', 'automated', 'declared_agent'),
        tc_raw, NULL) AS tc,
     IF(claim_raw IN ('signature_agent', 'ua_token', 'none'),
@@ -138,79 +152,92 @@ keyed AS (
       ELSE FORMAT('e|%s', GENERATE_UUID())
     END AS unit_key
   FROM norm
+),
+aggregated AS (
+  SELECT
+    unit_type,
+    unit_key,
+    ANY_VALUE(stream_id) AS stream_id,
+    MIN(event_date) AS first_date,
+    COUNT(*) AS hits,
+    COUNTIF(av IS NOT NULL) AS hits_with_verification,
+    COUNTIF(tc IS NOT NULL) AS hits_with_class,
+    COUNTIF(purpose IS NOT NULL) AS hits_with_purpose,
+    COUNTIF(purpose_raw IS NOT NULL AND purpose IS NULL) AS hits_with_unknown_purpose_value,
+    COUNTIF(
+      (av_raw IS NOT NULL AND av IS NULL)
+      OR (tc_raw IS NOT NULL AND tc IS NULL)
+      OR (claim_raw IS NOT NULL AND claim IS NULL)
+      OR (purpose_raw IS NOT NULL AND purpose IS NULL)
+    ) AS hits_with_unknown_label_value,
+    -- Strongest server verdict in the unit.
+    CASE MAX(CASE av WHEN 'signature_valid' THEN 5 WHEN 'ip_match' THEN 4
+                     WHEN 'signature_invalid' THEN 3 WHEN 'no_signature' THEN 2
+                     WHEN 'none' THEN 1 END)
+      WHEN 5 THEN 'signature_valid'
+      WHEN 4 THEN 'ip_match'
+      WHEN 3 THEN 'signature_invalid'
+      WHEN 2 THEN 'no_signature'
+      WHEN 1 THEN 'none'
+    END AS verification,
+    -- Keep role and operator paired, including when one label is missing on the winning hit.
+    ARRAY_AGG(
+      IF(av IN ('signature_valid', 'ip_match'),
+         STRUCT(operator_clean AS operator, COALESCE(purpose, 'unknown') AS purpose), NULL) IGNORE NULLS
+      ORDER BY IF(av = 'signature_valid', 0, 1), event_timestamp,
+               COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0), operator_clean, purpose
+      LIMIT 1
+    )[SAFE_OFFSET(0)] AS verified_evidence,
+    ARRAY_AGG(
+      claim IGNORE NULLS
+      ORDER BY CASE claim WHEN 'signature_agent' THEN 0 WHEN 'ua_token' THEN 1 ELSE 2 END,
+               event_timestamp, COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0)
+      LIMIT 1
+    )[SAFE_OFFSET(0)] AS strongest_claim,
+    COUNTIF(av = 'signature_valid') > 0 AND COUNTIF(av = 'signature_invalid') > 0
+      AS mixed_signature_results,
+    -- Any-hit browser class.
+    CASE
+      WHEN COUNTIF(tc = 'declared_agent') > 0 THEN 'declared_agent'
+      WHEN COUNTIF(tc = 'automated') > 0 THEN 'automated'
+      WHEN COUNTIF(tc = 'suspicious') > 0 THEN 'suspicious'
+      WHEN COUNTIF(tc = 'human') > 0 THEN 'human'
+      ELSE 'unknown'
+    END AS browser_class,
+    -- Tracks units that saw both 'human' and clear automation/declared agent (excludes 'suspicious').
+    COUNTIF(tc = 'human') > 0 AND COUNTIF(tc IN ('automated', 'declared_agent')) > 0
+      AS class_changed_within_unit,
+    COUNTIF(event_name = 'page_view') AS pageviews,
+    COUNTIF(event_name = 'purchase') AS purchases,
+    COUNT(DISTINCT IF(event_name = 'purchase', NULLIF(TRIM(transaction_id), ''), NULL))
+      AS unique_transactions,
+    SUM(IF(event_name = 'purchase', purchase_revenue, 0)) AS revenue,
+    SUM(IF(event_name = 'purchase', purchase_revenue_in_usd, 0)) AS revenue_usd,
+    COUNTIF(event_name = 'generate_lead') AS leads
+  FROM keyed
+  GROUP BY unit_type, unit_key
 )
-SELECT
-  unit_type,
-  unit_key,
-  ANY_VALUE(stream_id) AS stream_id,
-  MIN(event_date) AS first_date,
-  COUNT(*) AS hits,
-  COUNTIF(av IS NOT NULL) AS hits_with_verification,
-  COUNTIF(tc IS NOT NULL) AS hits_with_class,
-  COUNTIF(
-    (av_raw IS NOT NULL AND av IS NULL)
-    OR (tc_raw IS NOT NULL AND tc IS NULL)
-    OR (claim_raw IS NOT NULL AND claim IS NULL)
-  ) AS hits_with_unknown_label_value,
-  -- Strongest server verdict in the unit.
-  CASE MAX(CASE av WHEN 'signature_valid' THEN 5 WHEN 'ip_match' THEN 4
-                   WHEN 'signature_invalid' THEN 3 WHEN 'no_signature' THEN 2
-                   WHEN 'none' THEN 1 END)
-    WHEN 5 THEN 'signature_valid'
-    WHEN 4 THEN 'ip_match'
-    WHEN 3 THEN 'signature_invalid'
-    WHEN 2 THEN 'no_signature'
-    WHEN 1 THEN 'none'
-  END AS verification,
-  ARRAY_AGG(
-    IF(av IN ('signature_valid', 'ip_match'), operator_clean, NULL) IGNORE NULLS
-    ORDER BY IF(av = 'signature_valid', 0, 1), event_timestamp,
-             COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0), operator_clean
-    LIMIT 1
-  )[SAFE_OFFSET(0)] AS verified_operator,
-  ARRAY_AGG(
-    claim IGNORE NULLS
-    ORDER BY CASE claim WHEN 'signature_agent' THEN 0 WHEN 'ua_token' THEN 1 ELSE 2 END,
-             event_timestamp, COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0)
-    LIMIT 1
-  )[SAFE_OFFSET(0)] AS strongest_claim,
-  COUNTIF(av = 'signature_valid') > 0 AND COUNTIF(av = 'signature_invalid') > 0
-    AS mixed_signature_results,
-  -- Any-hit browser class.
-  CASE
-    WHEN COUNTIF(tc = 'declared_agent') > 0 THEN 'declared_agent'
-    WHEN COUNTIF(tc = 'automated') > 0 THEN 'automated'
-    WHEN COUNTIF(tc = 'suspicious') > 0 THEN 'suspicious'
-    WHEN COUNTIF(tc = 'human') > 0 THEN 'human'
-    ELSE 'unknown'
-  END AS browser_class,
-  -- Tracks units that saw both 'human' and clear automation/declared agent (excludes 'suspicious').
-  COUNTIF(tc = 'human') > 0 AND COUNTIF(tc IN ('automated', 'declared_agent')) > 0
-    AS class_changed_within_unit,
-  COUNTIF(event_name = 'page_view') AS pageviews,
-  COUNTIF(event_name = 'purchase') AS purchases,
-  COUNT(DISTINCT IF(event_name = 'purchase', NULLIF(TRIM(transaction_id), ''), NULL))
-    AS unique_transactions,
-  SUM(IF(event_name = 'purchase', purchase_revenue, 0)) AS revenue,
-  SUM(IF(event_name = 'purchase', purchase_revenue_in_usd, 0)) AS revenue_usd,
-  COUNTIF(event_name = 'generate_lead') AS leads
-FROM keyed
-GROUP BY unit_type, unit_key;
+SELECT * EXCEPT(verified_evidence),
+  verified_evidence.operator AS verified_operator,
+  verified_evidence.purpose AS verified_purpose
+FROM aggregated;
 
 CREATE TEMP TABLE classified AS
 SELECT *,
   CASE
     -- README combination table rows, plus the combinations it does not list.
     WHEN verification IN ('signature_valid', 'ip_match') AND browser_class = 'human'
-      THEN '1 verified agent, looks human'
+      THEN '1 verified operator, looks human'
     WHEN verification IN ('signature_valid', 'ip_match') AND browser_class = 'declared_agent'
       THEN '2 verified declared agent/bot'
-    WHEN verification IN ('signature_valid', 'ip_match') AND browser_class IN ('automated', 'suspicious')
-      THEN '2b verified agent, automation visible in browser'      -- not in README table
+    WHEN verification IN ('signature_valid', 'ip_match') AND browser_class = 'automated'
+      THEN '2b verified operator, clear browser automation'
+    WHEN verification IN ('signature_valid', 'ip_match') AND browser_class = 'suspicious'
+      THEN '7v suspicious, verified operator (secondary view)'
     WHEN verification IN ('signature_valid', 'ip_match')
-      THEN '2c verified agent, no browser class'                   -- not in README table
+      THEN '2c verified operator, no browser class'
     WHEN verification = 'signature_invalid'
-      THEN '6 invalid signature (forged or broken)'                -- not in README table
+      THEN '6 invalid signature (forged, expired or broken)'
     WHEN browser_class = 'declared_agent' AND verification = 'no_signature'
       THEN '4 declared, not verified (false claim OR operator without verification data)'
     WHEN browser_class = 'declared_agent'
@@ -227,10 +254,12 @@ SELECT *,
   END AS segment
 FROM units;
 
--- Query 1: units per segment. Read session rows as the headline; ping rows are a separate world.
+-- Query 1: units per segment and verified purpose (crawlers, user-directed, unknown stay apart).
+-- Read session rows as the headline; ping rows are a separate world.
 SELECT
   unit_type,
   segment,
+  verified_purpose,
   COUNT(*) AS units,
   SUM(hits) AS hits,
   SUM(pageviews) AS pageviews,
@@ -247,16 +276,19 @@ SELECT
   COUNTIF(class_changed_within_unit) AS units_human_and_automation,
   COUNTIF(mixed_signature_results) AS units_valid_and_invalid_signature,
   SUM(hits_with_unknown_label_value) AS hits_with_unknown_label_value,
+  SUM(hits_with_unknown_purpose_value) AS hits_with_unknown_purpose_value,
+  ROUND(SAFE_DIVIDE(SUM(hits_with_purpose), SUM(hits)), 3) AS purpose_coverage_of_hits,
   ARRAY_TO_STRING(ARRAY_AGG(DISTINCT verified_operator IGNORE NULLS ORDER BY verified_operator), ', ')
     AS verified_operators
 FROM classified
-GROUP BY unit_type, segment
-ORDER BY CASE unit_type WHEN 'session' THEN 0 WHEN 'ping_page' THEN 1 ELSE 2 END, segment;
+GROUP BY unit_type, segment, verified_purpose
+ORDER BY CASE unit_type WHEN 'session' THEN 0 WHEN 'ping_page' THEN 1 ELSE 2 END, segment, verified_purpose;
 
--- Query 2: verified agents by operator and claim (sessions and ping pages kept apart).
+-- Query 2: verified operators by purpose and claim (sessions and ping pages kept apart).
 SELECT
   unit_type,
   verified_operator,
+  verified_purpose,
   strongest_claim,
   verification,
   browser_class,
@@ -268,5 +300,5 @@ SELECT
   COUNTIF(leads > 0) AS lead_units
 FROM classified
 WHERE verification IN ('signature_valid', 'ip_match')
-GROUP BY 1, 2, 3, 4, 5
+GROUP BY 1, 2, 3, 4, 5, 6
 ORDER BY units DESC;

@@ -34,18 +34,34 @@ Use verified `agent_purpose=user_directed` to distinguish user-directed products
 Additional rules:
 
 1. **Never send the visitor label to ad platforms.** Use it in server-side GTM only to decide send / wait / drop. The label stays in GA4. Reasons: data minimisation, and no platform defines a parameter for it.
-2. **Omit the agent's IP from Meta `client_ip_address`.** For `action_source=website`, keep `client_user_agent` and `event_source_url`: Meta requires both for website events ([customer information parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/customer-information-parameters), [server event parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/server-event)). A UA describes browser context, not the customer's identity. For backend-confirmed agent orders, consider a non-website `action_source` such as `system_generated` only when it truthfully describes where the event occurred; check the attribution and optimisation impact. A webhook alone does not change a website purchase's action source. Use customer match data only under the site's consent and platform rules.
+2. **Omit the agent's IP from Meta `client_ip_address`.** For `action_source=website`, keep `client_user_agent` and `event_source_url`: Meta requires both for website events ([customer information parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/customer-information-parameters), [server event parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/server-event)). A UA describes browser context, not the customer's identity. For backend-confirmed agent orders, retain `website` when accurate; use a matching non-website `action_source` such as `other` only for genuinely non-website events and check the attribution and optimisation impact. `system_generated` describes automatic system events such as subscription renewals, not a generic backend-confirmed order. A webhook alone does not change a website purchase's action source. Use customer match data only under the site's consent and platform rules.
 3. **Send orders from the server after payment confirmation, with the order ID.** Google Ads can then retract or restate a conversion after a refund or chargeback.
 4. **Delete nothing in GA4.** Report conversion rate and A/B tests with humans only, or show agents and automation separately. This is where most of the value lies.
 
 ## Server-side GTM reference design
 
-A trusted verifying proxy runs the Node library **in front of sGTM**, strips inbound
-`X-VV-*` lookalikes and sets its own `X-VV-Verification`, `X-VV-Operator`,
-`X-VV-Purpose` and route headers. The library does not run in sGTM's sandbox. The sGTM
-Client reads these with [getRequestHeader](https://developers.google.com/tag-platform/tag-manager/server-side/api#getrequestheader)
-and exposes event-data variables; a Regex Table maps the trusted conversion status and
-purpose to `send`, `hold` or `drop`. Keep all events in GA4 with their labels.
+A trusted verifying proxy runs the Node library **in front of sGTM**, retaining the
+original method, raw target, trusted configured authority and separate raw header
+occurrences. It overwrites all incoming X-VV-* lookalikes on every request, including
+verification errors, and sets X-VV-Verification, X-VV-Operator, X-VV-Purpose,
+X-VV-Claim and X-VV-Route. Route comes from trusted backend conversion status,
+never a browser-supplied claim. Restrict direct access to sGTM to this authenticated
+proxy. The library does not run in sGTM's sandbox.
+
+The built-in GA4 Client does not copy these headers to Event Data automatically.
+Create **Request Header** variables for the X-VV-* fields (or use a custom Client
+with [getRequestHeader](https://developers.google.com/tag-platform/tag-manager/server-side/api#getrequestheader)).
+Use those variables directly for trigger conditions, and an **Augment Event**
+Transformation to populate agent_verification, agent_operator, agent_purpose and
+agent_claim for the GA4 tag.
+A Regex Table takes one input: read the trusted X-VV-Route and map it to send/hold/drop.
+Do not expect Transformations to alter trigger conditions. Keep all events in GA4 with their labels.
+
+Verification happens before sGTM because getRequestHeader joins repeated field lines
+with comma-space. It cannot reconstruct their original occurrences for RFC 9421 ;bs,
+which wraps each occurrence separately. Do not call a verifier from sGTM using joined
+headers and claim equivalence to rawHeaders. Proxy verification avoids that loss;
+this reference does not ship a separate HTTP-callout adapter.
 
 | Backend conversion state | Ads/Meta route |
 |---|---|
@@ -54,7 +70,8 @@ purpose to `send`, `hold` or `drop`. Keep all events in GA4 with their labels.
 | Clear automation with an unverified lead, or crawler activity | drop from advertising |
 | Confirmed lead | send under the site's normal consent and quality rules |
 
-Add exception triggers to advertising tags for hold/drop. Hold means the backend
+Add exception triggers to advertising tags for anything other than send, including
+hold/drop and missing or unknown routes. Hold means the backend
 later emits a confirmed conversion; sGTM is not a durable queue. Use
 [Transformations](https://developers.google.com/tag-platform/tag-manager/server-side/transformations)
 to exclude agent_verification, agent_operator, agent_purpose, agent_claim,

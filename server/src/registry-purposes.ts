@@ -75,7 +75,7 @@ export const purposePolicies: Record<string, PurposePolicy> = {
   microsoft: {
     ipLists: { bingbot: 'crawler' },
     uaTokens: { bingbot: 'crawler' },
-    sources: ['https://www.bing.com/webmasters/help/help/which-crawlers-does-bing-use-8c184ec0'],
+    sources: ['https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0'],
     checked,
   },
   commoncrawl: {

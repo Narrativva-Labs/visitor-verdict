@@ -135,9 +135,12 @@ After a document's soft TTL (`max-age` minus `Age`, 300 seconds for no-store, bo
 
 ## Server-side GTM
 
-Run this Node library in an authenticated verifier service, not inside the sandboxed template. sGTM [request APIs](https://developers.google.com/tag-platform/tag-manager/server-side/api) read headers by name with getRequestHeader; they do not enumerate raw header names. Deploy a configured name set produced by requiredHeaderNames(signatureInput), always including its four base fields. If the sandbox cannot run the parser, preconfigure the required names for the supported profile; a service cannot reconstruct omitted signed fields after the fact. Forward the original method, these header values, and a **fixed configured collector host**, not an unchecked forwarded host.
-
-Construct target from the original path and query: `path + (query ? '?' + query : '')`, preserving raw escaping and parameter order (and an explicit empty ? if the transport exposes it). Use getRequestPath/getRequestQueryString without decoding/re-encoding. Set sendHttpRequest timeout to approximately `deadlineMs + 500` milliseconds; its default timeout need not match verifier latency. Authenticate the service call, require the relevant read_request/send_http permissions and do not log the request envelope. This section describes the adapter contract, not a shipped sGTM template.
+Use the canonical [Server-side GTM reference design](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md#server-side-gtm-reference-design).
+It places this Node library in a verifying proxy before sGTM; the library does not run
+inside the template sandbox. The reference specifies raw-header preservation, trusted
+X-VV-\* headers, Request Header variables, tag routing and transformations. It is not a
+shipped template or implemented conversion-routing feature. Authenticate the proxy-to-sGTM
+boundary and do not log the request envelope.
 
 IP evidence is only as trustworthy as the original source address. getRemoteAddress is best-effort and can use Forwarded/X-Forwarded-For; it is not proof of a peer IP. Sanitize forwarding metadata at a trusted proxy, or omit clientIp when that chain cannot be trusted. Propagate a service deadline/error as none, never as human. Monitor only aggregate reason counts locally. The library labels traffic and does not itself withhold anything; the integrator owns conversion policy.
 

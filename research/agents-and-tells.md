@@ -219,6 +219,7 @@ var agentTokens = [
   'Google-CloudVertexBot',
   'Google-GeminiNotebook',
   'Google-NotebookLM',
+  'Gemini-Deep-Research',
   'MistralAI-User',
   'MistralAI-Index',
   'MistralAI-Training',

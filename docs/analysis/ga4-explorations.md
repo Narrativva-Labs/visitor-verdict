@@ -72,3 +72,10 @@ grouped by stream_id, event_date and batch_page_id, never sessions grouped by ga
 (a page-load second that collides between visitors). Do not add ping-page revenue to session
 revenue. Compare purchases with unique_transactions for duplicates; revenue_usd normalizes
 currency but does not deduplicate repeated purchases.
+
+The session SQL reports verified_purpose in both queries, separating user_directed,
+crawler and unknown. Operator and purpose come from the same strongest verified hit;
+this does not claim one role for every hit in a mixed session. Query 0/1 show purpose
+coverage and unknown-value counts. Verified suspicious sessions have their own diagnostic
+segment and are not grouped with clear browser automation. Missing server labels include
+cache-only misses and parameter/body limits.
