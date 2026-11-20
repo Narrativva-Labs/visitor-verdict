@@ -98,11 +98,19 @@ export interface VerifierOptions {
 }
 /** Reusable verifier with a private cache, bounded by the configured registry. */
 export interface AgentVerifier {
-  verify(input: AgentRequest): Promise<AgentVerdict>;
+  verify(input: AgentRequest, options?: VerifyOptions): Promise<AgentVerdict>;
   /** Prefetch registry directories (and optionally feeds). Never rejects; safe to repeat. */
   warm(options?: WarmOptions): Promise<WarmResult>;
   /** Stop refresh-ahead timers. verify() and warm() keep working without timers. */
   close(): void;
+}
+/** Per-request behavior; configuration and network targets remain construction-time options. */
+export interface VerifyOptions {
+  /**
+   * Use only trusted cached documents and static ranges. Misses refresh in the background and
+   * return none/cache_miss without waiting. DNS and external replay-store calls are not made.
+   */
+  cacheOnly?: boolean;
 }
 export interface WarmOptions {
   /** Also prefetch every JSON IP list and SAIL feed in the registry. */

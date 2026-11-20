@@ -16,6 +16,7 @@ import type {
   AgentVerdict,
   AgentVerifier,
   VerifierOptions,
+  VerifyOptions,
   WarmOptions,
   WarmResult,
 } from './types.js';
@@ -57,6 +58,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     input: AgentRequest,
     verdict: AgentVerdict,
     signal: AbortSignal,
+    cacheOnly: boolean,
   ): Promise<AgentVerdict> {
     let presented = false;
     try {
@@ -100,6 +102,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             nonceTimeoutMs: config.fetchTimeoutMs,
             invalidTimestamps,
             maxLifetimeSeconds: config.maxLifetimeSeconds,
+            cacheOnly,
           });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
           verdict.signatures.push(evaluation.result);
@@ -108,6 +111,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
       let ipUnavailable = false;
+      let ipCacheMiss = false;
       let dnsUnavailable = false;
       let dnsNotConfirmed = false;
       const onlyIgnored =
@@ -121,10 +125,12 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           cache,
           now,
           staticRanges,
+          cacheOnly,
         );
         verdict.ip = evidence.ip;
         ipUnavailable = evidence.unavailable;
-        if (!verdict.ip && !verdict.verified && rdns) {
+        ipCacheMiss = evidence.cacheMiss === true;
+        if (!verdict.ip && !verdict.verified && rdns && !cacheOnly) {
           const dns = await rdns.verify(input.clientIp, claims.uaTokens, now, signal);
           if (dns.operator) verdict.rdns = { operator: dns.operator };
           else if (dns.unavailable && !ipUnavailable) dnsUnavailable = true;
@@ -142,6 +148,8 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           ipUnavailable,
         ),
       );
+      if (verdict.reason === 'ip_evidence_unavailable' && ipCacheMiss)
+        verdict.reason = 'cache_miss';
       if (verdict.verification === 'ip_match') {
         if (verdict.ip) verdict.verified = { operator: verdict.ip.operator, method: 'ip' };
         else {
@@ -164,7 +172,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
   }
 
   return {
-    async verify(input: AgentRequest): Promise<AgentVerdict> {
+    async verify(input: AgentRequest, options?: VerifyOptions): Promise<AgentVerdict> {
       // Unsupported container types are integration/programmer errors, not visitor verdicts.
       assertHeadersInput(input?.headers);
       const started = performance.now();
@@ -178,7 +186,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             resolve({ ...emptyVerdict(), reason: 'deadline_exceeded' });
           }, config.deadlineMs);
         });
-        const work = run(input, verdict, controller.signal);
+        const work = run(input, verdict, controller.signal, options?.cacheOnly === true);
         const result = await Promise.race([work, deadline]);
         if (performance.now() - started >= config.deadlineMs) {
           controller.abort();

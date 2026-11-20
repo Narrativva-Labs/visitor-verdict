@@ -95,8 +95,8 @@ export async function fetchBounded(
 }
 export const FEED_CACHE_SIZE = 32;
 export const DIRECTORY_CACHE_SIZE = 128;
-/** request: fresh or stale-while-revalidate; forced: unknown keyid; warm: fetch unless fresh; ahead: fetch before expiry. */
-export type LoadMode = 'request' | 'forced' | 'warm' | 'ahead';
+/** Cached modes never join a fetch; a miss starts a background refresh and returns cache_miss. */
+export type LoadMode = 'request' | 'forced' | 'warm' | 'ahead' | 'cached' | 'cached-forced';
 export interface CacheOptions {
   /** Hard maximum age of retained data since its fetch; 0 disables stale serving. */
   staleMaxSeconds?: number;
@@ -161,14 +161,15 @@ export class AgentCache {
   ): Promise<T> {
     const cacheKey = kind + ':' + url;
     const entry = this.touch(cacheKey, kind);
-    const force = mode === 'forced';
-    const usable = entry.data !== undefined;
-    if ((mode === 'request' || mode === 'warm') && usable && now < entry.until)
-      return entry.data as T;
+    const force = mode === 'forced' || mode === 'cached-forced';
+    const cacheOnly = mode === 'cached' || mode === 'cached-forced';
+    const request = mode === 'request' || mode === 'cached';
+    const usable = entry.data !== undefined && now < entry.staleUntil;
+    if ((request || mode === 'warm') && usable && now < entry.until) return entry.data as T;
     const pending = force
       ? (entry.forcedFlight ?? entry.flight)
       : (entry.flight ?? entry.forcedFlight);
-    if (mode === 'request' && usable && now < entry.staleUntil) {
+    if (request && usable) {
       // Stale-while-revalidate: serve the last valid document while one refresh runs.
       if (!pending && now >= entry.cooldown) {
         entry.flight = this.refresh(url, kind, now, entry, decode, 'flight');
@@ -176,14 +177,21 @@ export class AgentCache {
       }
       return entry.data as T;
     }
-    if (pending) return pending as Promise<T>;
+    if (pending) {
+      if (cacheOnly) throw new Failure('cache_miss', true);
+      return pending as Promise<T>;
+    }
     if (now < entry.cooldown) {
       if (usable && now < entry.until) return entry.data as T;
-      throw new Failure('directory_unavailable', true);
+      throw new Failure(cacheOnly ? 'cache_miss' : 'directory_unavailable', true);
     }
     if (force) entry.cooldown = now + COOLDOWN_SECONDS;
     const slot = force ? 'forcedFlight' : 'flight';
     entry[slot] = this.refresh(url, kind, now, entry, decode, slot);
+    if (cacheOnly) {
+      entry[slot].catch(() => {});
+      throw new Failure('cache_miss', true);
+    }
     return entry[slot] as Promise<T>;
   }
 
@@ -254,8 +262,10 @@ export class AgentCache {
       // A newer document replaces the previous one entirely; removed keys stop verifying.
       entry.data = data;
       entry.fetched = now;
-      entry.until = now + response.ttl;
-      entry.staleUntil = Math.max(entry.until, now + this.staleMaxSeconds);
+      const ttl =
+        this.staleMaxSeconds > 0 ? Math.min(response.ttl, this.staleMaxSeconds) : response.ttl;
+      entry.until = now + ttl;
+      entry.staleUntil = this.staleMaxSeconds > 0 ? now + this.staleMaxSeconds : entry.until;
       return data;
     } catch (error) {
       entry.cooldown = now + COOLDOWN_SECONDS;

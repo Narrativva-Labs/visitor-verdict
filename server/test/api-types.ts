@@ -12,6 +12,7 @@ const nodeHeaders: IncomingHttpHeaders = { host: 'example.com' };
 const supported = [nodeHeaders, new Headers(), new Map<string, string>(), ['host', 'example.com']];
 for (const headers of supported) {
   void verifier.verify({ method: 'GET', host: 'example.com', headers });
+  void verifier.verify({ method: 'GET', host: 'example.com', headers }, { cacheOnly: true });
 }
 const fields: string[] = coveredHeaderNames('s=("@authority" "signature-agent")');
 void fields;

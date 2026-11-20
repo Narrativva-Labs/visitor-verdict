@@ -1,6 +1,6 @@
 import type { SailDocument } from './sail.js';
 import { BlockList, isIP } from 'node:net';
-import { Failure } from './errors.js';
+import { Failure, failure } from './errors.js';
 import type { Registry, AgentVerdict } from './types.js';
 import type { AgentCache } from './cache.js';
 
@@ -64,7 +64,8 @@ export async function ipEvidence(
   cache: AgentCache,
   now: number,
   staticRanges?: Map<string, BlockList>,
-): Promise<{ ip?: AgentVerdict['ip']; unavailable: boolean }> {
+  cacheOnly = false,
+): Promise<{ ip?: AgentVerdict['ip']; unavailable: boolean; cacheMiss?: boolean }> {
   if (typeof ip !== 'string' || !isIP(ip)) return { unavailable: false };
   for (const operator of registry) {
     if (!operator.extraUaTokens?.some((token) => ua.includes(token))) continue;
@@ -77,12 +78,14 @@ export async function ipEvidence(
       if (list.uaTokens && !list.uaTokens.some((token) => ua.includes(token))) continue;
       tasks.push(
         (list.format === 'sail'
-          ? cache.load(list.url, 'sail', now, decodeSail).then((services) => {
-              const block = services.get(list.service!);
-              if (!block) throw new Failure('invalid_sail', true);
-              return block;
-            })
-          : cache.load(list.url, 'ip', now, decodeList)
+          ? cache
+              .load(list.url, 'sail', now, decodeSail, cacheOnly ? 'cached' : 'request')
+              .then((services) => {
+                const block = services.get(list.service!);
+                if (!block) throw new Failure('invalid_sail', true);
+                return block;
+              })
+          : cache.load(list.url, 'ip', now, decodeList, cacheOnly ? 'cached' : 'request')
         ).then((block) => {
           if (block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'))
             return { operator: operator.operator, list: list.name };
@@ -93,5 +96,10 @@ export async function ipEvidence(
   for (const result of results)
     if (result.status === 'fulfilled' && result.value)
       return { ip: result.value, unavailable: false };
-  return { unavailable: results.some((result) => result.status === 'rejected') };
+  return {
+    unavailable: results.some((result) => result.status === 'rejected'),
+    cacheMiss: results.some(
+      (result) => result.status === 'rejected' && failure(result.reason).reason === 'cache_miss',
+    ),
+  };
 }

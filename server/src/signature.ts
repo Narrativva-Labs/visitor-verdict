@@ -23,6 +23,7 @@ interface SignatureContext {
   nonceTimeoutMs: number;
   invalidTimestamps: Set<string>;
   maxLifetimeSeconds: number;
+  cacheOnly: boolean;
 }
 function checkActive(signal: AbortSignal) {
   if (signal.aborted) throw new Failure('deadline_exceeded', true);
@@ -92,13 +93,25 @@ export async function evaluateSignature(
     const bytes = Buffer.from(sig[0]);
     if (bytes.length !== 64) throw new Failure('invalid_signature_length');
     let keys = withKidAliases(
-      await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys),
+      await env.cache.load(
+        operator.directoryUrl,
+        'directory',
+        env.now,
+        publicKeys,
+        env.cacheOnly ? 'cached' : 'request',
+      ),
       operator.allowKidAlias === true,
     );
     checkActive(env.signal);
     if (!keys.has(keyid))
       keys = withKidAliases(
-        await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, 'forced'),
+        await env.cache.load(
+          operator.directoryUrl,
+          'directory',
+          env.now,
+          publicKeys,
+          env.cacheOnly ? 'cached-forced' : 'forced',
+        ),
         operator.allowKidAlias === true,
       );
     checkActive(env.signal);
@@ -107,6 +120,7 @@ export async function evaluateSignature(
     if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes))
       throw new Failure('crypto_mismatch');
     if (env.nonceStore) {
+      if (env.cacheOnly) throw new Failure('insufficient_context', true);
       const nonce = inner[1].get('nonce');
       const expires = inner[1].get('expires') as number;
       if (typeof nonce !== 'string' || !nonce) throw new Failure('missing_nonce');
