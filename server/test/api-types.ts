@@ -2,12 +2,20 @@ import { Resolver } from 'node:dns/promises';
 // Public declarations must work with Node 22 types and no DOM lib or skipLibCheck.
 import type { IncomingHttpHeaders } from 'node:http';
 import {
+  serverAgentTokens,
   createVerifier,
   defaultRegistry,
   coveredHeaderNames,
   requiredHeaderNames,
 } from '../dist/index.js';
-const verifier = createVerifier({ registry: defaultRegistry, authorities: ['example.com'] });
+const verifier = createVerifier({
+  registry: defaultRegistry,
+  authorities: ['example.com'],
+  onRefresh: (event) => {
+    const hostname: string | undefined = event.hostname;
+    void hostname;
+  },
+});
 const nodeHeaders: IncomingHttpHeaders = { host: 'example.com' };
 const supported = [nodeHeaders, new Headers(), new Map<string, string>(), ['host', 'example.com']];
 for (const headers of supported) {
@@ -45,3 +53,6 @@ void lastRefresh;
 import { visitorLabels, type VisitorType } from '../dist/index.js';
 const label: VisitorType = visitorLabels({ browserClass: 'human', browserPhase: 'final' }).vv_type;
 void label;
+
+const tokens: string[] = serverAgentTokens(defaultRegistry);
+void tokens;

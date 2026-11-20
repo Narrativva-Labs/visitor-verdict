@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Strengthen public API, declaration isolation and successful-refresh hostname regression tests.
+- Document the 0.3.1 tarball, refresh hostname and server token export.
+
 ## 0.3.1 — 2026-11-20
 
 - Refresh events report the public endpoint hostname (never a URL or visitor data), so collectors can log which key directory or IP list failed.

@@ -276,6 +276,11 @@ test('a failed refresh is visible even when stale data remains usable; successfu
   fail = false;
   await verifier.warm();
   assert.equal(verifier.status().lastRefreshOk, true);
+  for (const index of [0, 2]) {
+    assert.equal(events[index].ok, true);
+    assert.equal(events[index].hostname, 'agent.example');
+    assert.equal(events[index].hostname.includes('/'), false);
+  }
   assert.ok(!JSON.stringify(events).includes('raw transport details'));
 });
 test('refresh-ahead status updates without a request; callback exceptions do not poison the cache', async (t) => {

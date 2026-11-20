@@ -13,7 +13,7 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.1.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
@@ -96,10 +96,12 @@ loaded means a parsed cached document still within its hard age limit, including
 stale data. It does not guarantee an active signing key or verify a visitor. The last
 refresh outcome covers any directory/feed; time is Unix seconds, null before completion.
 The method never fetches and contains no request data. Optional `onRefresh(event)` receives
-`{ kind: 'directory' | 'ip' | 'sail', ok, at, reason? }` after each completed refresh,
-including background work. Failure reasons are short codes, never transport messages.
+`{ kind: 'directory' | 'ip' | 'sail', ok, at, hostname?, reason? }` after each completed refresh,
+including background work. `hostname` is the public endpoint hostname, never a URL. Failure reasons are short codes, never transport messages.
 Callback exceptions are ignored. The library itself never logs; the integrator can use
 this callback for rate-limited operational warnings.
+
+`serverAgentTokens(defaultRegistry)` returns the deduplicated browser and server-only UA tokens used for claims.
 
 ## Cache-only verification for collectors
 
@@ -266,6 +268,9 @@ Standards: [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421.html), [RFC 7638](h
 Own code: MIT, LICENSE. Cloudflare fixtures: Apache-2.0, pinned commit and licence in test/fixtures/NOTICE.md. RFC code examples: test/fixtures/IETF-NOTICE.txt, linked from the interop test. Dependency licences stay with installed packages. Fixture hashes cover local copies; live public directories and approved sanitized capture fixtures are test data, not a request logging facility.
 
 ## Changelog
+
+- **Unreleased:** strengthen public API, declaration isolation and successful-refresh hostname regression tests; update documentation.
+- **0.3.1 (2026-11-20):** export `serverAgentTokens(registry)` and report endpoint hostnames in refresh events.
 
 - **0.3.0 (2026-11-20):** replace `toAnalyticsFields` with bounded pure `visitorLabels`; two event dimensions, verified unknown-purpose agent result and exhaustive label matrix tests.
 - **0.2.1 (2026-11-20):** exclude customer Google Cloud DNS, bind purpose to the matching DNS rule/list, add crawler roles, server-only Google tokens and registry evidence provenance; strengthen signature/cache and delivery boundary coverage.
