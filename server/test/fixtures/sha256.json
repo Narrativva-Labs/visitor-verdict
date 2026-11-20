@@ -12,5 +12,6 @@
   "openai-directory-2026-11-20.json": "281bffcca164b28adf231eb6d4f747c42636f9333dbb0a7bf62021479a249750",
   "web_bot_auth_architecture_v1.json": "12ed35aaf50368d9cf6d3c704b8942e6603b1ef2bbd119c3040868b87e596ef4",
   "web_bot_auth_architecture_v2.json": "d0c8dbb7631dcc22639d12318af2b1ac0a339e4fa5aa4ef6df67ca45b0094576",
-  "web_bot_auth_directory_response_v1.json": "ab2226c895940f0d169433ea0485ca7938e2dd2b89090945088b931031a7a1de"
+  "web_bot_auth_directory_response_v1.json": "ab2226c895940f0d169433ea0485ca7938e2dd2b89090945088b931031a7a1de",
+  "anthropic-sail-2026-11-20.toml": "32ccc50152b96f7e31ed606774e46026da0d7db831cc02e37c644bf2e4b031f1"
 }

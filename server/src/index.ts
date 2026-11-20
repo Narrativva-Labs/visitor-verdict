@@ -1,6 +1,8 @@
+import { guard } from './lexer.js';
+import { createClaimParser } from './claims.js';
+import { requiredHeaderNames as collectRequiredHeaderNames } from './fields.js';
 import { AgentCache } from './cache.js';
 import { validateConfig } from './config.js';
-import { parseClaims } from './claims.js';
 import { assertHeadersInput, headers, field } from './headers.js';
 import { dictionary, coveredHeaderNames as collectCoveredHeaderNames } from './fields.js';
 import { Failure, failure } from './errors.js';
@@ -16,6 +18,11 @@ export function coveredHeaderNames(signatureInput: string): string[] {
   return collectCoveredHeaderNames(signatureInput);
 }
 
+/** Collector headers: never throws, including absent/malformed Signature-Input. */
+export function requiredHeaderNames(signatureInput?: string): string[] {
+  return collectRequiredHeaderNames(signatureInput);
+}
+
 function emptyVerdict(): AgentVerdict {
   return {
     claimed: { uaTokens: [], signatureAgents: [] },
@@ -28,6 +35,7 @@ function emptyVerdict(): AgentVerdict {
 export function createVerifier(options: VerifierOptions): AgentVerifier {
   const config = validateConfig(options);
   const cache = new AgentCache(config.fetcher, config.fetchTimeoutMs);
+  const parseClaims = createClaimParser(config.registry);
 
   async function run(
     input: AgentRequest,
@@ -54,8 +62,10 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       if (presented) {
         if (!field(h, 'signature') || !field(h, 'signature-input'))
           throw new Failure('incomplete_signature_headers');
-        const inputs = dictionary(field(h, 'signature-input'));
-        const sigs = dictionary(field(h, 'signature'));
+        const rawInput = field(h, 'signature-input');
+        const invalidTimestamps = guard(rawInput, 'signature-input');
+        const inputs = dictionary(rawInput, 'signature-input');
+        const sigs = dictionary(field(h, 'signature'), 'signature');
         const labels = [...new Set([...inputs.keys(), ...sigs.keys()])];
         if (labels.length > 4) throw new Failure('too_many_signatures');
         for (const member of inputs.values())
@@ -72,6 +82,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             signal,
             nonceStore: config.nonceStore,
             nonceTimeoutMs: config.fetchTimeoutMs,
+            invalidTimestamps,
           });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
           verdict.signatures.push(evaluation.result);
@@ -79,10 +90,26 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         }
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
-      if (!claims.agent.values.length || trusted)
-        verdict.ip = await ipEvidence(input.clientIp, claims.uaTokens, config.registry, cache, now);
+      let ipUnavailable = false;
+      const onlyIgnored =
+        verdict.signatures.length > 0 &&
+        verdict.signatures.every((s) => s.reason === 'ignored_non_wba');
+      if (!claims.agent.values.length || trusted || onlyIgnored) {
+        const evidence = await ipEvidence(
+          input.clientIp,
+          claims.uaTokens,
+          config.registry,
+          cache,
+          now,
+        );
+        verdict.ip = evidence.ip;
+        ipUnavailable = evidence.unavailable;
+      }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
-      Object.assign(verdict, selectOutcome(verdict.signatures, presented, verdict.ip));
+      Object.assign(
+        verdict,
+        selectOutcome(verdict.signatures, presented, verdict.ip, ipUnavailable),
+      );
       if (verdict.verification === 'ip_match')
         verdict.verified = { operator: verdict.ip!.operator, method: 'ip' };
     } catch (error) {
@@ -103,13 +130,13 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const verdict = emptyVerdict();
       try {
-        const work = run(input, verdict, controller.signal);
         const deadline = new Promise<AgentVerdict>((resolve) => {
           timer = setTimeout(() => {
             controller.abort();
             resolve({ ...emptyVerdict(), reason: 'deadline_exceeded' });
           }, config.deadlineMs);
         });
+        const work = run(input, verdict, controller.signal);
         const result = await Promise.race([work, deadline]);
         if (performance.now() - started >= config.deadlineMs) {
           controller.abort();

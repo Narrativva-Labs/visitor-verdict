@@ -30,6 +30,7 @@ export function headers(input: HeadersInput): Map<string, string[]> {
   function append(name: unknown, value: unknown) {
     if (typeof name !== 'string' || typeof value !== 'string')
       throw new Failure('malformed_header');
+    if (name.length > 65536 || value.length > 65536) throw new Failure('headers_too_large');
     const k = name.toLowerCase();
     const size = Buffer.byteLength(name) + Buffer.byteLength(value) + 4;
     bytes += size;
@@ -38,7 +39,10 @@ export function headers(input: HeadersInput): Map<string, string[]> {
     if (k === 'signature' || k === 'signature-input' || k === 'signature-agent') related += size;
     if (bytes > 65536 || count > 256 || related > 16384 || uaBytes > 1024)
       throw new Failure('headers_too_large');
-    if (!/^[!#$%&'*+.^_`|~0-9a-z:-]+$/.test(k) || /[\x00-\x08\x0a-\x1f\x7f]/.test(value))
+    if (
+      (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(k) && !/^:(?:authority|method|scheme|path)$/.test(k)) ||
+      /[\x00-\x08\x0a-\x1f\x7f\u0100-\uffff]/.test(value)
+    )
       throw new Failure('malformed_header');
     let values = out.get(k);
     if (!values) {

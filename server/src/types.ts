@@ -24,12 +24,18 @@ export interface Operator {
   source: string;
   checked: string;
   ipLists: readonly IpList[];
+  /** Additional server-only UA tokens; browser defaults remain unchanged. */
+  extraUaTokens?: readonly string[];
 }
 /** An operator-published IP feed, optionally restricted to known claims. */
 export interface IpList {
   name: string;
   url: string;
   uaTokens?: readonly string[];
+  /** SAIL is a schema-specific TOML feed; other feeds are JSON. */
+  format?: 'json' | 'sail';
+  /** Required SAIL service name whose ranges provide evidence. */
+  service?: string;
 }
 /** Registry is trusted configuration, never request-controlled. */
 export type Registry = readonly Operator[];

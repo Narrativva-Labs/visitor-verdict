@@ -1,3 +1,4 @@
+import type { SailDocument } from './sail.js';
 import { BlockList, isIP } from 'node:net';
 import { Failure } from './errors.js';
 import type { Registry, AgentVerdict } from './types.js';
@@ -39,20 +40,31 @@ export function matchesIp(ip: string, prefixes: unknown): boolean {
     return false;
   }
 }
+function decodeSail(data: unknown): Map<string, BlockList> {
+  const doc = data as SailDocument;
+  return new Map([...doc.services].map(([name, prefixes]) => [name, compilePrefixes(prefixes)]));
+}
 export async function ipEvidence(
   ip: string | undefined,
   ua: string[],
   registry: Registry,
   cache: AgentCache,
   now: number,
-): Promise<AgentVerdict['ip']> {
-  if (typeof ip !== 'string' || !isIP(ip)) return;
+): Promise<{ ip?: AgentVerdict['ip']; unavailable: boolean }> {
+  if (typeof ip !== 'string' || !isIP(ip)) return { unavailable: false };
   const tasks: Promise<AgentVerdict['ip']>[] = [];
   for (const operator of registry)
     for (const list of operator.ipLists) {
       if (list.uaTokens && !list.uaTokens.some((token) => ua.includes(token))) continue;
       tasks.push(
-        cache.load(list.url, 'ip', now, decodeList).then((block) => {
+        (list.format === 'sail'
+          ? cache.load(list.url, 'sail', now, decodeSail).then((services) => {
+              const block = services.get(list.service!);
+              if (!block) throw new Failure('invalid_sail', true);
+              return block;
+            })
+          : cache.load(list.url, 'ip', now, decodeList)
+        ).then((block) => {
           if (block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'))
             return { operator: operator.operator, list: list.name };
         }),
@@ -60,5 +72,7 @@ export async function ipEvidence(
     }
   const results = await Promise.allSettled(tasks);
   for (const result of results)
-    if (result.status === 'fulfilled' && result.value) return result.value;
+    if (result.status === 'fulfilled' && result.value)
+      return { ip: result.value, unavailable: false };
+  return { unavailable: results.some((result) => result.status === 'rejected') };
 }

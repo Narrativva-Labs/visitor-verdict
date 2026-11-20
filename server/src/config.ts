@@ -48,6 +48,15 @@ export function validateConfig(options: VerifierOptions) {
       typeof operator.checked !== 'string'
     )
       throw new TypeError('Invalid operator');
+    if (
+      operator.extraUaTokens !== undefined &&
+      (!Array.isArray(operator.extraUaTokens) ||
+        operator.extraUaTokens.length > 64 ||
+        !operator.extraUaTokens.every(
+          (t) => typeof t === 'string' && t.length > 0 && t.length <= 128,
+        ))
+    )
+      throw new TypeError('Invalid extra UA tokens');
     if (operator.signatureAgent !== undefined || operator.directoryUrl !== undefined) {
       httpsUrl(operator.signatureAgent);
       httpsUrl(operator.directoryUrl);
@@ -65,11 +74,22 @@ export function validateConfig(options: VerifierOptions) {
             !list.uaTokens.every((t: unknown) => typeof t === 'string')))
       )
         throw new TypeError('Invalid IP list');
+      if (list.format !== undefined && list.format !== 'json' && list.format !== 'sail')
+        throw new TypeError('Invalid feed format');
+      if (
+        list.format === 'sail' &&
+        (typeof list.service !== 'string' || !list.service.length || list.service.length > 128)
+      )
+        throw new TypeError('Invalid SAIL service');
       httpsUrl(list.url);
       urls.add(list.url);
       return { ...list, uaTokens: list.uaTokens ? [...list.uaTokens] : undefined };
     });
-    return { ...operator, ipLists };
+    return {
+      ...operator,
+      ipLists,
+      extraUaTokens: operator.extraUaTokens ? [...operator.extraUaTokens] : undefined,
+    };
   });
   if (urls.size > 128) throw new TypeError('Too many registry endpoints');
   if (options.fetcher !== undefined && typeof options.fetcher !== 'function')

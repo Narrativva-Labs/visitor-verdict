@@ -93,7 +93,8 @@ test('IP 1 MiB and 8192 prefix limits; failed lists never yield ip_match', async
       clientIp: '192.0.2.1',
       headers: {},
     });
-    assert.equal(result.verification, 'no_signature');
+    assert.equal(result.verification, 'none');
+    assert.equal(result.reason, 'ip_evidence_unavailable');
   }
 });
 test('invalid signature retains precedence over IP evidence', async () => {

@@ -1,15 +1,39 @@
-import { parseDictionary, parseItem, serializeItem, serializeInnerList } from 'structured-headers';
-import type { Dictionary, Item, InnerList } from 'structured-headers';
-import { guard } from './lexer.js';
+import {
+  parseDictionary,
+  parseItem,
+  serializeItem,
+  serializeInnerList,
+  Token,
+} from 'structured-headers';
+import type { Dictionary, Item, InnerList, BareItem } from 'structured-headers';
+import { guard, dateCompatibleInput, type GuardMode } from './lexer.js';
 import { Failure } from './errors.js';
 import { field, trimOws } from './headers.js';
 export { Failure } from './errors.js';
 export { headers } from './headers.js';
 
-export function dictionary(raw: string): Dictionary {
-  guard(raw, true);
+export function dictionary(raw: string, mode: GuardMode = 'dictionary'): Dictionary {
+  guard(raw, mode);
   try {
-    return parseDictionary(raw);
+    const compatible = dateCompatibleInput(raw);
+    const parsed = parseDictionary(compatible.text);
+    if (compatible.dates.size) {
+      const restore = (value: BareItem): BareItem =>
+        value instanceof Token ? (compatible.dates.get(value.toString()) ?? value) : value;
+      const restoreParams = (item: Item | InnerList) => {
+        for (const [name, value] of item[1]) item[1].set(name, restore(value));
+      };
+      for (const item of parsed.values()) {
+        restoreParams(item);
+        if (Array.isArray(item[0]))
+          for (const component of item[0]) {
+            component[0] = restore(component[0]);
+            restoreParams(component);
+          }
+        else item[0] = restore(item[0]);
+      }
+    }
+    return parsed;
   } catch {
     throw new Failure('malformed_structured_field');
   }
@@ -24,7 +48,7 @@ export function agents(raw: string): AgentClaims {
   const identities = new Map<string, string>();
   if (!raw) return { values: [], identities };
   if (trimOws(raw).startsWith('"')) {
-    guard(raw, false);
+    guard(raw, 'item');
     try {
       const item = parseItem(raw);
       if (typeof item[0] !== 'string' || item[1].size) throw new Error();
@@ -38,8 +62,7 @@ export function agents(raw: string): AgentClaims {
   for (const [label, item] of members) {
     if (typeof item[0] !== 'string') continue;
     values.push(item[0]);
-    if (!item[1].size || (item[1].size === 1 && item[1].get('type') === 'directory'))
-      identities.set(label, item[0]);
+    if (!item[1].size) identities.set(label, item[0]);
   }
   return { members, values, identities };
 }
@@ -71,14 +94,15 @@ export function targetParts(context: Context): { path: string; uri: string } {
     /%(?![0-9a-fA-F]{2})/.test(raw)
   )
     throw new Failure('insufficient_context', true);
-  if (raw.startsWith('/') && !raw.startsWith('//')) {
+  if (raw.startsWith('/')) {
     return { path: raw.split('?')[0], uri: 'https://' + context.authority + raw };
   }
   const absolute = /^https:\/\/([^/?#]+)(\/[^#]*|\?[^#]*)?$/i.exec(raw);
   if (!absolute || normalizeAuthority(absolute[1]) !== context.authority)
     throw new Failure('insufficient_context', true);
   const suffix = absolute[2] || '/';
-  return { path: suffix.startsWith('?') ? '/' : suffix.split('?')[0], uri: raw };
+  const pathAndQuery = suffix.startsWith('?') ? '/' + suffix : suffix;
+  return { path: pathAndQuery.split('?')[0], uri: 'https://' + context.authority + pathAndQuery };
 }
 export function signatureBase(input: Context, h: Map<string, string[]>, inner: InnerList): string {
   const seen = new Set<string>();
@@ -104,18 +128,27 @@ export function signatureBase(input: Context, h: Map<string, string[]>, inner: I
         if (!member || Array.isArray(member[0])) throw new Failure('required_component_missing');
         value = serializeItem(member as Item);
       } else throw new Failure('unsupported_component', true);
-    } else if (/^[a-z][a-z0-9-]*$/.test(name) && !params.size && h.has(name)) {
-      value = field(h, name);
+    } else if (/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name) && h.has(name)) {
+      if (!params.size) value = field(h, name);
+      else if (params.size === 1 && params.get('bs') === true)
+        value = h
+          .get(name)!
+          .map((v) => ':' + Buffer.from(v, 'latin1').toString('base64') + ':')
+          .join(', ');
+      else throw new Failure('unsupported_component', true);
     } else throw new Failure('unsupported_component', true);
     return `${id}: ${value}`;
   });
-  return [...lines, `"@signature-params": ${serializeInnerList(inner)}`].join('\n');
+  const base = [...lines, `"@signature-params": ${serializeInnerList(inner)}`].join('\n');
+  if (/[^\x00-\x7f]/.test(base)) throw new Failure('non_ascii_component', true);
+  return base;
 }
 /** Return ordinary covered field names for transport adapters. Throws on malformed/oversize SF input. */
-export function coveredHeaderNames(signatureInput: string): string[] {
+function collectHeaderNames(signatureInput: string): string[] {
   if (typeof signatureInput !== 'string') throw new TypeError('signatureInput must be a string');
-  if (Buffer.byteLength(signatureInput) > 16384) throw new Failure('headers_too_large');
-  const inputs = dictionary(signatureInput);
+  if (signatureInput.length > 16384 || Buffer.byteLength(signatureInput) > 16384)
+    throw new Failure('headers_too_large');
+  const inputs = dictionary(signatureInput, 'signature-input');
   if (inputs.size > 4) throw new Failure('too_many_signatures');
   const names = new Set<string>();
   for (const item of inputs.values()) {
@@ -125,4 +158,22 @@ export function coveredHeaderNames(signatureInput: string): string[] {
       if (typeof name === 'string' && !name.startsWith('@')) names.add(name);
   }
   return [...names];
+}
+
+/** Return covered header names; malformed input throws only public TypeError. */
+export function coveredHeaderNames(signatureInput: string): string[] {
+  try {
+    return collectHeaderNames(signatureInput);
+  } catch {
+    throw new TypeError('Invalid Signature-Input');
+  }
+}
+/** Always returns the base collector set, even for missing/malformed Signature-Input. */
+export function requiredHeaderNames(signatureInput?: string): string[] {
+  const base = ['user-agent', 'signature', 'signature-input', 'signature-agent'];
+  try {
+    return [...new Set([...base, ...collectHeaderNames(signatureInput!)])];
+  } catch {
+    return base;
+  }
 }

@@ -2,6 +2,42 @@ import type { Registry } from './types.js';
 // Exact operator identities and endpoints; no discovery from request-controlled URLs.
 export const defaultRegistry: Registry = [
   {
+    operator: 'apple',
+    verifiedByCapture: false,
+    checked: '2026-11-20',
+    source: 'https://support.apple.com/en-sg/119829',
+    ipLists: [
+      {
+        name: 'applebot',
+        url: 'https://search.developer.apple.com/applebot.json',
+        uaTokens: ['Applebot'],
+      },
+    ],
+  },
+  {
+    operator: 'microsoft',
+    verifiedByCapture: false,
+    checked: '2026-11-20',
+    source: 'https://www.bing.com/webmasters/help/how-to-verify-bingbot-3905dc26',
+    extraUaTokens: ['bingbot'],
+    ipLists: [
+      { name: 'bingbot', url: 'https://www.bing.com/toolbox/bingbot.json', uaTokens: ['bingbot'] },
+    ],
+  },
+  {
+    operator: 'mistral',
+    verifiedByCapture: false,
+    checked: '2026-11-20',
+    source: 'https://docs.mistral.ai/robots',
+    ipLists: [
+      {
+        name: 'mistralai-user',
+        url: 'https://mistral.ai/mistralai-user-ips.json',
+        uaTokens: ['MistralAI-User'],
+      },
+    ],
+  },
+  {
     operator: 'duckduckgo',
     signatureAgent: 'https://assistbot.duckduckgo.com',
     directoryUrl: 'https://assistbot.duckduckgo.com/.well-known/http-message-signatures-directory',
@@ -93,8 +129,14 @@ export const defaultRegistry: Registry = [
         url: 'https://claude.com/crawling/bots.json',
         uaTokens: ['ClaudeBot', 'Claude-SearchBot', 'Claude-User'],
       },
+      {
+        name: 'sail',
+        url: 'https://claude.com/.well-known/sail',
+        uaTokens: ['Claude-Agent'],
+        format: 'sail',
+        service: 'Claude-Agent',
+      },
     ],
-    // TODO: SAIL intentionally disabled until its live TOML schema is confirmed.
   },
   {
     operator: 'perplexity',

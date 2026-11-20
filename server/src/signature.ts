@@ -21,6 +21,7 @@ interface SignatureContext {
   signal: AbortSignal;
   nonceStore?: NonceStore;
   nonceTimeoutMs: number;
+  invalidTimestamps: Set<string>;
 }
 function checkActive(signal: AbortSignal) {
   if (signal.aborted) throw new Failure('deadline_exceeded', true);
@@ -54,6 +55,8 @@ export async function evaluateSignature(
     checkActive(env.signal);
     const member = inputs.get(label);
     const sig = sigs.get(label);
+    if (member && member[1].get('tag') !== 'web-bot-auth')
+      return { result: { label, result: 'none', reason: 'ignored_non_wba' } };
     if (
       !member ||
       !sig ||
@@ -63,6 +66,7 @@ export async function evaluateSignature(
     )
       throw new Failure('malformed_signature');
     const inner = member as InnerList;
+    if (env.invalidTimestamps.has(label)) throw new Failure('invalid_timestamp_type');
     const keyid = checkSignaturePolicy(inner, env.now);
     const covered = inner[0].filter(([name]) => name === 'signature-agent');
     let identity = env.agent.legacy;
@@ -84,7 +88,8 @@ export async function evaluateSignature(
     checkActive(env.signal);
     const key = keys.get(keyid);
     if (!key || !activeKey(key, env.now)) throw new Failure('unknown_keyid', true);
-    if (!verify(null, Buffer.from(base), key.key, bytes)) throw new Failure('crypto_mismatch');
+    if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes))
+      throw new Failure('crypto_mismatch');
     if (env.nonceStore) {
       const nonce = inner[1].get('nonce');
       const expires = inner[1].get('expires') as number;

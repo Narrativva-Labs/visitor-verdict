@@ -51,7 +51,7 @@ test('sec-F2: NBSP is signed obs-text, not removable OWS', async () => {
   });
   assert.equal((await verifier.verify(r)).verification, 'signature_valid');
   r.headers['x-intent'] = '\u00a0read\u00a0';
-  assert.equal((await verifier.verify(r)).reason, 'crypto_mismatch');
+  assert.equal((await verifier.verify(r)).reason, 'non_ascii_component');
   r.headers['x-intent'] = '\t read \t';
   assert.equal((await verifier.verify(r)).verification, 'signature_valid');
   for (const c of ['\0', '\r', '\n', '\v', '\f', '\x1f', '\x7f']) {
@@ -172,7 +172,7 @@ test('sec-F7: whitespace lexing remains bounded and handles SF token colons', as
   assert.ok(performance.now() - start < 1000, '20 maximum-size inputs must not block for seconds');
   const r = signed();
   r.headers['signature-input'] = 's=(' + ' '.repeat(15000) + ')';
-  assert.equal((await verifier.verify(r)).reason, 'wrong_tag');
+  assert.equal((await verifier.verify(r)).reason, 'ignored_non_wba');
   assert.doesNotThrow(() => dictionary('s=(a;p=1 b;p=2);ctx=urn:foo:bar'));
 });
 test('signature-agent dictionary lines combine with SP/HTAB trimming per line', async () => {

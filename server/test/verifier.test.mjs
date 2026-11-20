@@ -93,7 +93,7 @@ const mutations = [
       )),
   ],
   [
-    'wrong_tag',
+    'ignored_non_wba',
     (r) =>
       (r.headers['signature-input'] = r.headers['signature-input'].replace(
         'web-bot-auth',
@@ -254,11 +254,11 @@ test('synthetic Google dictionary signature with generated key', async () => {
   });
   assert.equal((await v.verify(r)).verification, 'signature_valid');
 });
-test('std-1: dictionary type=directory works; unsupported peers do not poison valid signature', async () => {
+test('std-1: unparameterized dictionary works; unsupported peers do not poison valid signature', async () => {
   const r = signed({
-    agent: `s="${identity}";type="directory", other="https://other.example";type="jwks_uri"`,
+    agent: `s="${identity}", other="https://other.example";type="jwks_uri"`,
     components: ['"@authority"', '"signature-agent";key="s"'],
-    values: { '"signature-agent";key="s"': `"${identity}";type="directory"` },
+    values: { '"signature-agent";key="s"': `"${identity}"` },
   });
   r.headers['signature-input'] +=
     ', other=("@authority" "signature-agent";key="other");created=' +

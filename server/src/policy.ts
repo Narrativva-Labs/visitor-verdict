@@ -1,15 +1,28 @@
 import type { InnerList } from 'structured-headers';
 import type { AgentRequest, AgentVerdict, SignatureResult } from './types.js';
 import { Failure } from './errors.js';
-import { normalizeAuthority, targetParts, type Context } from './fields.js';
+import { normalizeAuthority, type Context } from './fields.js';
 
 export function checkContext(input: AgentRequest, authorities: Set<string>): Context {
   const authority = normalizeAuthority(input.host);
   if (!authority || !authorities.has(authority)) throw new Failure('unknown_authority', true);
-  if (typeof input.method !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(input.method))
+  if (
+    typeof input.method !== 'string' ||
+    input.method.length > 32 ||
+    !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(input.method)
+  )
     throw new Failure('insufficient_context', true);
   const context = { method: input.method, authority, target: input.target };
-  if (input.target !== undefined) targetParts(context);
+  if (
+    input.target !== undefined &&
+    (typeof input.target !== 'string' || input.target.length > 65536)
+  )
+    throw new Failure('insufficient_context', true);
+  if (
+    input.clientIp !== undefined &&
+    (typeof input.clientIp !== 'string' || input.clientIp.length > 64)
+  )
+    throw new Failure('insufficient_context', true);
   return context;
 }
 export function checkSignaturePolicy(inner: InnerList, now: number): string {
@@ -44,15 +57,23 @@ export function selectOutcome(
   signatures: SignatureResult[],
   presented: boolean,
   ip?: AgentVerdict['ip'],
+  ipUnavailable = false,
 ): Pick<AgentVerdict, 'verification' | 'reason'> {
+  const relevant = signatures.filter((s) => s.reason !== 'ignored_non_wba');
+  if (presented && signatures.length && !relevant.length) presented = false;
   if (!presented)
     return ip
       ? { verification: 'ip_match', reason: 'official_ip_range_match' }
-      : { verification: 'no_signature', reason: 'signature_headers_absent' };
+      : ipUnavailable
+        ? { verification: 'none', reason: 'ip_evidence_unavailable' }
+        : {
+            verification: 'no_signature',
+            reason: signatures.length ? 'ignored_non_wba' : 'signature_headers_absent',
+          };
   const selected =
-    signatures.find((s) => s.result === 'signature_valid') ??
-    signatures.find((s) => s.result === 'signature_invalid') ??
-    signatures[0];
+    relevant.find((s) => s.result === 'signature_valid') ??
+    relevant.find((s) => s.result === 'signature_invalid') ??
+    relevant[0];
   return selected
     ? { verification: selected.result, reason: selected.reason }
     : { verification: 'signature_invalid', reason: 'malformed_signature' };

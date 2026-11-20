@@ -114,7 +114,7 @@ test('Cloudflare directory response fixture: digest and crypto, excluded from re
     host: 'signature-agent.test',
     headers: v.response.headers,
   });
-  assert.equal(result.reason, 'wrong_tag');
+  assert.equal(result.reason, 'ignored_non_wba');
 });
 test('fixture checksums match the provenance manifest', () => {
   const manifest = read('sha256.json');

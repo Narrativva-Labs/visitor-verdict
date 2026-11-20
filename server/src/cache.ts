@@ -1,12 +1,14 @@
+import { parseSail } from './sail.js';
 import { Failure, failure } from './errors.js';
 import type { Fetcher } from './types.js';
 
-export type DocumentKind = 'directory' | 'ip';
+export type DocumentKind = 'directory' | 'ip' | 'sail';
 interface Entry {
   data?: unknown;
   until: number;
   cooldown: number;
   flight?: Promise<unknown>;
+  forcedFlight?: Promise<unknown>;
 }
 /** Verification retention is deliberately separate from browser/shared HTTP caching. */
 export function ttlFromHeaders(headers: Pick<Headers, 'get'>): number {
@@ -28,7 +30,7 @@ export async function fetchBounded(
   timeoutMs: number,
 ): Promise<{ data: unknown; ttl: number }> {
   const controller = new AbortController();
-  const limit = kind === 'directory' ? 65536 : 1048576;
+  const limit = kind === 'ip' ? 1048576 : 65536;
   let response: Response | undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -66,7 +68,14 @@ export async function fetchBounded(
       if (size > limit) throw new Failure('directory_too_large', true);
       chunks.push(part.value);
     }
-    const data: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const text = Buffer.concat(chunks).toString('utf8');
+    if (kind === 'sail') {
+      if (response.headers.get('content-type')?.split(';')[0].trim() !== 'application/sail+toml')
+        throw new Failure('invalid_sail', true);
+      const data = parseSail(text);
+      return { data, ttl: Math.max(300, Math.min(86400, data.expiresAfter)) };
+    }
+    const data: unknown = JSON.parse(text);
     return { data, ttl: ttlFromHeaders(response.headers) };
   }
   try {
@@ -101,15 +110,19 @@ export class AgentCache {
       entry = { until: 0, cooldown: 0 };
       this.entries.set(cacheKey, entry);
     }
-    if (entry.flight) return entry.flight as Promise<T>;
     if (!force && entry.data !== undefined && now < entry.until) return entry.data as T;
+    const pending = force
+      ? (entry.forcedFlight ?? entry.flight)
+      : (entry.flight ?? entry.forcedFlight);
+    if (pending) return pending as Promise<T>;
     if (now < entry.cooldown) {
       if (entry.data !== undefined && now < entry.until) return entry.data as T;
       throw new Failure('directory_unavailable', true);
     }
     if (force) entry.cooldown = now + 60;
-    entry.flight = this.refresh(url, kind, now, entry, decode);
-    return entry.flight as Promise<T>;
+    const slot = force ? 'forcedFlight' : 'flight';
+    entry[slot] = this.refresh(url, kind, now, entry, decode, slot);
+    return entry[slot] as Promise<T>;
   }
 
   private async refresh<T>(
@@ -118,6 +131,7 @@ export class AgentCache {
     now: number,
     entry: Entry,
     decode: (data: unknown) => T,
+    slot: 'flight' | 'forcedFlight',
   ): Promise<T> {
     try {
       const response = await fetchBounded(url, this.fetcher, kind, this.timeoutMs);
@@ -129,7 +143,7 @@ export class AgentCache {
       entry.cooldown = now + 60;
       throw failure(error);
     } finally {
-      entry.flight = undefined;
+      entry[slot] = undefined;
     }
   }
 }
