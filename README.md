@@ -30,11 +30,11 @@ Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering
 
 ## Pinned direct-script build
 
-Available once the `v1.0.0` tag is published; this is an alternative to the GTM detector tag. Set `window.visitorVerdictConfig` before loading if needed; optional worker/WebGL probes default off in this standalone build.
+An alternative to the GTM detector tag. Set `window.visitorVerdictConfig` before loading if needed; optional worker/WebGL probes default off in this standalone build.
 
 ```html
 <script src="https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@v1.0.0/dist/visitor-verdict.min.js"
-        integrity="sha384-heSkmTUosnXjSK/xmWjH63uwQek7++nD1OrwUUBCXETHwaf9gqswmhoXS/3CKyM7"
+        integrity="sha384-lF6ouCYp8JoFz2lLN6BzdniSmk3W2OgQZmvqI5Glna1sHzHBvsptaV9Qy/KKO7/D"
         crossorigin="anonymous"></script>
 ```
 
