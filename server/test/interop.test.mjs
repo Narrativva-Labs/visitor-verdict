@@ -94,6 +94,32 @@ for (const version of ['v1', 'v2'])
       assert.equal(v.reason, expected);
     });
   }
+test('Cloudflare v2 Ed25519 agent2/sig2 verifies as relabeled with a test-only lifetime override', async () => {
+  const vector = read('web_bot_auth_architecture_v2.json')[3];
+  const params = dictionary(vector.signature_input).get(vector.label)[1];
+  const verifier = createVerifier({
+    registry,
+    authorities: ['example.com'],
+    now: () => vector.created_ms / 1000,
+    maxLifetimeSeconds: params.get('expires') - params.get('created'),
+    fetcher: async () => Response.json({ keys: [jwk] }),
+  });
+  const verdict = await verifier.verify({
+    method: 'GET',
+    host: 'example.com',
+    target: vector.target_url,
+    headers: {
+      signature: vector.signature,
+      'signature-input': vector.signature_input,
+      'signature-agent': vector.signature_agent,
+    },
+  });
+  assert.equal(verdict.verification, 'signature_valid');
+  assert.equal(verdict.verified.operator, 'fixture');
+  assert.equal(verdict.verified.attribution, 'relabeled');
+  assert.equal(verdict.signatures[0].label, 'sig2');
+  assert.equal(verdict.signatures[0].attribution, 'relabeled');
+});
 test('Cloudflare directory response fixture: digest and crypto, excluded from request policy', async () => {
   const [v] = read('web_bot_auth_directory_response_v1.json');
   const expected =

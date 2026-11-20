@@ -98,6 +98,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
       let ipUnavailable = false;
       let dnsUnavailable = false;
+      let dnsNotConfirmed = false;
       const onlyIgnored =
         verdict.signatures.length > 0 &&
         verdict.signatures.every((s) => s.reason === 'ignored_non_wba');
@@ -116,6 +117,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           const dns = await rdns.verify(input.clientIp, claims.uaTokens, now, signal);
           if (dns.operator) verdict.rdns = { operator: dns.operator };
           else if (dns.unavailable && !ipUnavailable) dnsUnavailable = true;
+          else if (dns.notConfirmed) dnsNotConfirmed = true;
         }
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
@@ -138,6 +140,8 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       } else if (verdict.verification === 'no_signature' && dnsUnavailable) {
         verdict.verification = 'none';
         verdict.reason = 'reverse_dns_unavailable';
+      } else if (verdict.verification === 'no_signature' && dnsNotConfirmed) {
+        verdict.reason = 'reverse_dns_not_confirmed';
       }
     } catch (error) {
       const f = failure(error);

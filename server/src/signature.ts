@@ -71,10 +71,19 @@ export async function evaluateSignature(
     const keyid = checkSignaturePolicy(inner, env.now, env.maxLifetimeSeconds);
     const covered = inner[0].filter(([name]) => name === 'signature-agent');
     let identity = env.agent.legacy;
+    let attribution: SignatureResult['attribution'];
     if (env.agent.members) {
-      if (!covered.some(([, params]) => params.size === 1 && params.get('key') === label))
-        throw new Failure('signature_agent_not_covered');
-      identity = env.agent.identities.get(label);
+      const keys = new Set(
+        covered.flatMap(([, params]) => {
+          const key = params.get('key');
+          return params.size === 1 && typeof key === 'string' ? [key] : [];
+        }),
+      );
+      if (!keys.size) throw new Failure('signature_agent_not_covered');
+      if (!keys.has(label) && keys.size > 1) throw new Failure('ambiguous_signature_agent', true);
+      const memberKey = keys.has(label) ? label : keys.values().next().value!;
+      identity = env.agent.identities.get(memberKey);
+      attribution = memberKey === label ? 'label' : 'relabeled';
     } else if (identity && !covered.some(([, params]) => !params.size))
       throw new Failure('signature_agent_not_covered');
     const operator = env.registry.find((o) => o.signatureAgent === identity);
@@ -111,13 +120,14 @@ export async function evaluateSignature(
       if (!inserted) throw new Failure('replay');
     }
     return {
-      result: { label, result: 'signature_valid', reason: 'verified' },
+      result: { label, result: 'signature_valid', reason: 'verified', attribution },
       verified: {
         operator: operator.operator,
         method: 'signature',
         signatureAgent: identity,
         keyid,
         keyidForm: keyid === key.thumbprint ? 'thumbprint' : 'kid',
+        attribution,
       },
     };
   } catch (error) {

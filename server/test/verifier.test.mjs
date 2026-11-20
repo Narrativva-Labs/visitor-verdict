@@ -413,13 +413,13 @@ for (const parameter of ['type="jwks_uri"', 'type="cimd"', 'type=directory', 'ot
     });
     assert.equal((await verifier.verify(r)).reason, 'untrusted_signature_agent');
   });
-test('dictionary member coverage must correspond to the signature label', async () => {
+test('a covered unknown member cannot attribute a signature to an uncovered trusted member', async () => {
   const r = signed({
-    agent: `s="${identity}"`,
+    agent: `s="${identity}", other="https://untrusted.example"`,
     components: ['"@authority"', '"signature-agent";key="other"'],
-    values: { '"signature-agent";key="other"': '"unused"' },
+    values: { '"signature-agent";key="other"': '"https://untrusted.example"' },
   });
-  assert.equal((await verifier.verify(r)).reason, 'signature_agent_not_covered');
+  assert.equal((await verifier.verify(r)).reason, 'untrusted_signature_agent');
 });
 for (const options of [
   { created: clock + 30 },

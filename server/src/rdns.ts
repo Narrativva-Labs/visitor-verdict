@@ -5,6 +5,7 @@ import type { Registry, ReverseDnsOptions, DnsResolver } from './types.js';
 interface Evidence {
   operator?: string;
   unavailable: boolean;
+  notConfirmed?: boolean;
 }
 interface Entry {
   scope: string;
@@ -143,26 +144,25 @@ export class ReverseDnsVerifier {
           c.rule.suffixes.some((suffix) => matchesSuffix(name, suffix)),
         );
         if (!allowed.length) continue;
-        const records = await Promise.allSettled([
-          resolver.resolve4(name),
-          resolver.resolve6(name),
-        ]);
-        if (expired || signal.aborted) return { unavailable: true };
-        for (const record of records) {
-          if (record.status === 'rejected') {
-            const code = (record.reason as { code?: string })?.code;
-            if (code !== 'ENODATA' && code !== 'ENOTFOUND') hadError = true;
-          } else if (!Array.isArray(record.value) || record.value.length > 32) hadError = true;
+        try {
+          // Only the original address family can confirm this IP. An unrelated lookup can stall.
+          const addresses =
+            isIP(ip) === 4 ? await resolver.resolve4(name) : await resolver.resolve6(name);
+          if (expired || signal.aborted) return { unavailable: true };
+          if (!Array.isArray(addresses) || addresses.length > 32) hadError = true;
           else if (
-            record.value.some(
+            addresses.some(
               (value) =>
                 typeof value === 'string' && value.length <= 64 && normalizedIp(value) === ip,
             )
           )
             return { operator: allowed[0].operator, unavailable: false };
+        } catch (error) {
+          const code = (error as { code?: string })?.code;
+          if (code !== 'ENODATA' && code !== 'ENOTFOUND') hadError = true;
         }
       }
-      return { unavailable: hadError };
+      return { unavailable: hadError, notConfirmed: !hadError };
     };
     // Retain the concurrency slot until actual work settles, even if an injected resolver ignores cancel.
     const pending = work()

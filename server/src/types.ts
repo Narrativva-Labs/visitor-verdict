@@ -62,6 +62,8 @@ export interface AgentVerdict {
     signatureAgent?: string;
     keyid?: string;
     keyidForm?: 'thumbprint' | 'kid';
+    /** Dictionary identity selected by current label or by its sole covered member after relabeling. */
+    attribution?: 'label' | 'relabeled';
   };
   signatures: SignatureResult[];
   ip?: { operator: string; list: string };
@@ -72,6 +74,8 @@ export interface SignatureResult {
   label: string;
   result: 'signature_valid' | 'signature_invalid' | 'none';
   reason: string;
+  /** Successful dictionary attribution; absent for legacy bare-string identities. */
+  attribution?: 'label' | 'relabeled';
 }
 /** Construction-time configuration. Clock values are Unix seconds. */
 export interface VerifierOptions {
