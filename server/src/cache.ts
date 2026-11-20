@@ -1,6 +1,6 @@
 import { parseSail } from './sail.js';
 import { Failure, failure } from './errors.js';
-import type { Fetcher } from './types.js';
+import type { Fetcher, RefreshEvent, VerifierStatus } from './types.js';
 
 export type DocumentKind = 'directory' | 'ip' | 'sail';
 interface Entry {
@@ -102,6 +102,7 @@ export interface CacheOptions {
   staleMaxSeconds?: number;
   /** Clock in Unix seconds for refresh-ahead timers. */
   now?: () => number;
+  onRefresh?: (event: RefreshEvent) => void;
 }
 interface AheadJob {
   url: string;
@@ -120,6 +121,9 @@ export class AgentCache {
   private closed = false;
   private staleMaxSeconds: number;
   private now: () => number;
+  private lastRefreshOk: boolean | null = null;
+  private lastRefreshAt: number | null = null;
+  private onRefresh?: (event: RefreshEvent) => void;
   constructor(
     private fetcher: Fetcher,
     private timeoutMs: number,
@@ -127,6 +131,37 @@ export class AgentCache {
   ) {
     this.staleMaxSeconds = options.staleMaxSeconds ?? 0;
     this.now = options.now ?? (() => Date.now() / 1000);
+    this.onRefresh = options.onRefresh;
+  }
+
+  status(targets: readonly (readonly [string, DocumentKind])[]): VerifierStatus {
+    const now = this.clock();
+    const directories = { loaded: 0, total: 0 };
+    const ipLists = { loaded: 0, total: 0 };
+    for (const [url, kind] of targets) {
+      const count = kind === 'directory' ? directories : ipLists;
+      count.total++;
+      const entry = this.entries.get(kind + ':' + url);
+      if (entry?.data !== undefined && now < entry.staleUntil) count.loaded++;
+    }
+    return {
+      directories,
+      ipLists,
+      lastRefreshOk: this.lastRefreshOk,
+      lastRefreshAt: this.lastRefreshAt,
+    };
+  }
+
+  private refreshed(kind: DocumentKind, ok: boolean, now: number, reason?: string): void {
+    const clock = this.clock();
+    const at = Number.isFinite(clock) ? clock : now;
+    this.lastRefreshOk = ok;
+    this.lastRefreshAt = at;
+    try {
+      this.onRefresh?.({ kind, ok, at, ...(reason ? { reason } : {}) });
+    } catch {
+      // Diagnostics cannot change a document's validity or the verification result.
+    }
   }
 
   private touch(cacheKey: string, kind: DocumentKind): Entry {
@@ -266,10 +301,13 @@ export class AgentCache {
         this.staleMaxSeconds > 0 ? Math.min(response.ttl, this.staleMaxSeconds) : response.ttl;
       entry.until = now + ttl;
       entry.staleUntil = this.staleMaxSeconds > 0 ? now + this.staleMaxSeconds : entry.until;
+      this.refreshed(kind, true, now);
       return data;
     } catch (error) {
       entry.cooldown = now + COOLDOWN_SECONDS;
-      throw failure(error);
+      const f = failure(error);
+      this.refreshed(kind, false, now, f.reason);
+      throw f;
     } finally {
       entry[slot] = undefined;
       this.schedule(kind + ':' + url);

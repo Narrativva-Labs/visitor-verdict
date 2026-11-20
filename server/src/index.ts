@@ -11,6 +11,7 @@ import { evaluateSignature } from './signature.js';
 import { ReverseDnsVerifier } from './rdns.js';
 import { staticBlocks, ipEvidence, decodeList, decodeSail } from './ip.js';
 import { publicKeys } from './keys.js';
+import { purposeFor } from './purpose.js';
 import type {
   AgentRequest,
   AgentVerdict,
@@ -35,6 +36,7 @@ export function requiredHeaderNames(signatureInput?: string): string[] {
 
 function emptyVerdict(): AgentVerdict {
   return {
+    agent_purpose: 'unknown',
     claimed: { uaTokens: [], signatureAgents: [] },
     verification: 'none',
     reason: 'internal_error',
@@ -47,12 +49,30 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
   const cache = new AgentCache(config.fetcher, config.fetchTimeoutMs, {
     staleMaxSeconds: config.staleMaxSeconds,
     now: config.now,
+    onRefresh: config.onRefresh,
   });
   const parseClaims = createClaimParser(config.registry);
   const staticRanges = staticBlocks(config.registry);
   const rdns = config.reverseDns
     ? new ReverseDnsVerifier(config.reverseDns, config.registry)
     : undefined;
+  const targets = new Map<string, [string, DocumentKind, (data: unknown) => unknown]>();
+  for (const operator of config.registry) {
+    if (operator.directoryUrl)
+      targets.set('directory:' + operator.directoryUrl, [
+        operator.directoryUrl,
+        'directory',
+        publicKeys,
+      ]);
+    for (const list of operator.ipLists) {
+      const kind = list.format === 'sail' ? 'sail' : 'ip';
+      targets.set(kind + ':' + list.url, [
+        list.url,
+        kind,
+        kind === 'sail' ? decodeSail : decodeList,
+      ]);
+    }
+  }
 
   async function run(
     input: AgentRequest,
@@ -168,6 +188,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       verdict.reason = f.reason;
       verdict.verified = undefined;
     }
+    verdict.agent_purpose = purposeFor(verdict, config.registry);
     return verdict;
   }
 
@@ -198,40 +219,24 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       }
     },
     async warm(options?: WarmOptions): Promise<WarmResult> {
-      const jobs = new Map<string, [string, DocumentKind, (data: unknown) => unknown]>();
-      for (const operator of config.registry) {
-        if (operator.directoryUrl)
-          jobs.set('directory:' + operator.directoryUrl, [
-            operator.directoryUrl,
-            'directory',
-            publicKeys,
-          ]);
-        if (options?.ipLists === true)
-          for (const list of operator.ipLists) {
-            const kind = list.format === 'sail' ? 'sail' : 'ip';
-            jobs.set(kind + ':' + list.url, [
-              list.url,
-              kind,
-              kind === 'sail' ? decodeSail : decodeList,
-            ]);
-          }
-      }
       let now = NaN;
       try {
         now = config.now();
       } catch {
         // An unusable clock fails every prefetch below.
       }
-      const targets = [...jobs.values()];
+      const jobs = [...targets.values()].filter(
+        ([, kind]) => kind === 'directory' || options?.ipLists === true,
+      );
       const results = await Promise.allSettled(
-        targets.map(([url, kind, decode]) =>
+        jobs.map(([url, kind, decode]) =>
           Number.isFinite(now) && now <= 1e11
             ? cache.load(url, kind, now, decode, 'warm')
             : Promise.reject(new Failure('invalid_clock', true)),
         ),
       );
       const result: WarmResult = { ok: [], failed: [] };
-      targets.forEach(([url, kind, decode], i) => {
+      jobs.forEach(([url, kind, decode], i) => {
         result[results[i].status === 'fulfilled' ? 'ok' : 'failed'].push(url);
         if (options?.refreshAhead === true) cache.keepWarm(url, kind, decode);
       });
@@ -240,12 +245,15 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     close(): void {
       cache.close();
     },
+    status() {
+      return cache.status([...targets.values()].map(([url, kind]) => [url, kind]));
+    },
   };
 }
 /** Flat low-cardinality GA4/sGTM fields; raw claims and request data are not exported. */
 export function toAnalyticsFields(
   verdict: AgentVerdict,
-): Record<'agent_claim' | 'agent_verification' | 'agent_operator', string> {
+): Record<'agent_claim' | 'agent_verification' | 'agent_operator' | 'agent_purpose', string> {
   return {
     agent_claim: verdict.claimed.signatureAgents.length
       ? 'signature_agent'
@@ -254,5 +262,9 @@ export function toAnalyticsFields(
         : 'none',
     agent_verification: verdict.verification,
     agent_operator: verdict.verified?.operator ?? 'none',
+    agent_purpose:
+      verdict.verified && ['signature_valid', 'ip_match'].includes(verdict.verification)
+        ? (verdict.agent_purpose ?? 'unknown')
+        : 'unknown',
   };
 }

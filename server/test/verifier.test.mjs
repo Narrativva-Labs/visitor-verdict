@@ -54,6 +54,7 @@ test('int-1/sec-F5: replay all 32 captures through ONE verifier with REAL no-sto
     });
     assert.equal(v.verification, 'signature_valid');
     assert.equal(v.verified.operator, 'openai');
+    assert.equal(v.agent_purpose, 'user_directed');
     assert.equal(v.verified.keyidForm, 'thumbprint');
   }
   assert.equal(captureFetches, 1);
@@ -402,6 +403,7 @@ test('UA-only claim is unverified and analytics fields exclude raw claims', asyn
     agent_claim: 'ua_token',
     agent_verification: 'no_signature',
     agent_operator: 'none',
+    agent_purpose: 'unknown',
   });
 });
 for (const parameter of ['type="jwks_uri"', 'type="cimd"', 'type=directory', 'other="x"'])

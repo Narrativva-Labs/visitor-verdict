@@ -47,3 +47,28 @@ Treat both as sanity checks, not evidence about any single session: VPNs, corpor
 `human` means **no automation detected**, `suspicious` uncertain evidence, `automated` automation evidence without a judgement of intent, and `declared_agent` an unverified claim. Score is not a probability. Exclusion keeps unknown sessions; “only human” selects visits where classification and delivery worked and biases the headline. Always display coverage and suspicious traffic alongside the headline.
 
 Missing-ID cookieless pings are separate event totals, not sessions. Never reconstruct identity or join via IP/UA. JS-less fetches usually send no GA4 event at all; blocked tags, consent settings, early pageviews and unload loss also affect coverage. Referrals from assistants can be ordinary people following links and never establish automation. Converting or engaged automation warrants review, not automatic relabelling as human.
+
+## Server-verdict session segments (Vanilla reference)
+
+Register agent_verification, agent_operator, agent_purpose, agent_claim, traffic_class
+and traffic_phase as event-scoped dimensions. Use session segments scoped to the same
+web stream and date range; include evidence on any hit in the session, not just its last hit.
+
+1. **Verified, looks human:** signature_valid/ip_match and browser class human.
+2. **Verified declared agent/bot:** signature_valid/ip_match and declared_agent; show
+   automated/suspicious and absent browser-class variants separately. Split by agent_purpose.
+3. **Clear automation, unverified:** automated without a verified server verdict.
+4. **Declared, not verified:** declared_agent with no_signature; false claims and operators
+   without supported evidence both belong here. none/missing is a separate unknown subgroup.
+5. **Human-looking, unverified:** human with no_signature; this includes well-masked bots.
+
+Also show signature_invalid, suspicious and missing browser class as diagnostic cohorts;
+none/(not set) are not proof of humanity. Report label coverage alongside conversion rates.
+[session-classification.sql](session-classification.sql) implements these five families plus
+diagnostic subgroups. It is **not yet validated against a live export**; owner validation is
+planned for 2026-11-21. Run Query 0 first to check batch_page_id cardinality and currency;
+disable page grouping if IDs are missing or collide. Denied pings are separate page units
+grouped by stream_id, event_date and batch_page_id, never sessions grouped by ga_session_id
+(a page-load second that collides between visitors). Do not add ping-page revenue to session
+revenue. Compare purchases with unique_transactions for duplicates; revenue_usd normalizes
+currency but does not deduplicate repeated purchases.

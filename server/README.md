@@ -13,7 +13,7 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.1.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.2.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
@@ -62,6 +62,39 @@ A single-host collector should use its fixed configured external host, as above,
 Transport adapters must supply the external host and genuine client IP from a trusted boundary. The library never derives either from X-Forwarded-Host/X-Forwarded-For. For nginx use `proxy_set_header Host $host;` (and account for nondefault ports in your adapter). Caddy normally keeps Host; verify your deployed upstream configuration rather than assuming it. Sanitize forwarding headers and authenticate any original-request envelope passed to an sGTM/verifier service. The service's own HTTP request is not the signed browser request.
 
 `coveredHeaderNames(signatureInput)` returns the ordinary covered field names, excluding derived components; malformed/duplicate/oversize inputs throw only public TypeError, never an internal Failure class. `requiredHeaderNames(signatureInput?)` never throws and returns user-agent, signature, signature-input, signature-agent plus covered ordinary field names; malformed or absent input yields the four base names. It helps adapters collect required fields without silently discarding coverage. It does not itself verify a signature or declare supported component parameters.
+
+## Purpose and health
+
+`verdict.agent_purpose` and `toAnalyticsFields(verdict).agent_purpose` are
+`user_directed`, `crawler` or `unknown`. Only signature_valid/ip_match can carry a
+known purpose. This describes the documented product role, not whether this request
+has a real customer behind it. A signed identity wins over unsigned UA claims;
+a specific feed wins over token rules; conflicting shared-feed tokens yield unknown.
+Unknown operators/roles and every unverified result stay unknown.
+
+Registry `purposes` contains signature identity, IP-list-name and UA-token mappings,
+primary-source URLs and a checked date. See [registry-purposes.ts](src/registry-purposes.ts):
+[OpenAI](https://developers.openai.com/api/docs/bots),
+[Google](https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers),
+[Anthropic](https://privacy.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler),
+[Perplexity](https://docs.perplexity.ai/docs/resources/perplexity-crawlers),
+[Mistral](https://docs.mistral.ai/robots) and
+[Kimi](https://www.kimi.ai/policies/kimi-crawlers) distinguish user fetches from crawlers.
+The other crawler mappings cite their operator's bot documentation in that file.
+Browserbase, Manus, DuckAssistBot and unlisted roles remain unknown. Purpose does not
+expand verification capability: Google's currently unassigned user-triggered-fetchers
+feed still has no eligible tokens in the default registry.
+
+`verifier.status()` returns `{ directories: { loaded, total }, ipLists: { loaded, total },
+lastRefreshOk, lastRefreshAt }`. Counts use distinct endpoints (SAIL counts as one feed);
+loaded means a parsed cached document still within its hard age limit, including usable
+stale data. It does not guarantee an active signing key or verify a visitor. The last
+refresh outcome covers any directory/feed; time is Unix seconds, null before completion.
+The method never fetches and contains no request data. Optional `onRefresh(event)` receives
+`{ kind: 'directory' | 'ip' | 'sail', ok, at, reason? }` after each completed refresh,
+including background work. Failure reasons are short codes, never transport messages.
+Callback exceptions are ignored. The library itself never logs; the integrator can use
+this callback for rate-limited operational warnings.
 
 ## Cache-only verification for collectors
 
@@ -124,7 +157,7 @@ Other/absent signature tags are reported per-label as none/ignored_non_wba and d
 
 Selection is pure and tested: valid signature wins; otherwise definitive invalid wins over indeterminate. An invalid presented signature never becomes ip_match, though independent IP evidence is attached after evaluable signature failures. Early malformed/resource/context failures avoid further fetches. Unknown WBA Signature-Agent identities trigger no network I/O. Identity claims attached only to ignored non-WBA signatures do not restrict independent IP checks. Unsupported dictionary members are untrusted for their label without poisoning valid peers.
 
-`toAnalyticsFields` exports only flat strings: agent_claim = signature_agent / ua_token / none, agent_verification = the enum, agent_operator = verified operator / none. Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
+`toAnalyticsFields` exports only flat strings: agent_claim = signature_agent / ua_token / none, agent_verification = the enum, agent_operator = verified operator / none, agent_purpose = user_directed / crawler / unknown. Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
 
 ## Signature profile and key rules
 
@@ -202,3 +235,7 @@ The generic Google user-triggered-fetchers feed has an empty token mapping; it d
 Standards: [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421.html), [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638), [RFC 8037 A.3](https://www.rfc-editor.org/rfc/rfc8037#appendix-A.3), [RFC 9864](https://www.rfc-editor.org/rfc/rfc9864), evolving [WBA draft](https://www.ietf.org/archive/id/draft-ietf-webbotauth-httpsig-protocol-01.txt). The supported compatibility policy is documented here; this is not a claim of full RFC/draft conformance.
 
 Own code: MIT, LICENSE. Cloudflare fixtures: Apache-2.0, pinned commit and licence in test/fixtures/NOTICE.md. RFC code examples: test/fixtures/IETF-NOTICE.txt, linked from the interop test. Dependency licences stay with installed packages. Fixture hashes cover local copies; live public directories and approved sanitized capture fixtures are test data, not a request logging facility.
+
+## Changelog
+
+- **0.2.0 (2026-11-20):** add verified-only agent_purpose, cache status and public refresh metadata; retain cache-only verification and bounded stale-while-revalidate.

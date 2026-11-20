@@ -41,3 +41,11 @@ configured external replay store is indeterminate/insufficient_context, never si
 from replay protection. A collector may send without labels on cache_miss; later evidence only
 affects later hits. Bounded synchronous parsing/crypto still takes time, but endpoint outages
 add no wait to this path.
+
+Purpose is registry product metadata applied only to verified evidence. Signed identities
+and purpose-specific feeds take precedence over unsigned UA tokens. Shared-feed token
+conflicts and all unverified results are unknown. It does not prove user intent or authorize
+conversion routing. Cache health exposes only endpoint counts and the most recent completed
+refresh outcome/time; a document can be loaded without an active key. Refresh callbacks carry
+kind/outcome/time/reason only and cannot affect verification. Logging and rate limiting of
+operational warnings belong to the integrator.

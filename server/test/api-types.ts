@@ -37,3 +37,7 @@ void warmed.warm({ ipLists: true, refreshAhead: true }).then((result) => {
   void urls;
   warmed.close();
 });
+
+const health = verifier.status();
+const lastRefresh: boolean | null = health.lastRefreshOk;
+void lastRefresh;

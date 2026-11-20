@@ -1,7 +1,42 @@
 import { dnsConfig } from './rdns.js';
 import { compilePrefixes } from './ip.js';
 import { normalizeAuthority } from './fields.js';
-import type { Registry, VerifierOptions, Operator, IpList } from './types.js';
+import type { Registry, VerifierOptions, Operator, IpList, PurposePolicy } from './types.js';
+
+function purposePolicy(value: PurposePolicy | undefined): PurposePolicy | undefined {
+  if (value === undefined) return;
+  const valid = (purpose: unknown) =>
+    ['user_directed', 'crawler', 'unknown'].includes(purpose as string);
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !Array.isArray(value.sources) ||
+    !value.sources.length ||
+    value.sources.length > 8 ||
+    typeof value.checked !== 'string' ||
+    (value.signatureAgent !== undefined && !valid(value.signatureAgent))
+  )
+    throw new TypeError('Invalid purpose policy');
+  value.sources.forEach(httpsUrl);
+  for (const map of [value.ipLists, value.uaTokens])
+    if (
+      map !== undefined &&
+      (!map ||
+        typeof map !== 'object' ||
+        Array.isArray(map) ||
+        Object.entries(map).length > 64 ||
+        Object.entries(map).some(
+          ([key, purpose]) => !key.length || key.length > 128 || !valid(purpose),
+        ))
+    )
+      throw new TypeError('Invalid purpose mapping');
+  return {
+    ...value,
+    sources: [...value.sources],
+    ipLists: value.ipLists ? { ...value.ipLists } : undefined,
+    uaTokens: value.uaTokens ? { ...value.uaTokens } : undefined,
+  };
+}
 
 function httpsUrl(value: unknown): void {
   if (typeof value !== 'string' || value.length > 2048) throw new TypeError('Invalid registry URL');
@@ -137,6 +172,7 @@ export function validateConfig(options: VerifierOptions) {
     });
     return {
       ...operator,
+      purposes: purposePolicy(operator.purposes),
       ipLists,
       reverseDns,
       staticPrefixes: operator.staticPrefixes ? [...operator.staticPrefixes] : undefined,
@@ -148,6 +184,8 @@ export function validateConfig(options: VerifierOptions) {
     throw new TypeError('Invalid fetcher');
   if (options.now !== undefined && typeof options.now !== 'function')
     throw new TypeError('Invalid clock');
+  if (options.onRefresh !== undefined && typeof options.onRefresh !== 'function')
+    throw new TypeError('Invalid refresh callback');
   if (options.nonceStore !== undefined && typeof options.nonceStore?.insertIfAbsent !== 'function')
     throw new TypeError('Invalid nonceStore');
   const maxLifetimeSeconds = options.maxLifetimeSeconds ?? 86400;
@@ -164,6 +202,7 @@ export function validateConfig(options: VerifierOptions) {
     reverseDns: dnsConfig(options.reverseDns),
     fetcher: options.fetcher ?? fetch,
     now: options.now ?? (() => Date.now() / 1000),
+    onRefresh: options.onRefresh,
     nonceStore: options.nonceStore,
     deadlineMs: positive(options.deadlineMs ?? 1500, 'deadlineMs'),
     fetchTimeoutMs: positive(options.fetchTimeoutMs ?? 1000, 'fetchTimeoutMs'),

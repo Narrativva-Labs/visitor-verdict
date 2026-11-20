@@ -32,6 +32,18 @@ export interface Operator {
   staticPrefixes?: readonly string[];
   /** Primary-source-confirmed suffix rules; never inferred from a request. */
   reverseDns?: readonly ReverseDnsRule[];
+  /** Documented product purpose, applied only after operator verification. */
+  purposes?: PurposePolicy;
+}
+/** Operator-declared product role; never a finding about a person's intent or authorization. */
+export type AgentPurpose = 'user_directed' | 'crawler' | 'unknown';
+/** Exact registry evidence names and known UA tokens, with primary-source provenance. */
+export interface PurposePolicy {
+  signatureAgent?: AgentPurpose;
+  ipLists?: Readonly<Record<string, AgentPurpose>>;
+  uaTokens?: Readonly<Record<string, AgentPurpose>>;
+  sources: readonly string[];
+  checked: string;
 }
 /** An operator-published IP feed, optionally restricted to known claims. */
 export interface IpList {
@@ -53,6 +65,7 @@ export interface NonceStore {
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 /** Verification evidence. No client IP, raw headers, signature bytes or nonce are returned. */
 export interface AgentVerdict {
+  agent_purpose: AgentPurpose;
   claimed: { uaTokens: string[]; signatureAgents: string[] };
   verification: 'signature_valid' | 'signature_invalid' | 'no_signature' | 'ip_match' | 'none';
   reason: string;
@@ -95,6 +108,8 @@ export interface VerifierOptions {
   now?: () => number;
   /** Explicit opt-in: PTR queries disclose bot-claiming clients’ IPs to the resolver. */
   reverseDns?: ReverseDnsOptions;
+  /** Optional operational callback. Contains public cache metadata only; callback errors are ignored. */
+  onRefresh?: (event: RefreshEvent) => void;
 }
 /** Reusable verifier with a private cache, bounded by the configured registry. */
 export interface AgentVerifier {
@@ -103,6 +118,22 @@ export interface AgentVerifier {
   warm(options?: WarmOptions): Promise<WarmResult>;
   /** Stop refresh-ahead timers. verify() and warm() keep working without timers. */
   close(): void;
+  /** Counts usable documents and the most recently completed refresh; never fetches or exposes visitors. */
+  status(): VerifierStatus;
+}
+/** Aggregate in-memory cache health. Times are Unix seconds; null means no refresh has completed. */
+export interface VerifierStatus {
+  directories: { loaded: number; total: number };
+  ipLists: { loaded: number; total: number };
+  lastRefreshOk: boolean | null;
+  lastRefreshAt: number | null;
+}
+/** A completed public-document refresh; no URL, IP, request headers, key or nonce. */
+export interface RefreshEvent {
+  kind: 'directory' | 'ip' | 'sail';
+  ok: boolean;
+  at: number;
+  reason?: string;
 }
 /** Per-request behavior; configuration and network targets remain construction-time options. */
 export interface VerifyOptions {

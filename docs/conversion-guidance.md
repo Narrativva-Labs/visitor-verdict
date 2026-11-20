@@ -1,5 +1,7 @@
 # Conversion guidance for AI agents and bots
 
+**Reference design; not implemented in the library or the collector.**
+
 Recommendations as of November 2026. They are not part of the library: the verifier and the browser detector only label traffic. What you send to ad platforms is the integrator's decision. Evidence is still thin in places; each rule says why it exists, and the open questions are listed at the end.
 
 ## The principle
@@ -17,6 +19,9 @@ A Web Bot Auth signature proves which operator runs the agent (for example OpenA
 | Clear automation | Browser detector: `automated` (headless, WebDriver), no valid signature |
 | Crawler | Verified or declared crawler with no intent to act (GPTBot, Googlebot, CCBot) |
 
+Use verified `agent_purpose=user_directed` to distinguish user-directed products from
+`crawler`; `unknown` does not settle intent. Unverified ≠ human.
+
 ## Rules
 
 | Visitor | Paid order (payment captured, fraud checks passed) | Lead or sign-up, unverified | Lead verified (confirmed email, CRM qualified) |
@@ -29,9 +34,43 @@ A Web Bot Auth signature proves which operator runs the agent (for example OpenA
 Additional rules:
 
 1. **Never send the visitor label to ad platforms.** Use it in server-side GTM only to decide send / wait / drop. The label stays in GA4. Reasons: data minimisation, and no platform defines a parameter for it.
-2. **Do not send an agent's IP address and user agent as the customer's** in Meta Conversions API (`client_ip_address`, `client_user_agent`). They belong to the operator's data centre. Match on the customer's hashed email and phone.
+2. **Omit the agent's IP from Meta `client_ip_address`.** For `action_source=website`, keep `client_user_agent` and `event_source_url`: Meta requires both for website events ([customer information parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/customer-information-parameters), [server event parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/server-event)). A UA describes browser context, not the customer's identity. For backend-confirmed agent orders, consider a non-website `action_source` such as `system_generated` only when it truthfully describes where the event occurred; check the attribution and optimisation impact. A webhook alone does not change a website purchase's action source. Use customer match data only under the site's consent and platform rules.
 3. **Send orders from the server after payment confirmation, with the order ID.** Google Ads can then retract or restate a conversion after a refund or chargeback.
 4. **Delete nothing in GA4.** Report conversion rate and A/B tests with humans only, or show agents and automation separately. This is where most of the value lies.
+
+## Server-side GTM reference design
+
+A trusted verifying proxy runs the Node library **in front of sGTM**, strips inbound
+`X-VV-*` lookalikes and sets its own `X-VV-Verification`, `X-VV-Operator`,
+`X-VV-Purpose` and route headers. The library does not run in sGTM's sandbox. The sGTM
+Client reads these with [getRequestHeader](https://developers.google.com/tag-platform/tag-manager/server-side/api#getrequestheader)
+and exposes event-data variables; a Regex Table maps the trusted conversion status and
+purpose to `send`, `hold` or `drop`. Keep all events in GA4 with their labels.
+
+| Backend conversion state | Ads/Meta route |
+|---|---|
+| Paid order, payment settled and fraud checks passed | send; preserve order ID/deduplication |
+| Agent-made lead not yet confirmed | hold until verified by email/CRM/backend |
+| Clear automation with an unverified lead, or crawler activity | drop from advertising |
+| Confirmed lead | send under the site's normal consent and quality rules |
+
+Add exception triggers to advertising tags for hold/drop. Hold means the backend
+later emits a confirmed conversion; sGTM is not a durable queue. Use
+[Transformations](https://developers.google.com/tag-platform/tag-manager/server-side/transformations)
+to exclude agent_verification, agent_operator, agent_purpose, agent_claim,
+traffic_class and traffic_phase from Ads/Meta tags, while
+leaving GA4 labels available. Omit the agent's IP for Meta, but preserve required
+website UA/source-URL fields as in rule 2. Transformations change only Event Data;
+a CAPI tag template may fall back to getRemoteAddress() or getRequestHeader('user-agent').
+Excluding ip_override/user_agent therefore does not guarantee what leaves the tag.
+**Verify the outgoing CAPI request in sGTM preview**, including user_data, action_source
+and event_source_url; configure the actual template's fallback behavior explicitly.
+
+Compute the verdict on the **checkout request in the shop backend**, store the compact
+verdict/purpose with the order, and combine it with backend paid-order/verified-lead
+status. A later payment webhook or cookieless analytics ping cannot reconstruct that
+request's identity. No session database, backend confirmation, conversion holding or
+advertising routing is implemented here or in Vanilla; Vanilla sends directly to GA4.
 
 ## Why
 

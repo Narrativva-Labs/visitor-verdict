@@ -1,7 +1,8 @@
 import { additionalOperators } from './registry-extra.js';
+import { purposePolicies } from './registry-purposes.js';
 import type { Registry } from './types.js';
 // Exact operator identities and endpoints; no discovery from request-controlled URLs.
-export const defaultRegistry: Registry = [
+const operators: Registry = [
   ...additionalOperators,
   {
     operator: 'apple',
@@ -203,3 +204,7 @@ export const defaultRegistry: Registry = [
     ],
   },
 ];
+export const defaultRegistry: Registry = operators.map((operator) => ({
+  ...operator,
+  purposes: purposePolicies[operator.operator],
+}));
