@@ -90,6 +90,8 @@ export async function fetchBounded(
     cancelBody(response);
   }
 }
+export const FEED_CACHE_SIZE = 32;
+export const DIRECTORY_CACHE_SIZE = 128;
 export class AgentCache {
   private entries = new Map<string, Entry>();
   constructor(
@@ -107,9 +109,24 @@ export class AgentCache {
     const cacheKey = kind + ':' + url;
     let entry = this.entries.get(cacheKey);
     if (!entry) {
+      const directory = kind === 'directory';
+      const keys = [...this.entries.keys()].filter(
+        (key) => key.startsWith('directory:') === directory,
+      );
+      const limit = directory ? DIRECTORY_CACHE_SIZE : FEED_CACHE_SIZE;
+      if (keys.length >= limit) {
+        const victim = keys.find((key) => {
+          const value = this.entries.get(key)!;
+          return !value.flight && !value.forcedFlight;
+        });
+        if (!victim) throw new Failure('feed_cache_busy', true);
+        this.entries.delete(victim);
+      }
       entry = { until: 0, cooldown: 0 };
       this.entries.set(cacheKey, entry);
     }
+    this.entries.delete(cacheKey);
+    this.entries.set(cacheKey, entry);
     if (!force && entry.data !== undefined && now < entry.until) return entry.data as T;
     const pending = force
       ? (entry.forcedFlight ?? entry.flight)

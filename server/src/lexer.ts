@@ -39,13 +39,7 @@ function lex(raw: string): Lexeme[] {
       while (i < raw.length && raw[i] !== ':') i++;
       if (i === raw.length) throw new Failure('malformed_structured_field');
       const value = raw.slice(start + 1, i++);
-      if (
-        !/^[A-Za-z0-9+/]*={0,2}$/.test(value) ||
-        Buffer.from(value, 'base64').toString('base64').replace(/=+$/, '') !==
-          value.replace(/=+$/, '')
-      ) {
-        throw new Failure('malformed_base64');
-      }
+      if (!/^[A-Za-z0-9+/=]*$/.test(value)) throw new Failure('malformed_base64');
       out.push({ kind: 'bytes', value, start, end: i });
       continue;
     }

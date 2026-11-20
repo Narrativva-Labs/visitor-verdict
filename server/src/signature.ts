@@ -2,7 +2,7 @@ import { verify } from 'node:crypto';
 import type { Dictionary, InnerList } from 'structured-headers';
 import { signatureBase, type AgentClaims, type Context } from './fields.js';
 import { Failure, failure } from './errors.js';
-import { publicKeys, activeKey } from './keys.js';
+import { publicKeys, activeKey, withKidAliases } from './keys.js';
 import { checkSignaturePolicy } from './policy.js';
 import type { AgentCache } from './cache.js';
 import type { AgentVerdict, Registry, NonceStore, SignatureResult } from './types.js';
@@ -22,6 +22,7 @@ interface SignatureContext {
   nonceStore?: NonceStore;
   nonceTimeoutMs: number;
   invalidTimestamps: Set<string>;
+  maxLifetimeSeconds: number;
 }
 function checkActive(signal: AbortSignal) {
   if (signal.aborted) throw new Failure('deadline_exceeded', true);
@@ -67,7 +68,7 @@ export async function evaluateSignature(
       throw new Failure('malformed_signature');
     const inner = member as InnerList;
     if (env.invalidTimestamps.has(label)) throw new Failure('invalid_timestamp_type');
-    const keyid = checkSignaturePolicy(inner, env.now);
+    const keyid = checkSignaturePolicy(inner, env.now, env.maxLifetimeSeconds);
     const covered = inner[0].filter(([name]) => name === 'signature-agent');
     let identity = env.agent.legacy;
     if (env.agent.members) {
@@ -81,10 +82,16 @@ export async function evaluateSignature(
     const base = signatureBase(env.context, env.headers, inner);
     const bytes = Buffer.from(sig[0]);
     if (bytes.length !== 64) throw new Failure('invalid_signature_length');
-    let keys = await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys);
+    let keys = withKidAliases(
+      await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys),
+      operator.allowKidAlias === true,
+    );
     checkActive(env.signal);
     if (!keys.has(keyid))
-      keys = await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, true);
+      keys = withKidAliases(
+        await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, true),
+        operator.allowKidAlias === true,
+      );
     checkActive(env.signal);
     const key = keys.get(keyid);
     if (!key || !activeKey(key, env.now)) throw new Failure('unknown_keyid', true);

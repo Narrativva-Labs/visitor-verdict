@@ -1,3 +1,4 @@
+import { Resolver } from 'node:dns/promises';
 // Public declarations must work with Node 22 types and no DOM lib or skipLibCheck.
 import type { IncomingHttpHeaders } from 'node:http';
 import {
@@ -17,3 +18,10 @@ void fields;
 
 const required: string[] = requiredHeaderNames();
 void required;
+
+void createVerifier({
+  registry: defaultRegistry,
+  authorities: ['example.com'],
+  reverseDns: { enabled: true, resolver: new Resolver() },
+  maxLifetimeSeconds: 86400,
+});

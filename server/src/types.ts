@@ -20,12 +20,18 @@ export interface Operator {
   operator: string;
   signatureAgent?: string;
   directoryUrl?: string;
+  /** Operator-specific compatibility for non-thumbprint keyid values; default false. */
+  allowKidAlias?: boolean;
   verifiedByCapture: boolean;
   source: string;
   checked: string;
   ipLists: readonly IpList[];
   /** Additional server-only UA tokens; browser defaults remain unchanged. */
   extraUaTokens?: readonly string[];
+  /** Static operator-published ranges, gated by extraUaTokens. */
+  staticPrefixes?: readonly string[];
+  /** Primary-source-confirmed suffix rules; never inferred from a request. */
+  reverseDns?: readonly ReverseDnsRule[];
 }
 /** An operator-published IP feed, optionally restricted to known claims. */
 export interface IpList {
@@ -52,13 +58,14 @@ export interface AgentVerdict {
   reason: string;
   verified?: {
     operator: string;
-    method: 'signature' | 'ip';
+    method: 'signature' | 'ip' | 'rdns';
     signatureAgent?: string;
     keyid?: string;
     keyidForm?: 'thumbprint' | 'kid';
   };
   signatures: SignatureResult[];
   ip?: { operator: string; list: string };
+  rdns?: { operator: string };
 }
 /** Per-label result retained even when another valid signature wins. */
 export interface SignatureResult {
@@ -72,11 +79,39 @@ export interface VerifierOptions {
   authorities: readonly string[];
   fetcher?: Fetcher;
   deadlineMs?: number;
+  /** Maximum expires-created lifetime; default 86400 seconds, longer lifetimes are indeterminate. */
+  maxLifetimeSeconds?: number;
   fetchTimeoutMs?: number;
   nonceStore?: NonceStore;
   now?: () => number;
+  /** Explicit opt-in: PTR queries disclose bot-claiming clients’ IPs to the resolver. */
+  reverseDns?: ReverseDnsOptions;
 }
 /** Reusable verifier with a private cache, bounded by the configured registry. */
 export interface AgentVerifier {
   verify(input: AgentRequest): Promise<AgentVerdict>;
+}
+
+/** Injectable DNS transport, compatible with node:dns/promises Resolver. */
+export interface DnsResolver {
+  reverse(ip: string): Promise<string[]>;
+  resolve4(host: string): Promise<string[]>;
+  resolve6(host: string): Promise<string[]>;
+  cancel?(): void;
+}
+/** Optional network verification and bounded, memory-only per-IP retention. Disabled by default. */
+export interface ReverseDnsOptions {
+  enabled: boolean;
+  resolver?: DnsResolver;
+  timeoutMs?: number;
+  cacheSize?: number;
+  ttlSec?: number;
+}
+/** Primary-source-confirmed DNS names, scoped to the relevant UA tokens. */
+export interface ReverseDnsRule {
+  uaTokens: readonly string[];
+  suffixes: readonly string[];
+  source: string;
+  checked: string;
+  ipv4Only?: boolean;
 }

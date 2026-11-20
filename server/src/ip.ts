@@ -42,7 +42,20 @@ export function matchesIp(ip: string, prefixes: unknown): boolean {
 }
 function decodeSail(data: unknown): Map<string, BlockList> {
   const doc = data as SailDocument;
+  let count = 0;
+  for (const prefixes of doc.services.values()) count += prefixes.length;
+  if (count > 8192) throw new Failure('invalid_ip_list', true);
   return new Map([...doc.services].map(([name, prefixes]) => [name, compilePrefixes(prefixes)]));
+}
+export function staticBlocks(registry: Registry): Map<string, BlockList> {
+  return new Map(
+    registry
+      .filter((operator) => operator.staticPrefixes?.length)
+      .map((operator) => [
+        operator.operator,
+        compilePrefixes(operator.staticPrefixes!.map((value) => ({ ipv4Prefix: value }))),
+      ]),
+  );
 }
 export async function ipEvidence(
   ip: string | undefined,
@@ -50,8 +63,14 @@ export async function ipEvidence(
   registry: Registry,
   cache: AgentCache,
   now: number,
+  staticRanges?: Map<string, BlockList>,
 ): Promise<{ ip?: AgentVerdict['ip']; unavailable: boolean }> {
   if (typeof ip !== 'string' || !isIP(ip)) return { unavailable: false };
+  for (const operator of registry) {
+    if (!operator.extraUaTokens?.some((token) => ua.includes(token))) continue;
+    if (staticRanges?.get(operator.operator)?.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'))
+      return { ip: { operator: operator.operator, list: 'published_static' }, unavailable: false };
+  }
   const tasks: Promise<AgentVerdict['ip']>[] = [];
   for (const operator of registry)
     for (const list of operator.ipLists) {

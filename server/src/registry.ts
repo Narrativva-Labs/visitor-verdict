@@ -1,8 +1,18 @@
+import { additionalOperators } from './registry-extra.js';
 import type { Registry } from './types.js';
 // Exact operator identities and endpoints; no discovery from request-controlled URLs.
 export const defaultRegistry: Registry = [
+  ...additionalOperators,
   {
     operator: 'apple',
+    reverseDns: [
+      {
+        uaTokens: ['Applebot'],
+        suffixes: ['applebot.apple.com'],
+        source: 'https://support.apple.com/en-sg/119829',
+        checked: '2026-11-20',
+      },
+    ],
     verifiedByCapture: false,
     checked: '2026-11-20',
     source: 'https://support.apple.com/en-sg/119829',
@@ -16,6 +26,14 @@ export const defaultRegistry: Registry = [
   },
   {
     operator: 'microsoft',
+    reverseDns: [
+      {
+        uaTokens: ['bingbot'],
+        suffixes: ['search.msn.com'],
+        source: 'https://www.bing.com/webmasters/help/how-to-verify-bingbot-3905dc26',
+        checked: '2026-11-20',
+      },
+    ],
     verifiedByCapture: false,
     checked: '2026-11-20',
     source: 'https://www.bing.com/webmasters/help/how-to-verify-bingbot-3905dc26',
@@ -34,6 +52,11 @@ export const defaultRegistry: Registry = [
         name: 'mistralai-user',
         url: 'https://mistral.ai/mistralai-user-ips.json',
         uaTokens: ['MistralAI-User'],
+      },
+      {
+        name: 'mistralai-index',
+        url: 'https://mistral.ai/mistralai-index-ips.json',
+        uaTokens: ['MistralAI-Index'],
       },
     ],
   },
@@ -72,6 +95,29 @@ export const defaultRegistry: Registry = [
   },
   {
     operator: 'google',
+    extraUaTokens: ['Googlebot'],
+    allowKidAlias: true,
+    reverseDns: [
+      {
+        uaTokens: [
+          'Google-Agent',
+          'Google-GeminiNotebook',
+          'Google-NotebookLM',
+          'Gemini-Deep-Research',
+        ],
+        suffixes: ['google.com', 'googleusercontent.com'],
+        source:
+          'https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests',
+        checked: '2026-11-20',
+      },
+      {
+        uaTokens: ['Google-CloudVertexBot', 'Googlebot'],
+        suffixes: ['googlebot.com'],
+        source:
+          'https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests',
+        checked: '2026-11-20',
+      },
+    ],
     signatureAgent: 'https://agent.bot.goog',
     directoryUrl: 'https://agent.bot.goog/.well-known/http-message-signatures-directory',
     verifiedByCapture: false,
@@ -91,7 +137,7 @@ export const defaultRegistry: Registry = [
       {
         name: 'common-crawlers',
         url: 'https://developers.google.com/static/crawling/ipranges/common-crawlers.json',
-        uaTokens: ['Google-CloudVertexBot'],
+        uaTokens: ['Google-CloudVertexBot', 'Googlebot'],
       },
       {
         name: 'user-triggered-fetchers',

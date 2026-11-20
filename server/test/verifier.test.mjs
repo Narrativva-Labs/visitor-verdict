@@ -133,7 +133,7 @@ const mutations = [
   ],
   ['headers_too_large', (r) => (r.headers.signature = 'x'.repeat(16385))],
   ['malformed_base64', (r) => (r.headers.signature = 's=:%%%:')],
-  ['malformed_base64', (r) => (r.headers.signature = 's=:AAA=AAAA:')],
+  ['malformed_structured_field', (r) => (r.headers.signature = 's=:AAA=AAAA:')],
   ['invalid_signature_length', (r) => (r.headers.signature = 's=:YQ==:')],
   [
     'unsupported_component',
@@ -293,7 +293,11 @@ test('std-7: each Signature-Agent field line has OWS stripped', async () => {
 });
 for (const name of ['google', 'duckduckgo', 'browserbase', 'manus', 'openai'])
   test('live ' + name + ' directory parses', () => {
-    const keys = publicKeys(fixture(name + '-directory-2026-11-20.json'));
+    const keys = publicKeys(
+      fixture(name + '-directory-2026-11-20.json'),
+      undefined,
+      name === 'google',
+    );
     assert.ok(keys.size > 0);
     if (name === 'google') assert.ok(keys.has('mhxuPw'));
   });
@@ -304,9 +308,12 @@ test('std-2: custom kid AND thumbprint index, Ed25519 alg, multiple key_ops and 
       { ...jwk, kid: 'custom', alg: 'Ed25519', key_ops: ['verify', 'sign'] },
     ],
   };
-  const keys = publicKeys(data);
+  const keys = publicKeys(data, undefined, true);
   assert.equal(keys.get('custom'), keys.get(keyid));
-  const v = makeVerifier({ fetcher: async () => Response.json(data) });
+  const v = makeVerifier({
+    registry: [{ ...operator, allowKidAlias: true }],
+    fetcher: async () => Response.json(data),
+  });
   assert.equal((await v.verify(signed({ kid: 'custom' }))).verified.keyidForm, 'kid');
   assert.equal((await v.verify(signed())).verified.keyidForm, 'thumbprint');
 });

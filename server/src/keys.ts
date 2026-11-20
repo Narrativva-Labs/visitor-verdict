@@ -25,7 +25,11 @@ const keyRules: Array<(key: Jwk) => boolean> = [
 export function activeKey(key: PublicKeyRecord, now: number): boolean {
   return (key.nbf === undefined || now >= key.nbf) && (key.exp === undefined || now < key.exp);
 }
-export function publicKeys(data: unknown, now?: number): Map<string, PublicKeyRecord> {
+export function publicKeys(
+  data: unknown,
+  now?: number,
+  allowKidAlias = false,
+): Map<string, PublicKeyRecord> {
   const keys = (data as { keys?: unknown[] })?.keys;
   if (!Array.isArray(keys) || keys.length > 32) throw new Failure('invalid_directory', true);
   const result = new Map<string, PublicKeyRecord>();
@@ -46,12 +50,29 @@ export function publicKeys(data: unknown, now?: number): Map<string, PublicKeyRe
       nbf: k.nbf as number | undefined,
       exp: k.exp as number | undefined,
     };
-    for (const id of new Set([thumbprint, record.kid].filter((v): v is string => !!v))) {
+    for (const id of new Set(
+      [thumbprint, ...(allowKidAlias ? [record.kid] : [])].filter((v): v is string => !!v),
+    )) {
       if (result.has(id)) throw new Failure('ambiguous_keyid', true);
       result.set(id, record);
     }
   }
   if (now !== undefined)
     for (const [id, record] of result) if (!activeKey(record, now)) result.delete(id);
+  return result;
+}
+
+export function withKidAliases(
+  keys: Map<string, PublicKeyRecord>,
+  allowed: boolean,
+): Map<string, PublicKeyRecord> {
+  if (!allowed) return keys;
+  const result = new Map(keys);
+  for (const key of keys.values()) {
+    if (!key.kid || key.kid === key.thumbprint) continue;
+    if (result.has(key.kid) && result.get(key.kid) !== key)
+      throw new Failure('ambiguous_keyid', true);
+    result.set(key.kid, key);
+  }
   return result;
 }

@@ -1,3 +1,5 @@
+import { dnsConfig } from './rdns.js';
+import { compilePrefixes } from './ip.js';
 import { normalizeAuthority } from './fields.js';
 import type { Registry, VerifierOptions, Operator, IpList } from './types.js';
 
@@ -37,6 +39,7 @@ export function validateConfig(options: VerifierOptions) {
     throw new TypeError('Invalid registry');
   const identities = new Set<string>();
   const urls = new Set<string>();
+  let staticCount = 0;
   const registry: Registry = options.registry.map((operator: Operator) => {
     if (
       !operator ||
@@ -57,6 +60,53 @@ export function validateConfig(options: VerifierOptions) {
         ))
     )
       throw new TypeError('Invalid extra UA tokens');
+    if (operator.staticPrefixes !== undefined) {
+      if (!Array.isArray(operator.staticPrefixes) || !operator.extraUaTokens?.length)
+        throw new TypeError('Invalid static ranges');
+      staticCount += operator.staticPrefixes.length;
+      if (
+        staticCount > 8192 ||
+        !operator.staticPrefixes.every((value) => typeof value === 'string' && value.length <= 64)
+      )
+        throw new TypeError('Too many static ranges');
+      compilePrefixes(operator.staticPrefixes.map((value) => ({ ipv4Prefix: value })));
+    }
+    if (
+      operator.reverseDns !== undefined &&
+      (!Array.isArray(operator.reverseDns) || operator.reverseDns.length > 16)
+    )
+      throw new TypeError('Invalid reverse DNS rules');
+    const reverseDns = operator.reverseDns?.map((rule) => {
+      if (
+        !rule ||
+        !Array.isArray(rule.uaTokens) ||
+        !rule.uaTokens.length ||
+        rule.uaTokens.length > 64 ||
+        !rule.uaTokens.every(
+          (token: unknown) => typeof token === 'string' && token.length > 0 && token.length <= 128,
+        ) ||
+        !Array.isArray(rule.suffixes) ||
+        !rule.suffixes.length ||
+        rule.suffixes.length > 16 ||
+        !rule.suffixes.every(
+          (suffix: unknown) =>
+            typeof suffix === 'string' &&
+            suffix.length <= 253 &&
+            suffix.includes('.') &&
+            suffix === suffix.toLowerCase() &&
+            suffix
+              .split('.')
+              .every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)),
+        ) ||
+        typeof rule.source !== 'string' ||
+        typeof rule.checked !== 'string' ||
+        (rule.ipv4Only !== undefined && typeof rule.ipv4Only !== 'boolean')
+      )
+        throw new TypeError('Invalid reverse DNS rule');
+      return { ...rule, uaTokens: [...rule.uaTokens], suffixes: [...rule.suffixes] };
+    });
+    if (operator.allowKidAlias !== undefined && typeof operator.allowKidAlias !== 'boolean')
+      throw new TypeError('Invalid kid alias flag');
     if (operator.signatureAgent !== undefined || operator.directoryUrl !== undefined) {
       httpsUrl(operator.signatureAgent);
       httpsUrl(operator.directoryUrl);
@@ -88,6 +138,8 @@ export function validateConfig(options: VerifierOptions) {
     return {
       ...operator,
       ipLists,
+      reverseDns,
+      staticPrefixes: operator.staticPrefixes ? [...operator.staticPrefixes] : undefined,
       extraUaTokens: operator.extraUaTokens ? [...operator.extraUaTokens] : undefined,
     };
   });
@@ -98,9 +150,14 @@ export function validateConfig(options: VerifierOptions) {
     throw new TypeError('Invalid clock');
   if (options.nonceStore !== undefined && typeof options.nonceStore?.insertIfAbsent !== 'function')
     throw new TypeError('Invalid nonceStore');
+  const maxLifetimeSeconds = options.maxLifetimeSeconds ?? 86400;
+  if (!Number.isSafeInteger(maxLifetimeSeconds) || maxLifetimeSeconds < 1)
+    throw new TypeError('Invalid maxLifetimeSeconds');
   return {
+    maxLifetimeSeconds,
     registry,
     authorities,
+    reverseDns: dnsConfig(options.reverseDns),
     fetcher: options.fetcher ?? fetch,
     now: options.now ?? (() => Date.now() / 1000),
     nonceStore: options.nonceStore,

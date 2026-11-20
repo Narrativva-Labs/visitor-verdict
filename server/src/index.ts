@@ -8,7 +8,8 @@ import { dictionary, coveredHeaderNames as collectCoveredHeaderNames } from './f
 import { Failure, failure } from './errors.js';
 import { checkContext, selectOutcome } from './policy.js';
 import { evaluateSignature } from './signature.js';
-import { ipEvidence } from './ip.js';
+import { ReverseDnsVerifier } from './rdns.js';
+import { staticBlocks, ipEvidence } from './ip.js';
 import type { AgentRequest, AgentVerdict, AgentVerifier, VerifierOptions } from './types.js';
 export type * from './types.js';
 export { defaultRegistry } from './registry.js';
@@ -36,6 +37,10 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
   const config = validateConfig(options);
   const cache = new AgentCache(config.fetcher, config.fetchTimeoutMs);
   const parseClaims = createClaimParser(config.registry);
+  const staticRanges = staticBlocks(config.registry);
+  const rdns = config.reverseDns
+    ? new ReverseDnsVerifier(config.reverseDns, config.registry)
+    : undefined;
 
   async function run(
     input: AgentRequest,
@@ -83,6 +88,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             nonceStore: config.nonceStore,
             nonceTimeoutMs: config.fetchTimeoutMs,
             invalidTimestamps,
+            maxLifetimeSeconds: config.maxLifetimeSeconds,
           });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
           verdict.signatures.push(evaluation.result);
@@ -91,6 +97,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
       let ipUnavailable = false;
+      let dnsUnavailable = false;
       const onlyIgnored =
         verdict.signatures.length > 0 &&
         verdict.signatures.every((s) => s.reason === 'ignored_non_wba');
@@ -101,17 +108,37 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           config.registry,
           cache,
           now,
+          staticRanges,
         );
         verdict.ip = evidence.ip;
         ipUnavailable = evidence.unavailable;
+        if (!verdict.ip && !verdict.verified && rdns) {
+          const dns = await rdns.verify(input.clientIp, claims.uaTokens, now, signal);
+          if (dns.operator) verdict.rdns = { operator: dns.operator };
+          else if (dns.unavailable && !ipUnavailable) dnsUnavailable = true;
+        }
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
       Object.assign(
         verdict,
-        selectOutcome(verdict.signatures, presented, verdict.ip, ipUnavailable),
+        selectOutcome(
+          verdict.signatures,
+          presented,
+          verdict.ip ??
+            (verdict.rdns ? { operator: verdict.rdns.operator, list: 'rdns' } : undefined),
+          ipUnavailable,
+        ),
       );
-      if (verdict.verification === 'ip_match')
-        verdict.verified = { operator: verdict.ip!.operator, method: 'ip' };
+      if (verdict.verification === 'ip_match') {
+        if (verdict.ip) verdict.verified = { operator: verdict.ip.operator, method: 'ip' };
+        else {
+          verdict.reason = 'reverse_dns_match';
+          verdict.verified = { operator: verdict.rdns!.operator, method: 'rdns' };
+        }
+      } else if (verdict.verification === 'no_signature' && dnsUnavailable) {
+        verdict.verification = 'none';
+        verdict.reason = 'reverse_dns_unavailable';
+      }
     } catch (error) {
       const f = failure(error);
       verdict.verification = presented && !f.indeterminate ? 'signature_invalid' : 'none';

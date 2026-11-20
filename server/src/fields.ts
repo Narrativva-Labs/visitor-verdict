@@ -57,7 +57,14 @@ export function agents(raw: string): AgentClaims {
       throw new Failure('malformed_signature_agent');
     }
   }
-  const members = dictionary(raw);
+  let members: Dictionary;
+  try {
+    members = dictionary(raw);
+  } catch (error) {
+    if (error instanceof Failure && error.reason === 'duplicate_key')
+      throw new Failure('ambiguous_signature_agent', true);
+    throw error;
+  }
   const values: string[] = [];
   for (const [label, item] of members) {
     if (typeof item[0] !== 'string') continue;
@@ -115,7 +122,12 @@ export function signatureBase(input: Context, h: Map<string, string[]>, inner: I
     if (name === 'content-digest') throw new Failure('insufficient_context', true);
     let value: string;
     if (name === '@authority' && !params.size) value = input.authority;
-    else if (name === '@method' && !params.size) value = input.method;
+    else if (name === '@scheme' && !params.size) value = 'https';
+    else if (name === '@query' && !params.size) {
+      const uri = targetParts(input).uri;
+      const offset = uri.indexOf('?', uri.indexOf('://') + 3);
+      value = offset < 0 ? '?' : uri.slice(offset);
+    } else if (name === '@method' && !params.size) value = input.method;
     else if ((name === '@target-uri' || name === '@path') && !params.size) {
       const target = targetParts(input);
       value = name === '@path' ? target.path : target.uri;

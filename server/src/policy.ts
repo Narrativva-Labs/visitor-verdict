@@ -25,7 +25,11 @@ export function checkContext(input: AgentRequest, authorities: Set<string>): Con
     throw new Failure('insufficient_context', true);
   return context;
 }
-export function checkSignaturePolicy(inner: InnerList, now: number): string {
+export function checkSignaturePolicy(
+  inner: InnerList,
+  now: number,
+  maxLifetimeSeconds = 86400,
+): string {
   const params = inner[1];
   const created = params.get('created');
   const expires = params.get('expires');
@@ -41,7 +45,8 @@ export function checkSignaturePolicy(inner: InnerList, now: number): string {
     throw new Failure('missing_timestamps');
   if (created > now + 30) throw new Failure('future_created');
   if (expires < now - 30) throw new Failure('expired');
-  if (expires < created || expires - created > 86400) throw new Failure('invalid_validity_window');
+  if (expires < created) throw new Failure('invalid_validity_window');
+  if (expires - created > maxLifetimeSeconds) throw new Failure('invalid_validity_window', true);
   if (params.has('alg') && params.get('alg') !== 'ed25519')
     throw new Failure('unsupported_algorithm', true);
   if (
