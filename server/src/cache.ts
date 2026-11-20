@@ -152,13 +152,19 @@ export class AgentCache {
     };
   }
 
-  private refreshed(kind: DocumentKind, ok: boolean, now: number, reason?: string): void {
+  private refreshed(
+    kind: DocumentKind,
+    ok: boolean,
+    now: number,
+    hostname: string,
+    reason?: string,
+  ): void {
     const clock = this.clock();
     const at = Number.isFinite(clock) ? clock : now;
     this.lastRefreshOk = ok;
     this.lastRefreshAt = at;
     try {
-      this.onRefresh?.({ kind, ok, at, ...(reason ? { reason } : {}) });
+      this.onRefresh?.({ kind, ok, at, hostname, ...(reason ? { reason } : {}) });
     } catch {
       // Diagnostics cannot change a document's validity or the verification result.
     }
@@ -301,12 +307,12 @@ export class AgentCache {
         this.staleMaxSeconds > 0 ? Math.min(response.ttl, this.staleMaxSeconds) : response.ttl;
       entry.until = now + ttl;
       entry.staleUntil = this.staleMaxSeconds > 0 ? now + this.staleMaxSeconds : entry.until;
-      this.refreshed(kind, true, now);
+      this.refreshed(kind, true, now, new URL(url).hostname);
       return data;
     } catch (error) {
       entry.cooldown = now + COOLDOWN_SECONDS;
       const f = failure(error);
-      this.refreshed(kind, false, now, f.reason);
+      this.refreshed(kind, false, now, new URL(url).hostname, f.reason);
       throw f;
     } finally {
       entry[slot] = undefined;

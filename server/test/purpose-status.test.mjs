@@ -268,8 +268,10 @@ test('a failed refresh is visible even when stale data remains usable; successfu
     kind: 'directory',
     ok: false,
     at: now,
+    hostname: 'agent.example',
     reason: 'directory_unavailable',
   });
+  assert.equal(JSON.stringify(events[1]).includes('/'), false, 'hostname only, never a URL');
   now += 61;
   fail = false;
   await verifier.warm();

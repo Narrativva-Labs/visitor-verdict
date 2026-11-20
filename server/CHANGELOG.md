@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-11-20
+
+- Refresh events report the public endpoint hostname (never a URL or visitor data), so collectors can log which key directory or IP list failed.
+- Export `serverAgentTokens(registry)` so collectors count UA claims with the same token list as verification.
+
 ## 0.3.0 — 2026-11-20
 
 - Breaking API change: remove `toAnalyticsFields`; use pure exported `visitorLabels({ verdict?, browserClass?, browserPhase? })`.

@@ -141,6 +141,8 @@ export interface VerifierStatus {
 }
 /** A completed public-document refresh; no URL, IP, request headers, key or nonce. */
 export interface RefreshEvent {
+  /** Public endpoint hostname only; never a URL, path or visitor data. */
+  hostname?: string;
   kind: 'directory' | 'ip' | 'sail';
   ok: boolean;
   at: number;

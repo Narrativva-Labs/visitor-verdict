@@ -1,11 +1,9 @@
-import { agentTokens } from './tokens.generated.js';
 import { agents } from './fields.js';
 import { field } from './headers.js';
+import { serverAgentTokens } from './server-tokens.js';
 import type { Registry } from './types.js';
 
-export function serverAgentTokens(registry: Registry): string[] {
-  return [...new Set([...agentTokens, ...registry.flatMap((o) => o.extraUaTokens ?? [])])];
-}
+export { serverAgentTokens };
 /** Compile once for each constructed verifier, including explicit server-only registry claims. */
 export function createClaimParser(registry: Registry) {
   const matchers = serverAgentTokens(registry).map((token) => ({

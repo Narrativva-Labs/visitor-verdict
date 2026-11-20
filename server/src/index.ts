@@ -254,4 +254,5 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
   };
 }
 export { visitorLabels } from './labels.js';
+export { serverAgentTokens } from './server-tokens.js';
 export type { VisitorType, VisitorLabelsInput, VisitorLabels } from './labels.js';
