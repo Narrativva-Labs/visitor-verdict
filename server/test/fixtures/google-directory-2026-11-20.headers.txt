@@ -1,0 +1,16 @@
+HTTP/2 200 
+signature: g=:+JTf1HnOjYEKpkv4TWZJjKjGDBDKXvyGFMEynnHg0PIyprtyfChhFYmoTV8zbolIMQbnyRqRz07VH6Vsc7GwAQ==:
+cache-control: public, max-age=3600
+signature-input: g=("@authority";req);created=1795162664;expires=1795162964;keyid="DYiMjA";alg="ed25519";tag="http-message-signatures-directory"
+content-type: application/http-message-signatures-directory+json
+vary: Origin
+vary: X-Origin
+vary: Referer
+date: Fri, 20 Nov 2026 08:17:44 GMT
+server: ESF
+content-length: 754
+x-xss-protection: 0
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+

@@ -1,0 +1,16 @@
+{
+  "browserbase-directory-2026-11-20.headers.txt": "260d5403098c9991e03cad22857f3e95fe739119b8f090221f11aa5a553cb9be",
+  "browserbase-directory-2026-11-20.json": "ae9762cf5d5353f93821d54e2719e5b451774d6da8d5771fbd6d3ac1cdfbf137",
+  "chatgpt-agent-2026-11-20.json": "92118344123466d591111e30fb5073f68d17167dd73584f21985f0bc0e060b2b",
+  "duckduckgo-directory-2026-11-20.headers.txt": "297114d19e9308b6b8145403a3733d616bc8584e966ba5753028b1a3e82dddef",
+  "duckduckgo-directory-2026-11-20.json": "4cf33afad1babe4502d5eea883cc8e51b1920510ca1e9e7541819d94b4aea6a1",
+  "google-directory-2026-11-20.headers.txt": "9fe9494094b1ba1b6650e7cb0b7cee53051426ab1b8cd380459551e50711ede8",
+  "google-directory-2026-11-20.json": "08095f31e98408ac3aa7135f9550cd8be6959b2e85b13bc072bef2ad921c1752",
+  "manus-directory-2026-11-20.headers.txt": "6127f53e003ddd33dd15f80153a03fd5fde179840b232c8c6a87f8b21d33c647",
+  "manus-directory-2026-11-20.json": "39b78cbf9e4d9ca2f6b8b2f03489ea19812ee6f610b622197710aad3ce02b111",
+  "openai-directory-2026-11-20.headers.txt": "a2612740502ab410a0c243fc46e0bbacae966084051078e29a47b7e89ff3eb10",
+  "openai-directory-2026-11-20.json": "281bffcca164b28adf231eb6d4f747c42636f9333dbb0a7bf62021479a249750",
+  "web_bot_auth_architecture_v1.json": "12ed35aaf50368d9cf6d3c704b8942e6603b1ef2bbd119c3040868b87e596ef4",
+  "web_bot_auth_architecture_v2.json": "d0c8dbb7631dcc22639d12318af2b1ac0a339e4fa5aa4ef6df67ca45b0094576",
+  "web_bot_auth_directory_response_v1.json": "ab2226c895940f0d169433ea0485ca7938e2dd2b89090945088b931031a7a1de"
+}
