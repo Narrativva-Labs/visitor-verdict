@@ -16,13 +16,14 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 
 **Exit criterion:** field results show clear automation is labelled and real visitors are not, on every validated site.
 
-## Phase 2 — Server-side and conversion APIs (planned)
+## Phase 2 — Recognise and measure AI agents on the server (in progress)
 
-Starts only after Phase 1 meets its exit criterion.
+Goal: recognise and measure AI agents and verified bots, keep their conversions and label them. Conversions are routed by how the conversion itself is verified (paid order, confirmed lead), not dropped because an agent made them. See [conversion guidance](docs/conversion-guidance.md).
 
-- Keep clear automation out of conversion feedback: server-side GTM reads `traffic_class` and withholds or marks conversions for Meta Conversions API and Google Ads Enhanced Conversions
-- Server-side verification of declared agents (HTTP message signatures / Web Bot Auth, operators' published IP ranges)
-- Keep browser evidence, claimed identity and server verification as separate fields
+- [x] Measurement: the ChatGPT agent's cloud browser signs every request with Web Bot Auth, including analytics hits to a first-party subdomain (2026-11-20)
+- [x] Server verifier library in [`server/`](server/README.md): Web Bot Auth signatures, operators' published IP ranges, optional reverse DNS; browser evidence, claimed identity and server verification kept as separate fields
+- [ ] Label hits in the self-hosted collector (GA4 field `agent_verification`), nothing withheld; field test with real agents
+- [ ] Server-side GTM: verification service and optional routing of conversions by verification, built only for a real lead-spam case
 
 ## Later (ideas, not commitments)
 
