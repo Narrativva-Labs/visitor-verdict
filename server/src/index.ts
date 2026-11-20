@@ -1,7 +1,7 @@
 import { guard } from './lexer.js';
 import { createClaimParser } from './claims.js';
 import { requiredHeaderNames as collectRequiredHeaderNames } from './fields.js';
-import { AgentCache } from './cache.js';
+import { AgentCache, type DocumentKind } from './cache.js';
 import { validateConfig } from './config.js';
 import { assertHeadersInput, headers, field } from './headers.js';
 import { dictionary, coveredHeaderNames as collectCoveredHeaderNames } from './fields.js';
@@ -9,8 +9,16 @@ import { Failure, failure } from './errors.js';
 import { checkContext, selectOutcome } from './policy.js';
 import { evaluateSignature } from './signature.js';
 import { ReverseDnsVerifier } from './rdns.js';
-import { staticBlocks, ipEvidence } from './ip.js';
-import type { AgentRequest, AgentVerdict, AgentVerifier, VerifierOptions } from './types.js';
+import { staticBlocks, ipEvidence, decodeList, decodeSail } from './ip.js';
+import { publicKeys } from './keys.js';
+import type {
+  AgentRequest,
+  AgentVerdict,
+  AgentVerifier,
+  VerifierOptions,
+  WarmOptions,
+  WarmResult,
+} from './types.js';
 export type * from './types.js';
 export { defaultRegistry } from './registry.js';
 
@@ -35,7 +43,10 @@ function emptyVerdict(): AgentVerdict {
 /** Validate trusted configuration once and create a verifier with an owned cache. */
 export function createVerifier(options: VerifierOptions): AgentVerifier {
   const config = validateConfig(options);
-  const cache = new AgentCache(config.fetcher, config.fetchTimeoutMs);
+  const cache = new AgentCache(config.fetcher, config.fetchTimeoutMs, {
+    staleMaxSeconds: config.staleMaxSeconds,
+    now: config.now,
+  });
   const parseClaims = createClaimParser(config.registry);
   const staticRanges = staticBlocks(config.registry);
   const rdns = config.reverseDns
@@ -177,6 +188,49 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       } finally {
         clearTimeout(timer);
       }
+    },
+    async warm(options?: WarmOptions): Promise<WarmResult> {
+      const jobs = new Map<string, [string, DocumentKind, (data: unknown) => unknown]>();
+      for (const operator of config.registry) {
+        if (operator.directoryUrl)
+          jobs.set('directory:' + operator.directoryUrl, [
+            operator.directoryUrl,
+            'directory',
+            publicKeys,
+          ]);
+        if (options?.ipLists === true)
+          for (const list of operator.ipLists) {
+            const kind = list.format === 'sail' ? 'sail' : 'ip';
+            jobs.set(kind + ':' + list.url, [
+              list.url,
+              kind,
+              kind === 'sail' ? decodeSail : decodeList,
+            ]);
+          }
+      }
+      let now = NaN;
+      try {
+        now = config.now();
+      } catch {
+        // An unusable clock fails every prefetch below.
+      }
+      const targets = [...jobs.values()];
+      const results = await Promise.allSettled(
+        targets.map(([url, kind, decode]) =>
+          Number.isFinite(now) && now <= 1e11
+            ? cache.load(url, kind, now, decode, 'warm')
+            : Promise.reject(new Failure('invalid_clock', true)),
+        ),
+      );
+      const result: WarmResult = { ok: [], failed: [] };
+      targets.forEach(([url, kind, decode], i) => {
+        result[results[i].status === 'fulfilled' ? 'ok' : 'failed'].push(url);
+        if (options?.refreshAhead === true) cache.keepWarm(url, kind, decode);
+      });
+      return result;
+    },
+    close(): void {
+      cache.close();
     },
   };
 }

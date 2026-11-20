@@ -98,7 +98,7 @@ export async function evaluateSignature(
     checkActive(env.signal);
     if (!keys.has(keyid))
       keys = withKidAliases(
-        await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, true),
+        await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, 'forced'),
         operator.allowKidAlias === true,
       );
     checkActive(env.signal);

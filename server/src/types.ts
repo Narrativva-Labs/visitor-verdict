@@ -86,6 +86,11 @@ export interface VerifierOptions {
   /** Maximum expires-created lifetime; default 86400 seconds, longer lifetimes are indeterminate. */
   maxLifetimeSeconds?: number;
   fetchTimeoutMs?: number;
+  /**
+   * Hard maximum age of a fetched directory/feed, default 86400 seconds; 0 disables stale serving.
+   * After the soft TTL the last valid document is served while one background refresh runs.
+   */
+  staleMaxSeconds?: number;
   nonceStore?: NonceStore;
   now?: () => number;
   /** Explicit opt-in: PTR queries disclose bot-claiming clients’ IPs to the resolver. */
@@ -94,6 +99,21 @@ export interface VerifierOptions {
 /** Reusable verifier with a private cache, bounded by the configured registry. */
 export interface AgentVerifier {
   verify(input: AgentRequest): Promise<AgentVerdict>;
+  /** Prefetch registry directories (and optionally feeds). Never rejects; safe to repeat. */
+  warm(options?: WarmOptions): Promise<WarmResult>;
+  /** Stop refresh-ahead timers. verify() and warm() keep working without timers. */
+  close(): void;
+}
+export interface WarmOptions {
+  /** Also prefetch every JSON IP list and SAIL feed in the registry. */
+  ipLists?: boolean;
+  /** Refresh warmed entries shortly before soft expiry using unref'd timers until close(). */
+  refreshAhead?: boolean;
+}
+/** Endpoint URLs whose prefetch succeeded or failed. */
+export interface WarmResult {
+  ok: string[];
+  failed: string[];
 }
 
 /** Injectable DNS transport, compatible with node:dns/promises Resolver. */

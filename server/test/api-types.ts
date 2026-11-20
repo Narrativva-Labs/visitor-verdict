@@ -25,3 +25,14 @@ void createVerifier({
   reverseDns: { enabled: true, resolver: new Resolver() },
   maxLifetimeSeconds: 86400,
 });
+
+const warmed = createVerifier({
+  registry: defaultRegistry,
+  authorities: ['example.com'],
+  staleMaxSeconds: 86400,
+});
+void warmed.warm({ ipLists: true, refreshAhead: true }).then((result) => {
+  const urls: string[] = [...result.ok, ...result.failed];
+  void urls;
+  warmed.close();
+});

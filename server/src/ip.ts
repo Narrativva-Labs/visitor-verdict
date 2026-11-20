@@ -29,7 +29,7 @@ export function compilePrefixes(prefixes: unknown): BlockList {
   }
   return list;
 }
-function decodeList(data: unknown): BlockList {
+export function decodeList(data: unknown): BlockList {
   return compilePrefixes((data as { prefixes?: unknown })?.prefixes);
 }
 export function matchesIp(ip: string, prefixes: unknown): boolean {
@@ -40,7 +40,7 @@ export function matchesIp(ip: string, prefixes: unknown): boolean {
     return false;
   }
 }
-function decodeSail(data: unknown): Map<string, BlockList> {
+export function decodeSail(data: unknown): Map<string, BlockList> {
   const doc = data as SailDocument;
   let count = 0;
   for (const prefixes of doc.services.values()) count += prefixes.length;

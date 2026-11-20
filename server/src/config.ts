@@ -153,8 +153,12 @@ export function validateConfig(options: VerifierOptions) {
   const maxLifetimeSeconds = options.maxLifetimeSeconds ?? 86400;
   if (!Number.isSafeInteger(maxLifetimeSeconds) || maxLifetimeSeconds < 1)
     throw new TypeError('Invalid maxLifetimeSeconds');
+  const staleMaxSeconds = options.staleMaxSeconds ?? 86400;
+  if (!Number.isSafeInteger(staleMaxSeconds) || staleMaxSeconds < 0 || staleMaxSeconds > 86400)
+    throw new TypeError('Invalid staleMaxSeconds');
   return {
     maxLifetimeSeconds,
+    staleMaxSeconds,
     registry,
     authorities,
     reverseDns: dnsConfig(options.reverseDns),

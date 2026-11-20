@@ -5,7 +5,10 @@ import type { Fetcher } from './types.js';
 export type DocumentKind = 'directory' | 'ip' | 'sail';
 interface Entry {
   data?: unknown;
+  /** Fetch time, soft expiry (serve as fresh) and hard expiry (serve while revalidating). */
+  fetched: number;
   until: number;
+  staleUntil: number;
   cooldown: number;
   flight?: Promise<unknown>;
   forcedFlight?: Promise<unknown>;
@@ -92,21 +95,41 @@ export async function fetchBounded(
 }
 export const FEED_CACHE_SIZE = 32;
 export const DIRECTORY_CACHE_SIZE = 128;
+/** request: fresh or stale-while-revalidate; forced: unknown keyid; warm: fetch unless fresh; ahead: fetch before expiry. */
+export type LoadMode = 'request' | 'forced' | 'warm' | 'ahead';
+export interface CacheOptions {
+  /** Hard maximum age of retained data since its fetch; 0 disables stale serving. */
+  staleMaxSeconds?: number;
+  /** Clock in Unix seconds for refresh-ahead timers. */
+  now?: () => number;
+}
+interface AheadJob {
+  url: string;
+  kind: DocumentKind;
+  decode: (data: unknown) => unknown;
+  timer?: ReturnType<typeof setTimeout>;
+}
+const COOLDOWN_SECONDS = 60;
+/** Refresh-ahead lead before soft expiry: a tenth of the TTL, between 1 and 60 seconds. */
+function lead(entry: Entry): number {
+  return Math.max(1, Math.min(60, Math.floor((entry.until - entry.fetched) / 10)));
+}
 export class AgentCache {
   private entries = new Map<string, Entry>();
+  private ahead = new Map<string, AheadJob>();
+  private closed = false;
+  private staleMaxSeconds: number;
+  private now: () => number;
   constructor(
     private fetcher: Fetcher,
     private timeoutMs: number,
-  ) {}
+    options: CacheOptions = {},
+  ) {
+    this.staleMaxSeconds = options.staleMaxSeconds ?? 0;
+    this.now = options.now ?? (() => Date.now() / 1000);
+  }
 
-  async load<T>(
-    url: string,
-    kind: DocumentKind,
-    now: number,
-    decode: (data: unknown) => T,
-    force = false,
-  ): Promise<T> {
-    const cacheKey = kind + ':' + url;
+  private touch(cacheKey: string, kind: DocumentKind): Entry {
     let entry = this.entries.get(cacheKey);
     if (!entry) {
       const directory = kind === 'directory';
@@ -122,24 +145,99 @@ export class AgentCache {
         if (!victim) throw new Failure('feed_cache_busy', true);
         this.entries.delete(victim);
       }
-      entry = { until: 0, cooldown: 0 };
-      this.entries.set(cacheKey, entry);
+      entry = { until: 0, staleUntil: 0, fetched: 0, cooldown: 0 };
     }
     this.entries.delete(cacheKey);
     this.entries.set(cacheKey, entry);
-    if (!force && entry.data !== undefined && now < entry.until) return entry.data as T;
+    return entry;
+  }
+
+  async load<T>(
+    url: string,
+    kind: DocumentKind,
+    now: number,
+    decode: (data: unknown) => T,
+    mode: LoadMode = 'request',
+  ): Promise<T> {
+    const cacheKey = kind + ':' + url;
+    const entry = this.touch(cacheKey, kind);
+    const force = mode === 'forced';
+    const usable = entry.data !== undefined;
+    if ((mode === 'request' || mode === 'warm') && usable && now < entry.until)
+      return entry.data as T;
     const pending = force
       ? (entry.forcedFlight ?? entry.flight)
       : (entry.flight ?? entry.forcedFlight);
+    if (mode === 'request' && usable && now < entry.staleUntil) {
+      // Stale-while-revalidate: serve the last valid document while one refresh runs.
+      if (!pending && now >= entry.cooldown) {
+        entry.flight = this.refresh(url, kind, now, entry, decode, 'flight');
+        entry.flight.catch(() => {});
+      }
+      return entry.data as T;
+    }
     if (pending) return pending as Promise<T>;
     if (now < entry.cooldown) {
-      if (entry.data !== undefined && now < entry.until) return entry.data as T;
+      if (usable && now < entry.until) return entry.data as T;
       throw new Failure('directory_unavailable', true);
     }
-    if (force) entry.cooldown = now + 60;
+    if (force) entry.cooldown = now + COOLDOWN_SECONDS;
     const slot = force ? 'forcedFlight' : 'flight';
     entry[slot] = this.refresh(url, kind, now, entry, decode, slot);
     return entry[slot] as Promise<T>;
+  }
+
+  /** Keep an entry warm: refresh shortly before soft expiry, retrying after failures. */
+  keepWarm(url: string, kind: DocumentKind, decode: (data: unknown) => unknown): void {
+    const cacheKey = kind + ':' + url;
+    if (this.closed || this.ahead.has(cacheKey)) return;
+    this.ahead.set(cacheKey, { url, kind, decode });
+    this.schedule(cacheKey);
+  }
+
+  /** Stop refresh-ahead timers. In-flight fetches end on their own timeout; loads keep working. */
+  close(): void {
+    this.closed = true;
+    for (const job of this.ahead.values()) clearTimeout(job.timer);
+    this.ahead.clear();
+  }
+
+  private clock(): number {
+    try {
+      const now = this.now();
+      return Number.isFinite(now) && now <= 1e11 ? now : NaN;
+    } catch {
+      return NaN;
+    }
+  }
+
+  private due(entry: Entry | undefined): number | undefined {
+    return entry?.data === undefined ? undefined : entry.until - lead(entry);
+  }
+
+  private schedule(cacheKey: string): void {
+    const job = this.ahead.get(cacheKey);
+    if (!job || this.closed) return;
+    clearTimeout(job.timer);
+    const entry = this.entries.get(cacheKey);
+    const now = this.clock();
+    const at = entry ? Math.max(this.due(entry) ?? 0, entry.cooldown) : 0;
+    const delay = Number.isFinite(now) && at > 0 ? at - now : COOLDOWN_SECONDS;
+    job.timer = setTimeout(() => this.fire(cacheKey), Math.min(86400, Math.max(1, delay)) * 1000);
+    job.timer.unref?.();
+  }
+
+  private fire(cacheKey: string): void {
+    const job = this.ahead.get(cacheKey);
+    if (!job || this.closed) return;
+    job.timer = undefined;
+    const now = this.clock();
+    const due = this.due(this.entries.get(cacheKey));
+    // Another load may already have refreshed the entry; then only reschedule.
+    if (!Number.isFinite(now) || (due !== undefined && now < due)) return this.schedule(cacheKey);
+    this.load(job.url, job.kind, now, job.decode, 'ahead')
+      .catch(() => {})
+      .finally(() => this.schedule(cacheKey));
   }
 
   private async refresh<T>(
@@ -153,14 +251,18 @@ export class AgentCache {
     try {
       const response = await fetchBounded(url, this.fetcher, kind, this.timeoutMs);
       const data = decode(response.data);
+      // A newer document replaces the previous one entirely; removed keys stop verifying.
       entry.data = data;
+      entry.fetched = now;
       entry.until = now + response.ttl;
+      entry.staleUntil = Math.max(entry.until, now + this.staleMaxSeconds);
       return data;
     } catch (error) {
-      entry.cooldown = now + 60;
+      entry.cooldown = now + COOLDOWN_SECONDS;
       throw failure(error);
     } finally {
       entry[slot] = undefined;
+      this.schedule(kind + ':' + url);
     }
   }
 }
