@@ -78,6 +78,8 @@ Real agent runs against our own test shop, with the debug badge; each agent adde
 
 **Server-side end to end (2026-11-20):** the ChatGPT agent's cloud browser signs every request with Web Bot Auth (`Signature-Agent: "https://chatgpt.com"`), including script loads, fetch, sendBeacon and CORS preflights to a first-party analytics subdomain; 32 of 32 captured signatures verified against the operator's key directory. With the [server verifier](../server/README.md) running in a self-hosted collector (labelling only), the agent's GA4 events arrived with `agent_verification=signature_valid`, `agent_operator=openai`, `agent_claim=signature_agent` (GA4 Realtime). Practical note: the key directory took about 0.9 s to fetch from a European VPS, so key fetches must outlive the per-hit deadline and the cache should be warmed. The Grok agent does not sign (HeadlessChrome user agent, cloud IP).
 
+Combined fields (same day, 12:53): with the browser class forwarded by the collector, the agent's events carried `traffic_class=human` (browser) together with `agent_verification=signature_valid` (server) in GA4 Realtime — a verified agent that looks human in the browser. After warming the key cache, 5 of 5 `view_cart` events carried the server label (1 of 5 before warming). Only 1 of 5 carried the browser class, because the collector sends early events before the detector (loaded through GTM) has published; evaluate the browser class per session.
+
 **Own-browser agents** (an agent driving the user's real Chrome) carry no browser-side tell and are indistinguishable from the user in the page. This is a stated Phase 1 limit.
 
 ### Web Bot Auth and `Signature-Agent`
