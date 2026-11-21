@@ -1,12 +1,14 @@
 # Visitor Verdict
 
+[![CI](https://github.com/Narrativva-Labs/visitor-verdict/actions/workflows/ci.yml/badge.svg)](https://github.com/Narrativva-Labs/visitor-verdict/actions/workflows/ci.yml)
+
 Label clear browser automation in GA4 with a privacy-minimal, client-side detector.
 
 Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering lets through. It does not try to catch operators who deliberately disguise automation and makes no accuracy guarantee. It is a first, privacy-minimal layer.
 
 ## What you get
 
-| | v1.0.0 |
+| | Detector v1.0.0 (release v1.0.1) |
 |---|---|
 | Classes | `automated` (automation evidence), `declared_agent` (unverified UA claim), `suspicious` (uncertain evidence), `human` (no automation detected) |
 | Catches | WebDriver/headless and Selenium/Puppeteer/Playwright defaults, audit tools, declared AI fetchers; some masked headless setups via opt-in UB → `suspicious`. Feature/configuration dependent, not universal tool detection. |
@@ -28,9 +30,7 @@ Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering
 
 > **Limits:** `human` means no automation detected, not proof of a person. `suspicious` is a secondary view. This is client-side and spoofable, for reporting only: never block users or deny service. Consent is the site owner's decision; pre-consent classifications must never feed advertising platforms. Read the [privacy details](docs/privacy.md).
 
-**Server-side verification (in development):** a verifier for signed AI agents (Web Bot Auth) and operators' published IP ranges is being built on the [`phase2-verifier`](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server) branch, alongside Phase 1 field validation. Its first integration is [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side), a server-side GA4 collector that forwards the browser class and verified agent labels to GA4 (branch [`agent-verification`](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification)). Not released yet; see the [roadmap](ROADMAP.md#phase-2--server-side-verification-and-conversion-apis-in-development).
-
-[![CI](https://github.com/Narrativva-Labs/visitor-verdict/actions/workflows/ci.yml/badge.svg)](https://github.com/Narrativva-Labs/visitor-verdict/actions/workflows/ci.yml)
+**Server-side verification (in development):** a verifier for signed AI agents (Web Bot Auth) and operators' published IP ranges is being built on the [`phase2-verifier`](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server) branch, alongside Phase 1 field validation. Its first integration is [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side), a server-side GA4 collector that forwards the browser class and verified agent labels to GA4 (branch [`agent-verification`](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification)). Not released yet; see the [roadmap](ROADMAP.md#phase-2--recognise-and-measure-ai-agents-on-the-server-in-development).
 
 ## Pinned direct-script build
 
@@ -51,7 +51,8 @@ The integrity value comes from [dist/visitor-verdict.min.js.sri](dist/visitor-ve
 - [GTM setup and GA4 reporting](docs/ga4-reporting.md)
 - [Tests, adversarial benchmark and known limits](docs/benchmark.md)
 - Related: [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side), server-side GA4 collector and first integration of the server verifier (in development)
-- [Lightweight field-validation protocol](docs/study/protocol.md) — prospective; no field results yet
+- [Agent research and field observations](research/agents-and-tells.md)
+- [Lightweight field-validation protocol](docs/study/protocol.md) — validation in progress since 2026-11-19, no study results yet; agent runs on our own test shop: [field observations](research/agents-and-tells.md#field-observations-v10-2026-11-19)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 

@@ -1,6 +1,6 @@
 # Lightweight field validation: clear automation in GA4
 
-Status: prospective protocol; no field results yet. Owner: František Bujnovský. This replaces the proposed 30-day accuracy study. The purpose is to describe **clear automation observed in GA4** and check deployment and obvious human misclassification over **14–28 consecutive days per site**. It is not an accuracy certification or an attempt to catch sophisticated evaders.
+Status: in progress since 2026-11-19; no study results yet. Owner: František Bujnovský. This replaces the proposed 30-day accuracy study. The purpose is to describe **clear automation observed in GA4** and check deployment and obvious human misclassification over **14–28 consecutive days per site**. It is not an accuracy certification or an attempt to catch sophisticated evaders.
 
 ## Freeze before starting
 
