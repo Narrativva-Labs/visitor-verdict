@@ -86,7 +86,12 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       const h = headers(input.headers);
       presented = h.has('signature') || h.has('signature-input');
       const context = checkContext(input, config.authorities);
-      const now = config.now();
+      let now: number;
+      try {
+        now = config.now();
+      } catch {
+        throw new Failure('invalid_clock', true);
+      }
       if (!Number.isFinite(now) || now > 1e11) throw new Failure('invalid_clock', true);
       const claims = parseClaims(h);
       verdict.claimed = { uaTokens: claims.uaTokens, signatureAgents: claims.agent.values };
