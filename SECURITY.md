@@ -2,7 +2,7 @@
 
 ## Supported releases
 
-Browser detector security fixes target the latest stable release in the 1.x line. Use the latest patch release when available. The unreleased `server/` 0.2.x preview receives best-effort fixes on `phase2-verifier`; there are no maintained server release branches.
+Browser detector security fixes target the latest stable release in the 1.x line. Use the latest patch release when available. The unreleased `server/` 0.3.x preview receives best-effort fixes on `phase2-verifier`; there are no maintained server release branches.
 
 ## Report security and data-leak bugs privately
 

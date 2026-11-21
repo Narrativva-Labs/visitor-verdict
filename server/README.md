@@ -13,7 +13,7 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.1.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.4.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
@@ -54,7 +54,7 @@ const fields = visitorLabels({ verdict, browserClass: 'human', browserPhase: 'fi
 | `fetchTimeoutMs`     | Per-fetch and nonce-store timeout, default 1000 ms. Positive integer, at most 60 seconds, as for deadlineMs.                                                            |
 | `staleMaxSeconds`    | Positive values cap total document age, fresh or stale, default 86400 s (0–86400). 0 disables stale serving and retains the ordinary HTTP-derived fresh TTL.            |
 | `nonceStore`         | Optional atomic `insertIfAbsent(key, ttlSeconds): Promise<boolean>`. Default absent: no nonce retention.                                                                |
-| `now`                | Function returning Unix **seconds**, default Date.now()/1000. Values above 1e11/nonfinite return none/invalid_clock; clock exceptions return none/internal_error.       |
+| `now`                | Function returning Unix **seconds**, default Date.now()/1000. Values above 1e11/nonfinite return none/invalid_clock; clock exceptions return none/invalid_clock.        |
 
 `verify` accepts Node IncomingHttpHeaders, WHATWG Headers, Map, or a Node rawHeaders array of alternating names/values. Unsupported containers reject with TypeError (programmer error). Malformed contents return a verdict. Arrays of pairs are not rawHeaders. Prefer rawHeaders where original field occurrences matter; WHATWG Headers may already have combined occurrences before the library sees them.
 
@@ -158,13 +158,13 @@ IP evidence is only as trustworthy as the original source address. getRemoteAddr
 
 The verdict contains claimed known UA tokens and parsed Signature-Agent strings; both remain untrusted claims. A successful `verified` field identifies an operator and method; signature evidence includes keyid, identity and `keyidForm` (`thumbprint` or `kid`). Successful dictionary signatures also report `attribution: 'label' | 'relabeled'` in `verified` and the per-label result; legacy bare-string identities omit it. `signatures` retains per-label results, including peers that fail. Whole-header syntax/resource errors fail before label evaluation. Signature and Signature-Input duplicates stay strict; duplicate dictionary keys in Signature-Agent return none/ambiguous_signature_agent instead of asserting a bad signature. Optional `ip` contains operator/list evidence only, never the client IP.
 
-| verification        | Meaning / reasons                                                                                                                                                                                                                                                                                                |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `signature_valid`   | A trusted signature passes policy and crypto: verified.                                                                                                                                                                                                                                                          |
-| `signature_invalid` | A WBA signature was presented and demonstrably failed: crypto_mismatch, expired, invalid_timestamp_type, missing_keyid, signature_agent_not_covered, etc. Never returned merely for an unsigned visitor.                                                                                                         |
-| `none`              | Indeterminate/untrusted/context failure: untrusted_signature_agent, unknown_keyid, unsupported_component, insufficient_context, unknown_authority, invalid_clock, internal_error, directory_timeout, deadline_exceeded, ip_evidence_unavailable, cache_miss, reverse_dns_unavailable, ambiguous_signature_agent. |
-| `no_signature`      | No WBA signature and no official IP match: signature_headers_absent, ignored_non_wba or reverse_dns_not_confirmed. A relevant failed feed with no match instead returns none/ip_evidence_unavailable. UA alone never verifies.                                                                                   |
-| `ip_match`          | No WBA signature presented and a relevant operator-published range matches: official_ip_range_match, or optional FCrDNS: reverse_dns_match.                                                                                                                                                                      |
+| verification        | Meaning / reasons                                                                                                                                                                                                                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signature_valid`   | A trusted signature passes policy and crypto: verified.                                                                                                                                                                                                                                                                                                          |
+| `signature_invalid` | A WBA signature was presented and demonstrably failed: crypto_mismatch, expired, invalid_timestamp_type, missing_keyid, signature_agent_not_covered, etc. Never returned merely for an unsigned visitor.                                                                                                                                                         |
+| `none`              | Indeterminate/untrusted/context failure: untrusted_signature_agent, unknown_keyid, unsupported_component, insufficient_context, unknown_authority, invalid_clock, internal_error, replay_capacity_exhausted, nonce_store_timeout, directory_timeout, deadline_exceeded, ip_evidence_unavailable, cache_miss, reverse_dns_unavailable, ambiguous_signature_agent. |
+| `no_signature`      | No WBA signature and no official IP match: signature_headers_absent, ignored_non_wba or reverse_dns_not_confirmed. A relevant failed feed with no match instead returns none/ip_evidence_unavailable. UA alone never verifies.                                                                                                                                   |
+| `ip_match`          | No WBA signature presented and a relevant operator-published range matches: official_ip_range_match, or optional FCrDNS: reverse_dns_match.                                                                                                                                                                                                                      |
 
 Other/absent signature tags are reported per-label as none/ignored_non_wba and do not suppress IP matching or override an indeterminate WBA peer. A malformed SF header can still fail before tag selection.
 
@@ -187,7 +187,7 @@ Every verified result (`signature_valid` or `ip_match`) with unknown purpose yie
 
 `vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, e.g. `openai|signature_valid|user_directed|signature_agent|human|final`. Missing segments are `-`, unknown operator is `none`. With a verdict, claim is `signature_agent` (takes precedence), `ua_token` or `none`; unverified purpose is `unknown`. Browser classes are `human`, `suspicious`, `automated`, `declared_agent`; phases initial/final. Invalid browser values become `-`. Operators must begin with a lowercase ASCII letter, followed by at most 23 lowercase ASCII letters, digits or underscores; invalid/long configured names become `none`, never truncated. Detail is at most 100 characters, with no version segment or raw claims.
 
-The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, crawler_verified=agent_verified=5, bot_spoofed=6. Equal ranks keep the earlier type. Detail describes the current hit, optionally using a previously verified operator. Scope full events to client_id + session_id and denied pings to page_id, with a bounded memory-only LRU/TTL and no stored IPs.
+The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified=agent_verified=5. Fresh equal-rank evidence replaces the earlier type and operator. Same-type/same-operator renewal never shortens active expiry; lower-ranked inherited hits do not extend it. Verified sticky expiry is capped to the accepted proof deadline and the configured TTL. A detected replay overrides active verified memory for that hit only; malformed headers or other invalid signatures can inherit active verified evidence without extending it. Detail describes the current hit, optionally using a previously verified operator. Scope full events to client_id + session_id and denied pings to page_id + client_id, with a bounded memory-only LRU/TTL and no stored IPs.
 
 Filter `vv_type` beginning with `agent_` or `bot_`, or `vv_detail` beginning with `openai|`. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Browser/GTM-only sites keep `traffic_class` for now.
 
@@ -206,7 +206,7 @@ Components supported: @authority, @method, @target-uri, @path, @query (raw query
 
 Directories may contain up to 32 keys. Structural problems, ambiguous aliases, or **any private d** reject the directory. Unsupported/invalid public keys are skipped independently. Supported keys: OKP/Ed25519, canonical 32-byte x, alg absent/EdDSA/Ed25519, use absent/sig, key_ops absent or containing verify. Each key is indexed by its RFC 7638/RFC 8037 thumbprint. A registry `allowKidAlias: true` explicitly enables custom kid compatibility; only Google has that flag in the default registry. Cache entries retain keys by thumbprint, and alias selection is operator-scoped. Google uses short custom kids; the live Google fixture is tested. JWK nbf/exp are checked on every use, even on cache hits. An expired/inactive key never establishes validity.
 
-Default analytics verification stores no nonce. Optional NonceStore receives a JSON tuple of identity, thumbprint and nonce only after crypto success, TTL through expires + 30 seconds. It is caller-owned storage and an explicit change to default privacy/replay behavior. Use atomic shared storage across instances and do not log keys. Calls are time-boxed; the interface cannot forcibly cancel external store work already started. Missing nonce/replay fail; store exceptions are indeterminate. No signature proves integrity of components it does not cover.
+Default analytics verification stores no nonce. Optional NonceStore receives a 64-character hex SHA-256 digest of the JSON tuple of identity, thumbprint and nonce only after crypto success, TTL through expires + 30 seconds. It is caller-owned storage and an explicit change to default privacy/replay behavior. Use atomic shared storage across instances and do not log keys. Calls are time-boxed; the interface cannot forcibly cancel external store work already started. Missing nonce/replay fail; store exceptions are indeterminate. No signature proves integrity of components it does not cover.
 
 ## Network, retention and resource limits
 
@@ -284,15 +284,6 @@ Standards: [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421.html), [RFC 7638](h
 
 Own code: MIT, LICENSE. Cloudflare fixtures: Apache-2.0, pinned commit and licence in test/fixtures/NOTICE.md. RFC code examples: test/fixtures/IETF-NOTICE.txt, linked from the interop test. Dependency licences stay with installed packages. Fixture hashes cover local copies; live public directories and approved sanitized capture fixtures are test data, not a request logging facility.
 
-## Changelog
-
-- **Unreleased:** strengthen public API, declaration isolation and successful-refresh hostname regression tests; update documentation.
-- **0.3.1 (2026-11-20):** export `serverAgentTokens(registry)` and report endpoint hostnames in refresh events.
-
-- **0.3.0 (2026-11-20):** replace `toAnalyticsFields` with bounded pure `visitorLabels`; two event dimensions, verified unknown-purpose agent result and exhaustive label matrix tests.
-- **0.2.1 (2026-11-20):** exclude customer Google Cloud DNS, bind purpose to the matching DNS rule/list, add crawler roles, server-only Google tokens and registry evidence provenance; strengthen signature/cache and delivery boundary coverage.
-- **0.2.0 (2026-11-20):** add verified-only agent_purpose, cache status and public refresh metadata; retain cache-only verification and bounded stale-while-revalidate.
-
 ## Registry evidence levels
 
 Each default operator has an `evidence` array containing `level`, `source`, `checked`
@@ -344,16 +335,24 @@ Lookup is constant time; an expiry heap removes only expired entries. The total
 budget and each operator budget fail closed with `none/replay_capacity_exhausted`,
 without evicting live history. `status()` returns occupancy, capacity, operator
 budget, saturation and exhaustion count, without replay keys or identities.
-A single operator cannot use another operator's reserved share; the global limit
-can still be reached by multiple operators. Direct two-argument inserts share a
+Status reads reclaim expired entries using the store clock; use the same clock as
+the verifier for status and direct inserts.
+Each operator has a ceiling, not a reserved partition; multiple operators can
+fill the global budget and prevent another operator from inserting. Direct two-argument inserts share a
 single unnamed operator budget. Optional third-argument `{ scope, expiresAt, now }`
 supplies an operator scope, absolute Unix-second retention floor and clock snapshot.
 
 Verifier inserts retain history through signed expiry plus 30 seconds inclusive,
-using the absolute deadline even when the store clock differs. External stores
+using the absolute deadline and verifier clock snapshot across verifier calls.
+Direct two-argument inserts and status reads use the store clock: an ahead-of-verifier
+clock can expire that history prematurely, so all callers must share a compatible clock. External stores
 receive the usual relative TTL and must use a compatible clock. They remain
 unavailable in cache-only verification. Local inserts need no timeout timer.
 
 Valid signatures take precedence; otherwise replay failures precede other invalid
 candidates. Successful signature evidence includes `verified.expiresAt` (Unix
 seconds without skew), so callers can cap derived evidence.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

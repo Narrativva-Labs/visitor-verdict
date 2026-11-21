@@ -56,7 +56,7 @@ The integrity value comes from [dist/visitor-verdict.min.js.sri](dist/visitor-ve
 - [Server verifier preview](server/README.md)
 - [Conversion reference design](docs/conversion-guidance.md)
 - [Agent research and field observations](research/agents-and-tells.md)
-- [Session analysis SQL (not yet validated against a live export)](docs/analysis/session-classification.sql)
+- [Session analysis SQL (validated once against the demo property export, 2026-11-21)](docs/analysis/session-classification.sql)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 

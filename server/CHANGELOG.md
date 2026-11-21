@@ -1,15 +1,21 @@
 # Changelog
 
+## 0.3.4 — 2026-11-21
+
+- Preserve typed failures across independent package copies.
+- Reclaim expired replay occupancy on status reads using the store clock; retain the inclusive expiry boundary.
+- Correct API, replay and release documentation.
+
 ## 0.3.3 — 2026-11-21
 
 - Prioritize replay failures over other invalid candidates; valid proofs still win.
 - Bound replay key size, use an expiry heap and per-operator budgets, expose capacity status, and report typed exhaustion.
 - Retain local nonces through an absolute skew deadline and recognize duplicate package stores without per-insert timers.
 
-## Unreleased
+## 0.3.2 — 2026-11-21
 
-- Strengthen public API, declaration isolation and successful-refresh hostname regression tests.
-- Document the 0.3.1 tarball, refresh hostname and server token export.
+- Add bounded atomic MemoryNonceStore support in cache-only verification.
+- Return signed proof expiry as verified.expiresAt for evidence lifetime limits.
 
 ## 0.3.1 — 2026-11-20
 
@@ -24,9 +30,10 @@
 - Map Browserbase and Manus signature identities to `user_directed`, and DuckDuckGo to `crawler`, with operator documentation sources.
 - Exhaustive verification/purpose/claim/browser/phase table tests and public declaration checks.
 
-Earlier releases are recorded in README.md.
+## 0.2.1 — 2026-11-20
 
-## 0.3.2
+- exclude customer Google Cloud DNS, bind purpose to the matching DNS rule/list, add crawler roles, server-only Google tokens and registry evidence provenance; strengthen signature/cache and delivery boundary coverage.
 
-- Add bounded atomic MemoryNonceStore support in cache-only verification.
-- Return signed proof expiry as verified.expiresAt for evidence lifetime limits.
+## 0.2.0 — 2026-11-20
+
+- add verified-only agent_purpose, cache status and public refresh metadata; retain cache-only verification and bounded stale-while-revalidate.

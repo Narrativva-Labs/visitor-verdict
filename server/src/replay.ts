@@ -91,6 +91,8 @@ export class MemoryNonceStore {
     return true;
   }
   status() {
+    const time = this.now();
+    if (Number.isFinite(time)) this.sweep(time);
     return {
       entries: this.entries.size,
       capacity: this.capacity,
