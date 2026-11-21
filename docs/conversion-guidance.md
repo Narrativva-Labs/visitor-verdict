@@ -19,10 +19,10 @@ A Web Bot Auth signature proves which operator runs the agent (for example OpenA
 | Clear automation | Browser detector: `automated` (headless, WebDriver), no valid signature |
 | Crawler | Verified or declared crawler with no intent to act (GPTBot, Googlebot, CCBot) |
 
-Use `vv_type=agent_verified` for a verified user-directed product and
-`vv_type=crawler_verified` for a verified crawler. The purpose position in `vv_detail`
-retains `unknown` when the role is unsettled; a verified unknown purpose maps to
-`pending`, not an unverified agent. Unverified ≠ human.
+Use `vv_type=agent_verified` for verified signature/IP evidence with `user_directed`
+or `unknown` purpose, and `vv_type=crawler_verified` for a verified crawler.
+The purpose position in `vv_detail` retains `unknown` when the role is unsettled;
+inspect it to distinguish user-directed from unknown purpose. Unverified ≠ human.
 
 ## Rules
 
@@ -45,8 +45,8 @@ Additional rules:
 A trusted verifying proxy runs the Node library **in front of sGTM**, retaining the
 original method, raw target, trusted configured authority and separate raw header
 occurrences. It overwrites all incoming X-VV-* lookalikes on every request, including
-verification errors, and sets X-VV-Verification, X-VV-Operator, X-VV-Purpose,
-X-VV-Claim and X-VV-Route. Route comes from trusted backend conversion status,
+verification errors, and sets X-VV-Type, X-VV-Detail and X-VV-Route (optionally
+alongside diagnostic X-VV-Verification, X-VV-Operator, X-VV-Purpose and X-VV-Claim). Route comes from trusted backend conversion status,
 never a browser-supplied claim. Restrict direct access to sGTM to this authenticated
 proxy. The library does not run in sGTM's sandbox.
 

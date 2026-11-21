@@ -47,7 +47,7 @@ and purpose-specific feeds take precedence over unsigned UA tokens. Shared-feed 
 conflicts and all unverified results are unknown. It does not prove user intent or authorize
 conversion routing. Cache health exposes only endpoint counts and the most recent completed
 refresh outcome/time; a document can be loaded without an active key. Refresh callbacks carry
-kind/outcome/time/reason only and cannot affect verification. Logging and rate limiting of
+kind/outcome/time/hostname/reason only (hostname is public endpoint metadata, never a URL) and cannot affect verification. Logging and rate limiting of
 operational warnings belong to the integrator.
 
 Registry provenance uses documented/observed/inferred evidence with source and date.

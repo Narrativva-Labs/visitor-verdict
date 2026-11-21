@@ -27,7 +27,7 @@
 --   pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
 --   crawler_verified=agent_verified=5, bot_spoofed=6. Equal ranks retain the first
 --   observed value (export ordering breaks ties deterministically where possible).
---   Verified unknown purpose maps to pending: operator verification is preserved
+--   Verified unknown purpose maps to agent_verified; unknown is preserved
 --   in vv_detail without inventing a user-directed or crawler role.
 --   vv_detail = operator|verification|purpose|claim|browser_class|browser_phase.
 --   It describes CURRENT hit evidence plus a sticky known operator. Do not treat
@@ -179,7 +179,7 @@ SELECT unit_type, COALESCE(strongest_type, 'missing') AS vv_type,
 FROM units GROUP BY 1, 2
 ORDER BY CASE unit_type WHEN 'session' THEN 0 WHEN 'ping_page' THEN 1 ELSE 2 END, vv_type;
 
--- Query 2: observed verified evidence, including unknown purpose (even with pending type).
+-- Query 2: observed verified evidence, including unknown purpose (agent_verified on that hit).
 -- Current detail is not guaranteed to explain the session's sticky strongest_type.
 SELECT unit_type, strongest_type AS vv_type,
   verified_evidence.operator AS verified_operator,

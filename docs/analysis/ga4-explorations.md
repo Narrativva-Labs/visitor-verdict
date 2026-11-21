@@ -10,16 +10,16 @@ Preserve site consent handling and never use pre-consent classification for adve
 
 | `vv_type` | Meaning | Session rank |
 |---|---|---|
-| `pending` | No settled classification, including verified operator with unknown purpose | 0 |
+| `pending` | No browser class or qualifying server evidence yet | 0 |
 | `human` | Browser reports no automation evidence | 1 |
 | `bot_suspicious` | Browser reports suspicious evidence | 2 |
 | `agent_unverified` | Declared agent or server claim without verification | 3 |
 | `bot_automation` | Browser reports hard automation evidence | 4 |
 | `crawler_verified` | Verified operator with documented crawler purpose | 5 |
-| `agent_verified` | Verified operator with documented user-directed purpose | 5 |
+| `agent_verified` | Verified operator with user-directed or unknown purpose; detail distinguishes them | 5 |
 | `bot_spoofed` | Server reports `signature_invalid` | 6 |
 
-Current-hit derivation uses the strongest matching rule: invalid signature, verified known purpose, verified unknown purpose (`pending`), browser automation, unverified claim, suspicious browser, human browser, then pending. A verified unknown purpose is neither a verified crawler nor a verified user-directed agent; its positive verification remains in detail. Invalid signatures can be expired or broken as well as forged; the label does not establish malicious intent.
+Current-hit derivation uses the strongest matching rule: invalid signature, verified crawler or user-directed/unknown purpose (`crawler_verified` or `agent_verified`), browser automation, unverified claim, suspicious browser, human browser, then pending. A verified unknown purpose is neither a verified crawler nor a verified user-directed agent; it maps to `agent_verified` with `unknown` retained in detail. Invalid signatures can be expired or broken as well as forged; the label does not establish malicious intent.
 
 Session rank is monotonic: later `human` cannot erase earlier evidence. The two verified roles have equal rank; the first observed role wins ties. Full events use `client_id + session_id`; denied pings are sticky only within their `page_id`, never across pages. Bounded in-memory retention (10,000 entries, 30-minute TTL) can expire; process restarts clear it. SQL independently takes the strongest observed type over the available export.
 
