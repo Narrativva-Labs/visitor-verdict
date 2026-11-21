@@ -9,8 +9,9 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [x] Browser detector with four classes (`human`, `automated`, `suspicious`, `declared_agent`); `suspicious` is a secondary view, not part of the headline number
 - [x] GTM import, GA4 event, event parameter on GA4 event tags, user property
 - [x] Contracts, fuzz tests, synthetic browser suites, adversarial benchmark, manual human lab
-- [ ] v1.0.0 release (hardening, CI, pinned CDN build with SRI)
-- [ ] Class on the first `page_view` (Google tag fired on the detector's initial result, with a short timer fallback)
+- [x] CSP-friendly sandboxed variable template
+- [x] v1.0.0 release (hardening, CI, pinned CDN build with SRI)
+- [x] Class on the first `page_view` (Google tag fired on the detector's initial result, with a short timer fallback)
 - [ ] Lightweight field validation, 2–4 weeks on a few live sites: share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
 - [ ] Publish the results, including what is missed
 
@@ -27,5 +28,4 @@ Starts only after Phase 1 meets its exit criterion.
 ## Later (ideas, not commitments)
 
 - GTM Community Template Gallery template (separate repository, pinned CDN build)
-- CSP-friendly sandboxed variable template
 - Scheduled checks of official AI-agent user-agent documentation

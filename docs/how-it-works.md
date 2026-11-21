@@ -4,7 +4,7 @@ Visitor Verdict is a first reporting layer for clear automation, not an attempt 
 
 | Class | Meaning |
 |---|---|
-| `automated` | Hard browser automation evidence, or one document of carry-over from previous direct hard/declared evidence. Does not establish intent or AI use. |
+| `automated` | Hard browser automation evidence, or one document of carry-over (CA) from previous direct hard evidence. Does not establish intent or AI use. |
 | `declared_agent` | A configured agent/fetcher/crawler UA claim without hard automation evidence. Tokens are not identity verification. |
 | `suspicious` | Uncertain weighted evidence satisfying corroboration rules, or the direct UB rule. Keep as a secondary reporting view. |
 | `human` | No sufficient automation evidence; not proof of a person. |
@@ -44,7 +44,7 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 | `NP` | Secure top-level Chromium, supported denied/prompt notification mismatch, successful async query | 1 / permissions, final only |
 | `HC` | Missing/zero hardwareConcurrency | 0 / debug only |
 | `NI` | No accepted activity after a full configured visible window (default 8000 ms); missing isTrusted counts as activity | 2 / interaction |
-| `FN` | At least 3 pageviews connected by consecutive positive intervals <2000 ms (2 intervals for count 3) | 3 / navigation |
+| `FN` | At least 3 pageviews connected by consecutive positive intervals <2000 ms (2 intervals for count 3) | 3 / navigation, final only |
 | `SY` | Explicitly untrusted mousemove/pointerdown/touchstart occurred, with no accepted activity (trusted or missing isTrusted) | 2 / interaction |
 | `TP` | Positive >200px mousemove jump followed within 600ms by a trusted mouse click near the jump endpoint and fresh trusted mouse pointerdown; path/rest/repeat safeguards below | 3 / pointer, final only |
 | `WK` | Opt-in (`worker: true`): supported UA, webdriver, languages or positive core-count mismatch between main and dedicated worker; unavailable fields ignored | 2 / worker, final only |
@@ -60,7 +60,7 @@ Mobile human controls therefore emulate viewport/screen, device scale, mobile la
 
 **TR (repeated teleport)** uses the decaying `tpPages` counter described in [privacy and storage](privacy.md). TP increments it synchronously in click capture before navigation, at most once per observed document, saturating at 255. At final, a document with accepted activity and no TP repays one count, subject to stale-write guards; idle and TP documents do not decay it. TR fires only at final if the remaining count is at least 2. It contributes 2 in the pointer family, capped at 3 together with TP, and uses the ordinary suspicious rule. Repeated history alone never starts a document suspicious. Duplicate inclusion, repeated clicks and BFCache restoration cannot increment again. New/reloaded documents may count separately; no unique-URL claim is possible. Blocked storage leaves page-local TP evidence; repeated clicks in one document cannot create TR alone.
 
-**WK (worker mismatch)**, when enabled, compares supported main/worker user agent, webdriver, languages and positive hardware concurrency values. Missing worker fields are ignored. A worker exposing HeadlessChrome adds hard HL. Worker creation/errors/CSP denial produce no mismatch, and final never waits for the worker. A legitimate main-only UA switcher can also produce WK, so it is weak evidence.
+**WK (worker mismatch)**, when enabled, compares supported main/worker user agent, webdriver, languages and positive hardware concurrency values. Missing worker fields are ignored. A worker exposing HeadlessChrome adds hard HL. Worker creation/errors/CSP denial produce no mismatch, and final never waits for the worker. Without a reply, the worker is terminated after at most 1500 ms (or idleMs if shorter). A legitimate main-only UA switcher can also produce WK, so it is weak evidence.
 
 Activity listeners use window capture, falling back to document capture if window lacks a usable add/remove pair, with passive listeners where supported. If input listeners cannot be installed, inactivity is unknown rather than NI evidence. Accepted activity includes mousemove, pointermove, pointerdown, pointerup, touchstart, touchmove, touchend, touchcancel, scroll, keydown, keyup, wheel, click and focusin. Pointercancel clears pointer state but does not count as activity. `isTrusted === true` **or missing `isTrusted`** counts as activity for NI/SY and counter decay; TP requires explicitly trusted events. Accepted activity prevents NI/SY and, without TP, can decay history; it does not erase hard evidence. Trusted input can come from automation.
 

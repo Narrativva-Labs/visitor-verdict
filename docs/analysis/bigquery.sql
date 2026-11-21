@@ -15,7 +15,7 @@ DECLARE labelled_windows ARRAY<STRUCT<start_ts TIMESTAMP, end_ts TIMESTAMP, labe
 -- Load windows.csv filtered to this site, e.g.
 -- [STRUCT(TIMESTAMP '2026-11-20 09:00:00+00' AS start_ts,
 --         TIMESTAMP '2026-11-20 09:02:00+00' AS end_ts,
---         'canary:playwright-default' AS label)]
+--         'canary:default' AS label)]
 -- Labels: panel:<cohort>, canary:<configuration>. No participant identifiers.
 -- Windows are UTC, half-open [start,end). Exclude the WHOLE identifiable session
 -- if ANY observed event overlaps a window. Unjoinable pings: exclude per event.

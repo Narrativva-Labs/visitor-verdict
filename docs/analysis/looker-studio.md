@@ -1,6 +1,6 @@
 # Sessions excluding detected automation dashboard
 
-Use [bigquery.sql](bigquery.sql) as the transformation. Set the export dataset, **one web stream ID**, timezone, date range, scan padding, optional first-observed-city filter and test windows. Run the whole script. It creates temporary tables and returns A–F; for scheduled reporting, adapt each terminal SELECT to write a separate reporting table in your own dataset. Keep the export read-only, rebuild recent dates for late arrivals, and preserve session-boundary padding.
+Use [bigquery.sql](bigquery.sql) as the transformation. Set the export dataset, **one web stream ID**, timezone, date range, scan padding, optional first-observed-city filter and test windows. Run the whole script. It creates temporary tables and returns A–I plus study summary and evaluation-window outputs; for scheduled reporting, adapt each terminal SELECT to write a separate reporting table in your own dataset. Keep the export read-only, rebuild recent dates for late arrivals, and preserve session-boundary padding.
 
 In Looker Studio, **Create → Data source → BigQuery**, choose the reporting table, then **Connect / Add to report**. Repeat per result. Set `session_day` (or event `day` for A/F2) as Date and the date-range dimension. See [Google's BigQuery connector](https://cloud.google.com/looker/docs/studio/connect-to-google-bigquery).
 

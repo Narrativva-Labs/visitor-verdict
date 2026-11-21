@@ -38,4 +38,5 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - GA4 events sent before classification cannot be backfilled. Automatic-event/shared-settings and last-observed user-property semantics require care; pre-consent classifications must not feed advertising platforms.
 - The detector exceeds the original 5 KB minified target. ES5 syntax does not imply legacy-browser support.
 
+[1.0.1]: https://github.com/Narrativva-Labs/visitor-verdict/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Narrativva-Labs/visitor-verdict/releases/tag/v1.0.0
