@@ -1,3 +1,4 @@
+import { MemoryNonceStore } from './replay.js';
 import { verify } from 'node:crypto';
 import type { Dictionary, InnerList } from 'structured-headers';
 import { signatureBase, type AgentClaims, type Context } from './fields.js';
@@ -120,7 +121,8 @@ export async function evaluateSignature(
     if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes))
       throw new Failure('crypto_mismatch');
     if (env.nonceStore) {
-      if (env.cacheOnly) throw new Failure('insufficient_context', true);
+      if (env.cacheOnly && !(env.nonceStore instanceof MemoryNonceStore))
+        throw new Failure('insufficient_context', true);
       const nonce = inner[1].get('nonce');
       const expires = inner[1].get('expires') as number;
       if (typeof nonce !== 'string' || !nonce) throw new Failure('missing_nonce');
@@ -138,6 +140,7 @@ export async function evaluateSignature(
       verified: {
         operator: operator.operator,
         method: 'signature',
+        expiresAt: inner[1].get('expires') as number,
         signatureAgent: identity,
         keyid,
         keyidForm: keyid === key.thumbprint ? 'thumbprint' : 'kid',

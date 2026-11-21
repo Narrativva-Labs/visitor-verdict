@@ -83,6 +83,8 @@ export interface AgentVerdict {
   verified?: {
     operator: string;
     method: 'signature' | 'ip' | 'rdns';
+    /** Signed proof expiry in Unix seconds, without verification clock skew. */
+    expiresAt?: number;
     signatureAgent?: string;
     keyid?: string;
     keyidForm?: 'thumbprint' | 'kid';
@@ -152,7 +154,7 @@ export interface RefreshEvent {
 export interface VerifyOptions {
   /**
    * Use only trusted cached documents and static ranges. Misses refresh in the background and
-   * return none/cache_miss without waiting. DNS and external replay-store calls are not made.
+   * return none/cache_miss without waiting. DNS and external replay-store calls are not made. MemoryNonceStore is supported.
    */
   cacheOnly?: boolean;
 }

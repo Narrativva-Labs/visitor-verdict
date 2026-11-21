@@ -19,3 +19,8 @@
 - Exhaustive verification/purpose/claim/browser/phase table tests and public declaration checks.
 
 Earlier releases are recorded in README.md.
+
+## 0.3.2
+
+- Add bounded atomic MemoryNonceStore support in cache-only verification.
+- Return signed proof expiry as verified.expiresAt for evidence lifetime limits.

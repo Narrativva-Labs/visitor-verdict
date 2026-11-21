@@ -313,3 +313,15 @@ and `.ai` JSON is accessible there. Direct HTTP redirect verification was blocke
 by sandbox DNS, so the existing `.ai` feeds are retained pending a direct check.
 YouBot's unavailable documentation link is replaced with an observed directory
 source; no verification capability is added.
+
+### Local replay enforcement (0.3.2)
+
+`new MemoryNonceStore(capacity = 10000, now = () => Date.now() / 1000)` can be
+passed as `nonceStore`, including with `cacheOnly: true`. Its clock should match
+the verifier clock. It performs an atomic check and insertion within one process,
+retains entries through expiry plus 30 seconds (inclusive), and fails closed when
+full rather than evicting live entries. Store failures yield an indeterminate
+verdict. External stores remain unavailable in cache-only verification.
+
+Successful signature evidence now includes `verified.expiresAt` (Unix seconds,
+without skew), so callers can cap the lifetime of derived evidence.
