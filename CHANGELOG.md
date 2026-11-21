@@ -13,7 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Clearly labelled optional first-page-view readiness trigger set, with manual setup, one-second fallback, once-per-page firing, timing risks and rollback instructions.
 - Migration instructions, session-level any-hit reporting guidance and container contract coverage. Initial/final duplicates are expected; classification-event counts are not visit counts.
 - BigQuery session rollup ranks `automated` above `declared_agent`, matching detector precedence.
-- Measured GA4 batching note: the initial event leaves about 5 s after the previous hit or on page hide; the first-page-view recipe is the robust path for immediate exits. SPA pageviews stay in a separate tag.
+- Measured GA4 batching note (corrected 21 November 2026): leaving the page flushes the GA4 batch, so short visits still send `page_view` and the initial classification; automation request listeners miss these unload requests. SPA pageviews stay in a separate tag.
 - Detector JavaScript, distribution, probe settings and `traffic_version: '1.0.0'` are unchanged.
 
 ## [1.0.0] - 2026-11-19
