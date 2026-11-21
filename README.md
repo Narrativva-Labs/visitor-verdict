@@ -28,6 +28,8 @@ Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering
 
 > **Limits:** `human` means no automation detected, not proof of a person. `suspicious` is a secondary view. This is client-side and spoofable, for reporting only: never block users or deny service. Consent is the site owner's decision; pre-consent classifications must never feed advertising platforms. Read the [privacy details](docs/privacy.md).
 
+**Server-side verification (in development):** a verifier for signed AI agents (Web Bot Auth) and operators' published IP ranges is being built on the [`phase2-verifier`](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server) branch, alongside Phase 1 field validation. Not released yet; see the [roadmap](ROADMAP.md#phase-2--server-side-verification-and-conversion-apis-in-development).
+
 [![CI](https://github.com/Narrativva-Labs/visitor-verdict/actions/workflows/ci.yml/badge.svg)](https://github.com/Narrativva-Labs/visitor-verdict/actions/workflows/ci.yml)
 
 ## Pinned direct-script build
