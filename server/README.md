@@ -331,14 +331,29 @@ by sandbox DNS, so the existing `.ai` feeds are retained pending a direct check.
 YouBot's unavailable documentation link is replaced with an observed directory
 source; no verification capability is added.
 
-### Local replay enforcement (0.3.2)
+### Local replay enforcement (0.3.3)
 
-`new MemoryNonceStore(capacity = 10000, now = () => Date.now() / 1000)` can be
-passed as `nonceStore`, including with `cacheOnly: true`. Its clock should match
-the verifier clock. It performs an atomic check and insertion within one process,
-retains entries through expiry plus 30 seconds (inclusive), and fails closed when
-full rather than evicting live entries. Store failures yield an indeterminate
-verdict. External stores remain unavailable in cache-only verification.
+`new MemoryNonceStore(capacity = 10000, now = () => Date.now() / 1000,
+perOperatorCapacity = Math.max(1, Math.floor(capacity / 4)))` supports
+`cacheOnly: true`, including duplicated package instances. Use the same clock as
+the verifier. Replay keys are SHA-256 digests of the canonical identity, key
+thumbprint and nonce. Existing persisted external-store keys change at upgrade;
+retain old history or drain the signed validity window before switching formats.
 
-Successful signature evidence now includes `verified.expiresAt` (Unix seconds,
-without skew), so callers can cap the lifetime of derived evidence.
+Lookup is constant time; an expiry heap removes only expired entries. The total
+budget and each operator budget fail closed with `none/replay_capacity_exhausted`,
+without evicting live history. `status()` returns occupancy, capacity, operator
+budget, saturation and exhaustion count, without replay keys or identities.
+A single operator cannot use another operator's reserved share; the global limit
+can still be reached by multiple operators. Direct two-argument inserts share a
+single unnamed operator budget. Optional third-argument `{ scope, expiresAt, now }`
+supplies an operator scope, absolute Unix-second retention floor and clock snapshot.
+
+Verifier inserts retain history through signed expiry plus 30 seconds inclusive,
+using the absolute deadline even when the store clock differs. External stores
+receive the usual relative TTL and must use a compatible clock. They remain
+unavailable in cache-only verification. Local inserts need no timeout timer.
+
+Valid signatures take precedence; otherwise replay failures precede other invalid
+candidates. Successful signature evidence includes `verified.expiresAt` (Unix
+seconds without skew), so callers can cap derived evidence.

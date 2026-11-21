@@ -1,5 +1,5 @@
-import { MemoryNonceStore } from './replay.js';
-import { verify } from 'node:crypto';
+import { isMemoryNonceStore } from './replay.js';
+import { createHash, verify } from 'node:crypto';
 import type { Dictionary, InnerList } from 'structured-headers';
 import { signatureBase, type AgentClaims, type Context } from './fields.js';
 import { Failure, failure } from './errors.js';
@@ -34,7 +34,11 @@ async function insertNonce(
   key: string,
   ttl: number,
   timeoutMs: number,
+  scope: string,
+  expiresAt: number,
+  now: number,
 ): Promise<boolean> {
+  if (isMemoryNonceStore(store)) return store.insertIfAbsent(key, ttl, { scope, expiresAt, now });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -121,16 +125,21 @@ export async function evaluateSignature(
     if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes))
       throw new Failure('crypto_mismatch');
     if (env.nonceStore) {
-      if (env.cacheOnly && !(env.nonceStore instanceof MemoryNonceStore))
+      if (env.cacheOnly && !isMemoryNonceStore(env.nonceStore))
         throw new Failure('insufficient_context', true);
       const nonce = inner[1].get('nonce');
       const expires = inner[1].get('expires') as number;
       if (typeof nonce !== 'string' || !nonce) throw new Failure('missing_nonce');
       const inserted = await insertNonce(
         env.nonceStore,
-        JSON.stringify([identity, key.thumbprint, nonce]),
+        createHash('sha256')
+          .update(JSON.stringify([identity, key.thumbprint, nonce]))
+          .digest('hex'),
         Math.max(1, Math.ceil(expires + 30 - env.now)),
         env.nonceTimeoutMs,
+        operator.operator,
+        expires + 30,
+        env.now,
       );
       checkActive(env.signal);
       if (!inserted) throw new Failure('replay');

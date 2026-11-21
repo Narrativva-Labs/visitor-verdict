@@ -77,6 +77,7 @@ export function selectOutcome(
           };
   const selected =
     relevant.find((s) => s.result === 'signature_valid') ??
+    relevant.find((s) => s.result === 'signature_invalid' && s.reason === 'replay') ??
     relevant.find((s) => s.result === 'signature_invalid') ??
     relevant[0];
   return selected

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 — 2026-11-21
+
+- Prioritize replay failures over other invalid candidates; valid proofs still win.
+- Bound replay key size, use an expiry heap and per-operator budgets, expose capacity status, and report typed exhaustion.
+- Retain local nonces through an absolute skew deadline and recognize duplicate package stores without per-insert timers.
+
 ## Unreleased
 
 - Strengthen public API, declaration isolation and successful-refresh hostname regression tests.
