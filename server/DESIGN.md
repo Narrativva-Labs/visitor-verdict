@@ -90,6 +90,17 @@ fresh equal-rank evidence replaces the prior type and operator. Current-hit deta
 Full hits use client_id+session_id, denied pings page_id; bounded memory-only storage
 must expire and clear on close. No library persistence or request waiting is introduced.
 
+## Evidence versus identity (0.4.0)
+
+The operator segment of `vv_detail` is filled only from verified evidence on the hit
+(`signature_valid`/`ip_match` in the verification segment) or from a browser page marker
+(claim `dom_marker`, type `agent_unverified`). UA tokens and unverified Signature-Agent values
+are claims and never name an operator. A collector's sticky operator travels with the sticky
+type that established it, so `vv_type` in {agent_verified, crawler_verified} is the reliable
+"verified operator" test for every hit, and verification `signature_valid|ip_match` is the
+per-hit test. The format stays six segments; the only addition is the purpose value
+`intermediary`, and unlisted purpose values become `unknown`.
+
 ## Keyed signature members (0.4.0)
 
 Draft-01 §5.2.2 lets a signer cover another label's `signature` and `signature-input`

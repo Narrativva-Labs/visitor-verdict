@@ -45,7 +45,9 @@
 --   detector from a page marker (unverified); browser_phase agent is the detector's
 --   update after that marker. Verified evidence below still requires verification.
 --   Since server 0.4.0 purpose intermediary means the verified operator is signing
---   infrastructure (Browserbase), not the agent.
+--   infrastructure (Browserbase), not the agent. An operator counts as verified only
+--   with vv_type agent_verified/crawler_verified (sticky) or, per hit, verification
+--   signature_valid/ip_match; UA tokens never name an operator.
 --   Missing labels may reflect budget limits/early deployment and are unknown.
 --
 -- Caveats:

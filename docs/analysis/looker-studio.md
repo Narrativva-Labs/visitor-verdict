@@ -16,7 +16,13 @@ For a GA4 connector operator dimension, use:
 REGEXP_EXTRACT(vv_detail, '^([^|]+)')
 ```
 
-`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, with unknown operator `none` and absent positions `-`. It contains current-hit evidence plus the sticky known operator. A sticky type may describe stronger earlier evidence, so do not assume every detail verifies its sticky type. Use **vv_detail begins with `openai|`** for an operator event filter. Since server 0.3.5 the operator can also come from a browser page marker (claim `dom_marker`, type `agent_unverified`); add **vv_type = `agent_verified`** when only verified operators count.
+`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, with unknown operator `none` and absent positions `-`. It contains current-hit evidence plus the sticky known operator. A sticky type may describe stronger earlier evidence, so do not assume every detail verifies its sticky type. Use **vv_detail begins with `openai|`** for an operator event filter. Since server 0.3.5 the operator can also come from a browser page marker (claim `dom_marker`, type `agent_unverified`); a UA token never names an operator. **Count verified operators with vv_type = `agent_verified` or `crawler_verified`** (per hit: verification segment `signature_valid` or `ip_match`), and exclude purpose `intermediary` (Browserbase, signing infrastructure, server 0.4.0) when counting the agents themselves. A calculated field for the operator source:
+
+```text
+CASE WHEN vv_type IN ('agent_verified', 'crawler_verified') THEN 'verified'
+     WHEN REGEXP_EXTRACT(vv_detail, '^([^|]+)') != 'none' THEN 'dom_marker'
+     ELSE 'none' END
+```
 
 The complete `vv_type` dictionary is `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`. In [session-classification.sql](session-classification.sql) session ranks are respectively 0, 1, 2, 3, 4, 5, 5, 6; the first role wins a rank-5 tie. This reporting rank deliberately puts `bot_spoofed` highest, so a session with any invalid signature is reported as spoofed. The collector's live sticky memory instead ranks `bot_spoofed` at 4.5, below verified identities (5), and lets fresh equal-rank evidence replace the earlier type ([server README](../../server/README.md)); a hit can therefore carry `agent_verified` in a session the query reports as `bot_spoofed`. Verified unknown purpose maps to `agent_verified` and preserves `unknown` in detail; this does not infer a user-directed role. `human` means no automation detected; a signature verifies an operator, not customer intent or purchase approval. See [GA4 setup and cohorts](ga4-explorations.md) for the value dictionary and limits.
 

@@ -208,7 +208,22 @@ Every verified result (`signature_valid` or `ip_match`) with unknown purpose yie
 
 The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified=agent_verified=5. Fresh equal-rank evidence replaces the earlier type and operator. Same-type/same-operator renewal never shortens active expiry; lower-ranked inherited hits do not extend it. Verified sticky expiry is capped to the accepted proof deadline and the configured TTL. A detected replay overrides active verified memory for that hit only; malformed headers or other invalid signatures can inherit active verified evidence without extending it. Detail describes the current hit, optionally using a previously known operator (verified, or since 0.3.5 a page marker's operator inherited with a stronger `agent_unverified` type). Scope full events to client_id + session_id and denied pings to page_id + client_id, with a bounded memory-only LRU/TTL and no stored IPs.
 
-Filter `vv_type` beginning with `agent_` or `bot_`, or `vv_detail` beginning with `openai|`. Since 0.3.5 that operator can come from a page marker (claim `dom_marker`, unverified); add `vv_type = agent_verified` when only verified operators count. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Browser/GTM-only sites keep `traffic_class` for now.
+### Evidence versus identity (0.4.0)
+
+The operator segment has exactly two sources in `visitorLabels`, and the same detail always says which:
+
+| Operator source                            | Verification segment                                               | Claim segment                                           | `vv_type`                             |
+| ------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------- |
+| Verified signature                         | `signature_valid`                                                  | `signature_agent`                                       | `agent_verified` / `crawler_verified` |
+| Verified IP range or FCrDNS                | `ip_match`                                                         | `ua_token` (the claim that selected the feed) or `none` | `agent_verified` / `crawler_verified` |
+| Browser page marker (observed, unverified) | anything except `signature_valid`, `ip_match`, `signature_invalid` | `dom_marker`                                            | `agent_unverified`                    |
+| Nothing else                               | any                                                                | any                                                     | operator is `none`                    |
+
+A UA token or an unverified Signature-Agent value is a claim: it sets the claim segment and can make the type `agent_unverified`, but it **never** names an operator. An exhaustive test enforces this table. A collector that keeps a sticky operator per session (Vanilla does) inherits it together with the stronger type that established it, so on such a hit the type, not the current hit's verification segment, tells the source: `agent_verified`/`crawler_verified` means a verified operator; `agent_unverified` with an operator means a page marker.
+
+**Count verified operators with `vv_type = agent_verified` or `crawler_verified`**, or per hit with the verification segment `signature_valid` or `ip_match`. Exclude purpose `intermediary` when counting the agents themselves. `vv_detail` beginning with `openai|` alone also matches marker-named sessions. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')` and its source with
+`CASE WHEN vv_type IN ('agent_verified','crawler_verified') THEN 'verified' WHEN REGEXP_EXTRACT(vv_detail, '^([^|]+)') != 'none' THEN 'dom_marker' ELSE 'none' END`.
+Browser/GTM-only sites keep `traffic_class` for now; their `traffic_agent` is always a page marker, never verification.
 
 Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
 

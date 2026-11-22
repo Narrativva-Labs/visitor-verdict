@@ -32,7 +32,7 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 - [x] First integration: [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) labels GA4 hits with `vv_type` and `vv_detail`, nothing withheld (earlier smoke test used separate fields); running on its live demo since 2026-11-20. ChatGPT agent smoke test on one demo shop (2026-11-20): GA4 Realtime showed the server label on 5/5 `view_cart` events after warming, 1/5 before; standard reports and BigQuery not verified
 - [x] Warm the key cache and serve cached keys while refreshing
 - [x] Browser page-marker operator in `visitorLabels` (server 0.3.5): claim `dom_marker`, type stays `agent_unverified`, verified identity wins
-- [ ] Keep evidence and identity apart in the output: a browser hint about the operator (UI marker, user-agent token) is never reported as a verified operator
+- [x] Keep evidence and identity apart in the output (server 0.4.0): only verification or a page marker (claim `dom_marker`) names an operator, a user-agent token never does; verified operators are counted with `vv_type=agent_verified` or `crawler_verified`
 - [x] More signing operators from public key directories (server 0.4.0, live directories checked 2026-11-22): Meta Muse `muse.ai`, Manus, Google `agent.bot.goog` (dictionary label `g`), and Browserbase reported as an intermediary (purpose `intermediary`), not as the agent
 - [ ] Amazon Bedrock AgentCore Browser once AWS documents a public key directory (signing is opt-in per customer browser)
 - [ ] Personal Agent Protocol (Poppy 1.0) as an optional verifier: a verified session means an agent acting for a person; a manifest or `client_id` alone is only a claim

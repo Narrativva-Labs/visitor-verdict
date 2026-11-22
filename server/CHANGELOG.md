@@ -6,6 +6,7 @@
 - Intermediaries: registry flag `intermediary: true` (Browserbase in the default registry) and purpose value `intermediary`. A verified intermediary signature identifies the signing infrastructure, never the agent; `vv_type` stays `agent_verified`, `vv_detail` reads `browserbase|signature_valid|intermediary|…`. A valid direct signature now wins `verified` over a valid intermediary regardless of label order. Breaking for registry consumers: Browserbase's purpose changes from `user_directed` to `intermediary`, and `AgentPurpose` gains a value.
 - Support keyed `signature-input` and `signature` components (draft-01 §5.2.2, Appendix D.2): an outer signature that covers another label's signature now verifies instead of returning none/unsupported_component. Absent, wrongly shaped or Decimal-timestamp members are indeterminate. Attribution is unchanged.
 - `visitorLabels` maps unlisted purpose values to `unknown`.
+- Evidence versus identity: documented and tested that only verification or a page marker (`dom_marker`) names an operator; UA tokens and unverified Signature-Agent values never do.
 - Live directory re-check for Muse, Browserbase, Manus and Google (2026-11-22); Google's experimental Web Bot Auth documentation added as registry evidence. Amazon Bedrock AgentCore Browser is documented as not supported (no public directory).
 - Session SQL accepts purpose `intermediary`.
 

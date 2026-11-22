@@ -207,3 +207,30 @@ test('unlisted purpose values never reach vv_detail', () => {
     });
   }
 });
+
+test('evidence vs identity: every named operator states its source in the same detail', () => {
+  // The operator segment is filled only by (a) verification on this hit or (b) a page marker
+  // (claim dom_marker). A UA token or an unverified Signature-Agent never names an operator.
+  for (const verification of [undefined, ...verifications])
+    for (const purpose of purposes)
+      for (const claim of claims)
+        for (const browserClass of browsers)
+          for (const browserAgent of [undefined, 'openai', 'anthropic', 'google'])
+            for (const browserPhase of phases) {
+              const { vv_type, vv_detail } = visitorLabels({
+                verdict: verification && verdict(verification, purpose, claim),
+                browserClass,
+                browserPhase,
+                browserAgent,
+              });
+              const [operator, verified, , source] = vv_detail.split('|');
+              if (operator === 'none') continue;
+              if (['signature_valid', 'ip_match'].includes(verified))
+                assert.ok(['agent_verified', 'crawler_verified'].includes(vv_type));
+              else {
+                assert.equal(source, 'dom_marker', vv_detail);
+                assert.equal(vv_type, 'agent_unverified', vv_detail);
+                assert.ok(['openai', 'anthropic'].includes(operator));
+              }
+            }
+});
