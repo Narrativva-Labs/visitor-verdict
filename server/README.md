@@ -514,3 +514,27 @@ Platform-default release source: [Chrome 92 Enterprise release notes, upcoming C
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+
+### Static rules for server-side GTM
+
+From the repository root, run `npm --prefix server run build` followed by
+`node scripts/build-sgtm-rules.mjs`. This writes `dist/sgtm-rules.json` using the
+registry's exact order, UA gates, purpose policies, static ranges, JSON IP feeds
+and SAIL services. IPv4 ranges are sorted/merged integer intervals per evidence
+group; IPv6 prefixes use normalized hexadecimal network addresses and bit lengths.
+No request or visitor data is involved. The serialized output must fit 200,000 bytes.
+
+Every upstream feed must succeed before the output is replaced. Archived public
+source documents can be supplied with `--source-dir DIR` using file names
+`<operator>--<list>.txt`. `--output FILE` supports isolated validation.
+`--allow-partial` is for offline development only: its artifact explicitly records
+`complete: false` and missing sources and must not be published as a release feed.
+Run `node scripts/test-sgtm-rules.mjs` for offline export/SAIL/size-guard tests.
+
+Publish a reviewed, complete feed under an immutable public repository tag such as
+`sgtm-rules-v1.0.0`; the companion sGTM template reads
+`https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@sgtm-rules-v1.0.0/dist/sgtm-rules.json`.
+Pinned rules do not update automatically; operators must publish a new tag and
+marketers must select it to refresh their data. This is a local feed builder, not
+a deployment or publishing command.
