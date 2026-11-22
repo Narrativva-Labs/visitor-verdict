@@ -14,7 +14,7 @@ The labels are for analysis and review. Whether to change what you send to an ad
 
 ## Why
 
-- **Agent-assisted purchases are real revenue.** Browser agents such as Claude in Chrome or OpenAI's browser agent run in a person's own browser, with that person's account and card. The person asked the agent to act. A `declared_agent` purchase with `traffic_agent` set is a customer buying through a tool.
+- **Agent-assisted purchases are real revenue.** Browser agents such as OpenAI's in-browser agent (or Claude in Chrome) run in a person's own browser, with that person's account and card. The person asked the agent to act. A `declared_agent` purchase with `traffic_agent` set is a customer buying through a tool. Detection is partial: current Claude in Chrome (1.0.107) hides its UI in a closed shadow root and is not labelled, so agent-assisted revenue is a lower bound.
 - **The labels are self-declared, unverified browser evidence.** A UA token or an agent UI marker is a claim, and `human` means only that no automation was detected. Neither is reliable enough to decide on its own which revenue counts.
 - **Excluding by default loses data you cannot get back.** A held or dropped conversion is gone for bidding and attribution; a labelled one can still be analysed, segmented or adjusted later.
 - **Payment and fraud checks already exist.** Refunds, chargebacks and fraud review belong to the payment and order systems. Send orders with their order ID so that platforms can apply later adjustments (for example Google Ads [conversion adjustments](https://support.google.com/google-ads/answer/7686447)).

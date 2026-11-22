@@ -9,21 +9,26 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Agent UI markers (`DM`): the detector checks three exact element IDs that browser agents inject while they act (`claude-agent-glow-border` and `claude-phantom-cursor` as children of `body`, `codex-agent-overlay-root` as a child of the root element) at start, then watches with one `MutationObserver` until found or `pagehide`. A match yields `declared_agent`. Markers and placement were identified by Microsoft Clarity (MIT). Evidence level: observed, self-declared by the agent UI. The OpenAI overlay ID is confirmed in the ChatGPT desktop app's Chrome plugin; current Claude in Chrome (1.0.107) keeps its UI in a closed shadow root and is not detected, only older versions are.
+- Agent UI markers (`DM`): the detector checks three exact element IDs that browser agents inject while they act (`codex-agent-overlay-root` as a child of the root element; `claude-agent-glow-border` and `claude-phantom-cursor` as children of `body`, older Claude in Chrome versions) at start and again once the watcher runs, then watches with one `MutationObserver` until found or `pagehide`. The observer covers only the child lists of the root element and `body` (no subtree), plus an `id`-only watch on up to 32 newly added direct children, so mutations inside page content cost nothing. It starts only when a `pagehide` listener is attached. A match yields `declared_agent`. Markers and placement were identified by Microsoft Clarity (MIT). Evidence level: observed, self-declared by the agent UI. The OpenAI overlay ID is confirmed in the ChatGPT desktop app's Chrome plugin; current Claude in Chrome (1.0.107) keeps its UI in a closed shadow root and is not detected, only older versions are.
 - New phase `traffic_phase: 'agent'`: one extra `traffic_class` event when a marker appears after the initial publication, before or after final. The frozen `window.__visitorVerdict` snapshot is replaced; final keeps `declared_agent`.
-- New optional field `traffic_agent` (`openai` | `anthropic`) on data-layer events and `agent` on `window.__visitorVerdict`, only when a marker named the operator. The operator is stored with the direct result and carried to the next document with `CD`.
+- New optional field `traffic_agent` (`openai` | `anthropic`) on data-layer events and `agent` on `window.__visitorVerdict`, only with class `declared_agent` and only when a marker named the operator; `automated` is reported without an operator. The operator is stored with the declaration (at once when the marker is present at load or confirms a carried operator) and carried to the next document with `CD`.
 - GTM container 1.1.0: `VV - DLV traffic_agent`, `VV - agent` trigger, GA4 `traffic_class` tag also fires on the agent phase and sends `traffic_agent`.
 - [Conversion guidance](docs/conversion-guidance.md): Visitor Verdict only labels traffic; nothing is excluded, filtered or held by default in GA4, ad platforms or leads.
 
 ### Changed
 
-- `traffic_version` and package version `1.1.0`; minified detector ~14.9 KB (+~1.2 KB).
+- `traffic_version` and package version `1.1.0`; minified detector ~15.5 KB (+~1.7 KB).
 - Reporting docs: All sessions is the headline; views that set labelled sessions aside are optional comparisons; agent-assisted revenue is reported as a breakdown, not a deduction.
 - `codex-browser-sidebar-comments-root` is deliberately not a marker: it identifies the OpenAI browser surface, not agent control.
+
+### Fixed
+
+- Direct provenance is split into hard and declared evidence. In 1.0.x a UA token on a document that was automated only through a carried `CA` stored direct `automated` again, so `CA` could chain across documents. Now only direct hard evidence stores `automated`; a declaration (UA token or marker) stores `declared_agent`, so the following document is `declared_agent`, never `automated`.
 
 ### Known limits
 
 - Markers in shadow roots (open or closed) and frames are not inspected; marker names can change with agent releases; page code can plant them. A BFCache-restored page is not watched again.
+- The carried label lasts one document: after a person stops the agent and clicks on, the next page can still be `declared_agent` with `traffic_agent`.
 
 ### Documentation
 

@@ -7,7 +7,7 @@
 3. **Optional first `page_view` recipe:** open the site's **existing Google tag**. The import folder **VV - OPTIONAL page_view readiness (OR, once per page)** groups the two triggers for this manual step. Replace its early All Pages/Initialization firing trigger with **VV - initial OR VV - timer fallback 1s** as two ordinary firing triggers, not a trigger group. Set its advanced firing option to **Once per page**, so whichever trigger fires first starts it once. The timer interval is 1000ms, limit 1, enabled on all pages; it covers an unavailable or delayed detector.
 4. In the existing Google tag's **Shared event settings** (using an event settings variable where appropriate), set event parameter **traffic_class = `{{VV - current class}}`**. Preserve existing consent handling. With a timely initial result, the first `page_view` can carry the current page's initial class rather than waiting for a later page. This setup requires changing the existing tag; importing alone does not wire it.
 5. On every other **GA4 Event tag** (`gaawe`), add **traffic_class = `{{VV - current class}}`**, evaluated at that tag's firing time. Audit ecommerce, click and other tagged events. The dedicated publication event described below is the exception: it must use the publication's DLVs.
-6. Keep **VV - GA4 traffic_class** on **VV - initial hard OR VV - agent OR VV - final**, **Once per event**, with the mappings below. Preview initial/final events, version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Neither a user property nor this setup backfills earlier events.
+6. Keep **VV - GA4 traffic_class** on **VV - initial hard OR VV - agent OR VV - final**, **Once per event**, with the mappings below. Preview initial, agent and final events (inject a synthetic `codex-agent-overlay-root` child of the root element to see the agent phase with `traffic_agent: 'openai'`), version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Neither a user property nor this setup backfills earlier events.
 
 All imported named objects use `VV - `. The import creates two tags, seven variables, five triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
 
@@ -68,7 +68,7 @@ The dedicated event describes one data-layer publication. Use these exact mappin
 | Event parameter `traffic_agent` | `{{VV - DLV traffic_agent}}` |
 | User property `traffic_class` | `{{VV - DLV traffic_class}}` |
 
-All detector phases contain `traffic_version: '1.1.0'`. `traffic_agent` is `openai` or `anthropic` only when an agent UI marker named the operator, otherwise absent. Debug signal codes appear only in data-layer events when explicitly enabled; the production GA4 tag does not map them.
+All detector phases contain `traffic_version: '1.1.0'`. `traffic_agent` is `openai` (or `anthropic`, older Claude in Chrome versions only) only when an agent UI marker named the operator and the class is `declared_agent`, otherwise absent. Current Claude in Chrome (1.0.107) is not detected. Debug signal codes appear only in data-layer events when explicitly enabled; the production GA4 tag does not map them.
 
 ### Manual installation
 
@@ -110,7 +110,7 @@ The readiness pattern makes an initial class available to the Google tag's first
 
 Shared event settings are evaluated when the Google tag fires, once for that document. Automatic `page_view`, `user_engagement` and enhanced-measurement events can retain that startup value; later final classifications do not refresh it. Other explicitly tagged GA4 events re-evaluate `VV - current class` when they fire. An initial human label can therefore coexist with later final automation evidence. Use any observed automated/declared evidence for whole-session reporting; a later human never cancels it.
 
-Keep the dedicated event on initial hard, agent and final even if no later interactions occur: initial hard can reach GA4 before a short-lived browser closes without publishing final, while final provides coverage and final class/phase/score/version. Hard visits can send two hits; count sessions with any matching hit rather than summing classification events. Never mark `traffic_class` as a key event. The user property means **last observed class**, applies from set time, may persist into later visits, and is not a stable visitor attribute. Never use it for session exclusion or backfill. The detector cannot retract collected events.
+Keep the dedicated event on initial hard, agent and final even if no later interactions occur: initial hard can reach GA4 before a short-lived browser closes without publishing final, while final provides coverage and final class/phase/score/version. One page can send up to three `traffic_class` hits (initial, agent, final), for example a declared UA token at start, a late agent UI marker and final; count sessions with any matching hit rather than summing classification events. Never mark `traffic_class` as a key event. The user property means **last observed class**, applies from set time, may persist into later visits, and is not a stable visitor attribute. Never use it for session exclusion or backfill. The detector cannot retract collected events.
 
 ## Reporting
 
@@ -135,12 +135,12 @@ Register `traffic_score` as a custom metric only if needed. Score is a heuristic
 | `declared_agent` | Unverified agent claim (UA token or agent UI marker); can be spoofed. With `traffic_agent`, an agent UI of that operator was in the page: usually a real person's agent-assisted visit |
 | Missing | Unknown; never silently treat as human |
 
-**Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are optional comparisons that leave the data intact. Agent-assisted sessions are real visits: a browser agent such as Claude in Chrome runs in the person's own browser and pays with their card, so its purchases are revenue. Report them as their own segment, not as removed traffic.
+**Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are optional comparisons that leave the data intact. Agent-assisted sessions are real visits: a browser agent such as OpenAI's in-browser agent runs in the person's own browser and pays with their card, so its purchases are revenue. The agent-assisted segment is a lower bound: current Claude in Chrome is not detected. Report them as their own segment, not as removed traffic.
 
 Use these session views, scoped to the web stream and the same date range:
 
 - **All sessions** (headline): every session including unknown coverage.
-- **Agent-assisted sessions**: any event carries `traffic_agent` (or `declared_agent` with the operator known). Show sessions, purchases and revenue; this is customer activity through an agent.
+- **Agent-assisted sessions**: any event carries `traffic_agent` (or `declared_agent` with the operator known). Show sessions, purchases and revenue; this is customer activity through an agent. The carried label lasts one page: if the person stops the agent and clicks on, the next page can still carry `declared_agent` and `traffic_agent`, so a session's last pageview may be human activity. BigQuery flag: `has_agent_operator`.
 - **Sessions without detected automation** (optional comparison): leave out sessions where any event carries `automated` or `declared_agent`. Keep unknown sessions; show suspicious sessions separately within this view. Use it to see how much the labelled traffic moves rates, not as the reported total.
 - **Stricter sensitivity view** (optional): additionally leave out sessions containing `suspicious`.
 - **Observed human-only cohort**, diagnostic only: at least one `human` observation and no automated, declared or suspicious observations. It selects measurable, labelled visits and misses unknown traffic.

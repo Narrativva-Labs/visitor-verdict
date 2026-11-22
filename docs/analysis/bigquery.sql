@@ -48,7 +48,8 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
 --   The dedicated detector tag sends initial automated/declared_agent and all
 --   final classes; a short visit may deliver only initial. User properties are
 --   never used here as a session-exclusion fallback.
--- * Container 1.1.0 may send several traffic_class hits per hard page. Session flags
+-- * Container 1.1.0 may send up to three traffic_class hits per page (initial,
+--   agent, final); traffic_agent is extracted as has_agent_operator / agent_operator. Session flags
 --   below use ANY hit (COUNTIF > 0), so those duplicates do not inflate cohorts.
 --   A/F2/H/evaluation event counts are delivery diagnostics, NOT visits or recall;
 --   never sum initial and final event counts to estimate automated sessions.
@@ -70,6 +71,8 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
 
 CREATE TEMP FUNCTION valid_class(v STRING) AS
   (IF(v IN ('human', 'suspicious', 'automated', 'declared_agent'), v, NULL));
+-- Detector 1.1.0: operator from an agent UI marker, sent only with declared_agent.
+CREATE TEMP FUNCTION valid_agent(v STRING) AS (IF(v IN ('openai', 'anthropic'), v, NULL));
 
 -- Two-sided 95% Wilson score interval. Undefined for n=0; never use
 -- weighted pseudo-counts here. Reference: NIST prc241 (linked in protocol).
@@ -101,6 +104,8 @@ SELECT
    WHERE key = 'traffic_class' LIMIT 1) AS param_class_raw,
   (SELECT value.string_value FROM UNNEST(event_params)
    WHERE key = 'traffic_phase' LIMIT 1) AS phase,
+  (SELECT value.string_value FROM UNNEST(event_params)
+   WHERE key = 'traffic_agent' LIMIT 1) AS param_agent_raw,
   (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
    FROM UNNEST(event_params) WHERE key = 'traffic_score' LIMIT 1) AS traffic_score,
   COALESCE((SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
@@ -133,7 +138,7 @@ USING FORMAT_DATE('%Y%m%d', DATE_SUB(start_date, INTERVAL padding_days DAY)) AS 
       web_stream_id AS web_stream_id, site_name AS site;
 
 CREATE TEMP TABLE normalized AS
-SELECT *, valid_class(param_class_raw) AS param_class,
+SELECT *, valid_class(param_class_raw) AS param_class, valid_agent(param_agent_raw) AS param_agent,
   EXISTS (SELECT 1 FROM UNNEST(labelled_windows) w
     WHERE TIMESTAMP_MICROS(event_timestamp) >= w.start_ts
       AND TIMESTAMP_MICROS(event_timestamp) < w.end_ts) AS in_test_window,
@@ -186,6 +191,11 @@ SELECT user_pseudo_id, ga_session_id,
   COUNTIF(param_class = 'declared_agent') > 0 AS any_declared,
   COUNTIF(param_class = 'suspicious') > 0 AS any_suspicious,
   COUNTIF(param_class IS NOT NULL) > 0 AS has_class,
+  -- Agent-assisted: any event with an operator. The carried label lasts one page,
+  -- so a page after the person takes over can still carry it.
+  COUNTIF(param_agent IS NOT NULL) > 0 AS has_agent_operator,
+  CASE WHEN COUNT(DISTINCT param_agent) > 1 THEN 'mixed'
+       ELSE MAX(param_agent) END AS agent_operator,
   ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp, batch_page_id,
     batch_ordering_id, batch_event_index LIMIT 1)[SAFE_OFFSET(0)] AS first_class,
   ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp DESC, batch_page_id DESC,
@@ -301,12 +311,12 @@ FROM cohort_sessions GROUP BY site, stream_id, traffic_version, session_day, coh
 -- Exports no session identifiers. NULL first-purchase class stays unknown;
 -- sessions without a purchase can also have NULL, so keep purchasing_sessions.
 SELECT site, stream_id, traffic_version, session_day, any_automated, any_declared, any_suspicious, has_class,
-  first_class, last_class, class_at_first_conversion, COUNT(*) AS sessions,
+  agent_operator, first_class, last_class, class_at_first_conversion, COUNT(*) AS sessions,
   COUNTIF(purchases > 0) AS purchasing_sessions,
   COUNTIF(engagement_ms >= long_engagement_ms) AS long_engagement_sessions,
   SUM(purchase_revenue_usd) AS purchase_revenue_usd
 FROM sessions GROUP BY site, stream_id, traffic_version, session_day, any_automated, any_declared, any_suspicious,
-  has_class, first_class, last_class, class_at_first_conversion;
+  has_class, agent_operator, first_class, last_class, class_at_first_conversion;
 
 -- F1. Coverage = ANY valid class parameter, not merely detector-event presence.
 SELECT site, stream_id, traffic_version, session_day, has_class, has_detector_event, has_final_event,
@@ -320,6 +330,7 @@ SELECT site, stream_id, traffic_version, day, analytics_storage, user_pseudo_id 
   ga_session_id IS NULL AS missing_session_id, COUNT(*) AS events,
   COUNTIF(event_name = 'traffic_class') AS detector_events,
   COUNTIF(event_name = 'traffic_class' AND phase = 'initial') AS initial_events,
+  COUNTIF(event_name = 'traffic_class' AND phase = 'agent') AS agent_events,
   COUNTIF(event_name = 'traffic_class' AND phase = 'final') AS final_events,
   COUNTIF(param_class IS NOT NULL) AS events_with_class_parameter,
   COUNTIF(event_name = 'purchase') AS purchase_events,
