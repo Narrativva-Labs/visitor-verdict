@@ -33,6 +33,9 @@
 --   pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
 --   crawler_verified=agent_verified=5, bot_spoofed=6. Equal ranks retain the first
 --   observed value (export ordering breaks ties deterministically where possible).
+--   This reporting rank differs on purpose from the collector's live sticky memory
+--   (bot_spoofed=4.5 below verified, fresh equal-rank evidence replaces): any invalid
+--   signature makes the whole session spoofed here.
 --   Verified unknown purpose maps to agent_verified; unknown is preserved
 --   in vv_detail without inventing a user-directed or crawler role.
 --   vv_detail = operator|verification|purpose|claim|browser_class|browser_phase.

@@ -164,7 +164,7 @@ test('browser marker without server evidence and precedence of verified identity
     }),
     { vv_type: 'agent_unverified', vv_detail: 'openai|-|-|dom_marker|declared_agent|initial' },
   );
-  // A marker on any other class is ignored: the detector reports it only with declared_agent.
+  // A marker counts only with declared_agent; any other class keeps its label and names no operator.
   assert.deepEqual(
     visitorLabels({ browserClass: 'human', browserPhase: 'final', browserAgent: 'openai' }),
     { vv_type: 'human', vv_detail: 'none|-|-|-|human|final' },
