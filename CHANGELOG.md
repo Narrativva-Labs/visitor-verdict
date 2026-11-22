@@ -1,9 +1,22 @@
 # Changelog
 
+### 1.3.0 review corrections (2026-11-23)
+
+- Guard WebMCP callbacks and register model contexts through EventTarget prototypes; require Event instances and strict trusted flags.
+- Observe document and navigator targets, deduplicate delivery, disconnect at saturation, and tighten lifecycle cleanup regressions.
+- Document page-forgeable informational evidence and GA4 undercount after final publication.
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## 1.4.0 — 2026-11-23
+
+- Add experimental observed Claude in Chrome 1.0.107 host declaration (DH), with anthropic operator and dom_host claim; preserve precedence, late agent phase and one-document carry.
+- Add final-only burst typing (BT, 3) and untrusted form interaction (UC, 2), sharing the interaction cap of 3. Suppress UC within 500 ms of trusted input; neither bypasses corroboration.
+- Document the owner-run evidence (4/4 hosts, 0/2 controls), privacy and false-positive limits; extend contracts/fuzz and rebuild artifacts.
 
 ## [1.3.0] - 2026-11-22
 

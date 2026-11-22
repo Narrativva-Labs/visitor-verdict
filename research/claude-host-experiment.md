@@ -1,0 +1,9 @@
+# Claude in Chrome host observation, 22–23 November 2026
+
+Owner-run lab on the demo shop (`lab/claude-obal.html` and `claude-obal-2.html`), Claude in Chrome 1.0.107, Chrome 158 on macOS, one profile with about 46 extensions. The local logger observed body/html additions, event trust and timing; it sent nothing. Extension `assets/agent-visual-indicator.js` was read locally on 22 November: indicators are inside a closed shadow root; the host remains visible to page scripts.
+
+The host was observed in 4/4 controlled runs and 0/2 controls in that same profile: a direct body child DIV, zero attributes, zero light-DOM child nodes, computed display `contents`. It appeared on load or tab visibility (one click-only run: 9 ms after becoming visible) and remained at least 24–55 seconds after the last action. A closed shadow root does not add light-DOM child nodes. The logger's attributed/populated elements do not meet the shape.
+
+Three typing runs had bursts of at least three `insertText` events within 5 ms (examples: 3 characters / 2 ms, 10 / 5 ms, 5 / 4 ms). Both select runs emitted untrusted `change`; checkbox and click events were trusted. Controls had trusted typing spread over about half a second and no matching host. Paste and replacement are excluded by input type; composing input is also excluded to reduce input-method false positives.
+
+Evidence level: **observed**, not an identity or population accuracy guarantee. Unknown host false positives must be monitored in the field: a site can create the same shape. Persistent host means a tab under agent control, not continuous automated action. Behaviour checks are score contributors only. UC suppresses events within 500 ms after trusted key, pointer, touch or form input; delayed framework updates may still match. BT/UC share the interaction cap (3) and do not alone meet suspicious corroboration rules. Neither reads field values, text, labels, shadow content or attribute values.

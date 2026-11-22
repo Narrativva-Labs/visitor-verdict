@@ -86,7 +86,7 @@ document.createElement = function () {
   return el;
 };
 // Agent UI marker DOM: id lookup with fixed parents and a recording MutationObserver.
-var rootNode = {}, bodyNode = {}, markerNodes = Object.create(null), observers = [];
+var rootNode = {}, bodyNode = {children: []}, markerNodes = Object.create(null), observers = [];
 document.documentElement = rootNode; document.body = bodyNode;
 document.getElementById = function (id) { return markerNodes[id] || null; };
 function placeMarker(id, parent) {
@@ -98,6 +98,13 @@ window.MutationObserver.prototype.observe = function () { this.active = true; };
 window.MutationObserver.prototype.disconnect = function () { this.active = false; };
 if (spec.marker === 'start') { placeMarker('claude-agent-glow-border', bodyNode); }
 if (spec.marker === 'decoy') { placeMarker('claude-agent-glow-border-inner', bodyNode); placeMarker('codex-browser-sidebar-comments-root', rootNode); placeMarker('claude-phantom-cursor', rootNode); }
+window.getComputedStyle = function (node) { return {display: node.display}; };
+function placeHost() {
+  var node = {nodeType:1, tagName:'DIV', parentNode:bodyNode, attributes:[], childNodes:[], display:'contents'};
+  bodyNode.children.push(node);
+  observers.forEach(function (o) { if (o.active) o.fn([{type:'childList',target:bodyNode,addedNodes:[node]}],o); });
+}
+if (spec.host === 'start') placeHost();
 Object.defineProperty(document, 'cookie', {get: function () { throw Error('forbidden cookie read'); }, set: function () { throw Error('forbidden cookie write'); }});
 window.URL = {createObjectURL: function () { return 'blob:local-fake'; }, revokeObjectURL: function () {}};
 window.Blob = function (parts) { this.parts = parts; };
@@ -159,6 +166,14 @@ if (spec.teleport) {
     dispatch(document, 'click', {clientX:500+j*100,clientY:500,pointerType:'mouse',detail:1,isTrusted:true});
   }
 }
+if (spec.host === 'late') placeHost();
+if (spec.form) {
+  var field = {tagName:'INPUT'};
+  for (var b = 0; b < 3; b++) {
+    dispatch(document, 'input', {target:field, isTrusted:spec.form !== 'untrusted', inputType:spec.form === 'paste' ? 'insertFromPaste' : 'insertText'});
+    advance(spec.form === 'normal' ? 100 : 2);
+  }
+}
 if (spec.marker === 'late') { advance(2000); placeMarker('codex-agent-overlay-root', rootNode); }
 if (spec.race === 'hide-first') { dispatch(window, 'pagehide'); }
 if (spec.race === 'visibility') {
@@ -186,5 +201,5 @@ if (spec.poisonSnapshot) {
 export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
   beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
   readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
-  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.3.0',
+  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.4.0',
   previous:window.__visitorVerdictLast})`;

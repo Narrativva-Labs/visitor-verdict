@@ -51,3 +51,5 @@ The next document consumes it to the passive string `"suspicious"` before applyi
 write means no carry. CS-only finalization preserves the string without renewing provenance.
 Plain suspicious strings are passive, including records from the earlier 1.2.0 implementation.
 No storage field or identifier is added. The same successful-consumption requirement applies to CA/CD.
+
+Version 1.4.0 adds only element-shape checks (tag name, attribute count, light-DOM child-node count, computed display) for the experimental Claude host. It never reads shadow content or attribute values. Form signals read event trust, type, inputType, composition, target tag and timing, never form values/text. One target reference and at most three times are discarded at final. Optional data-layer `traffic_agent_claim` / snapshot `claim` is the fixed enum `dom_host` with declared_agent only, not stored or mapped by the supplied GA4 tag.

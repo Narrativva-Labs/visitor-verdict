@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
-  "registryVersion": "1.2.0",
-  "detectorVersion": "1.3.0",
+  "registryVersion": "1.4.0",
+  "detectorVersion": "1.4.0",
   "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit.",
   "signals": [
     {
@@ -1649,6 +1649,86 @@
       "falsePositives": [
         "API exposure is browser capability, not agent activity. Same-realm scripts can replace APIs; trusted lifecycle events do not establish identity or intent."
       ]
+    },
+    {
+      "id": "DH",
+      "kind": "code",
+      "code": "DH",
+      "family": "declaration",
+      "check": "Visible direct body child DIV with zero attributes, zero child nodes and computed display contents; initial scan and body childList/direct-child attributes, no subtree. Operator anthropic; claim dom_host. Observed evidence, not verified identity.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+      ],
+      "verification": [
+        {
+          "product": "Claude in Chrome",
+          "versions": "1.0.107; Chrome 158 on macOS; one owner-run profile with about 46 extensions",
+          "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+        }
+      ],
+      "falsePositives": [
+        "Unknown – monitor in the field. Page-authored empty display:contents DIVs may match; persistent host does not prove each action is automated."
+      ]
+    },
+    {
+      "id": "BT",
+      "kind": "code",
+      "code": "BT",
+      "family": "behaviour",
+      "check": "At least 3 trusted non-composing insertText input events on the same form control in at most 5 ms; final only; interaction cap 3.",
+      "weight": 3,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+      ],
+      "verification": [
+        {
+          "product": "Claude in Chrome",
+          "versions": "1.0.107; Chrome 158 on macOS; one owner-run profile with about 46 extensions",
+          "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+        }
+      ],
+      "falsePositives": [
+        "Browser timestamp resolution, accessibility or input tooling may batch input; no text or values are read. Paste and replacement input types do not qualify."
+      ],
+      "scoringFamily": "interaction"
+    },
+    {
+      "id": "UC",
+      "kind": "code",
+      "code": "UC",
+      "family": "behaviour",
+      "check": "Untrusted input/change on INPUT, SELECT or TEXTAREA with no trusted keydown/pointerdown/touchstart/input/change in the preceding 500 ms; final only; interaction family.",
+      "weight": 2,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+      ],
+      "verification": [
+        {
+          "product": "Claude in Chrome",
+          "versions": "1.0.107; Chrome 158 on macOS; one owner-run profile with about 46 extensions",
+          "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+        }
+      ],
+      "falsePositives": [
+        "Site scripts/frameworks dispatching changes outside the 500 ms user-input window may match; delayed legitimate updates remain possible."
+      ],
+      "scoringFamily": "interaction"
     }
   ]
 }

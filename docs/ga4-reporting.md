@@ -167,3 +167,16 @@ For GA4 UI steps use [Explorations and comparisons](analysis/ga4-explorations.md
 The generated container keeps the existing tag mappings and triggers. Upgrade the detector tag from the regenerated import. Final now fires on the first visibility change to hidden (also a short tab switch), with pagehide fallback and the existing visible-time idle deadline. This lets integrations queue the hit earlier but does not guarantee browser or GA4 delivery. Later behaviour is no longer counted; set `finalOnHidden: false` to retain pause-on-hidden. The agent marker watch may still publish agent after final.
 
 `CS` makes the next document start suspicious after a suspicious final. It adds no score/family, consumes the stored result at start and expires after that document unless fresh suspicious evidence exists. It never promotes to automated or declared_agent. These are labels only: retain all traffic and conversions.
+
+WebMCP is **observed, page-forgeable** information, never authentication or a
+classification signal. EventTarget prototype registration rejects ordinary
+polyfill callback spoofing; handlers require an Event with strict isTrusted and
+catch hostile getters. Earlier same-realm scripts can replace platform globals,
+so this cannot establish cryptographic or tamper-proof provenance. Capture listeners
+observe window, document and both modelContext locations; repeated delivery of the
+same event is deduplicated. At 255 observations listeners disconnect.
+
+**GA4 undercounts WebMCP usage after the final event (normally 8 seconds).** Later
+tool events update only the local snapshot, with no extra analytics publication.
+Agents that read longer before calling tools therefore systematically appear as
+`capable`/`none` in GA4 even when the local snapshot later says `used`.
