@@ -5,11 +5,11 @@ Visitor Verdict is a first reporting layer for clear automation, not an attempt 
 | Class | Meaning |
 |---|---|
 | `automated` | Hard browser automation evidence, or one document of carry-over (CA) from previous direct hard evidence. Does not establish intent or AI use. |
-| `declared_agent` | A configured agent/fetcher/crawler UA claim without hard automation evidence. Tokens are not identity verification. |
+| `declared_agent` | A configured agent/fetcher/crawler UA claim, or an agent UI marker in the page, without hard automation evidence. Tokens and markers are self-declarations, not identity verification. Agent-assisted visits usually have a real person behind them. |
 | `suspicious` | Uncertain weighted evidence satisfying corroboration rules, or the direct UB rule. Keep as a secondary reporting view. |
 | `human` | No sufficient automation evidence; not proof of a person. |
 
-The **initial** phase runs synchronously using environment signals and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes after 8 seconds of visible time, or on `pagehide`, whichever comes first. Hidden time pauses the timer; early navigation does not count as eight seconds without input. Final fires once per document. Initial automation persists; an initial declaration persists unless hard evidence appears at final.
+The **initial** phase runs synchronously using environment signals, agent UI markers already in the page and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes after 8 seconds of visible time, or on `pagehide`, whichever comes first. Hidden time pauses the timer; early navigation does not count as eight seconds without input. Final fires once per document. Initial automation persists; an initial declaration persists unless hard evidence appears at final. If an agent UI marker appears later (before or after final), one **agent** phase publishes the escalation immediately; see [agent UI markers](#agent-ui-markers-dm).
 
 Precedence is hard/inherited automation → declared → suspicious → human. A declared UA with WebDriver evidence is `automated`; a declaration alone is `declared_agent`. The suspicious rule requires all of:
 
@@ -34,7 +34,8 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 | `GL` | Callable values at recognised Phantom/Nightmare/DOM automation/Selenium names, document `$cdc_`/`$wdc_` names, narrow window `cdc_…_(Array\|Promise\|Symbol\|Object\|Proxy\|JSON\|Window)` | 100 / hard |
 | `PW` | Exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts` with callable values only; data-only arrays/objects, getters, DOM/host objects and window proxies ignored; initial and final | 100 / hard, feature-dependent |
 | `CA` | Previous document's final result was `automated` from direct hard evidence; carries `automated` to the next document only; plain class strings do not qualify | 100 / inherited |
-| `CD` | Previous document's final result was `declared_agent` from a direct declaration; carries `declared_agent` (never `automated`) to the next document only | 100 / inherited |
+| `CD` | Previous document's final result was `declared_agent` from a direct declaration; carries `declared_agent` (never `automated`) to the next document only, with the stored operator if a marker set one | 100 / inherited |
+| `DM` | Agent UI marker: element with an exact ID at its expected parent (`claude-agent-glow-border` or `claude-phantom-cursor` as a child of `body` → `anthropic`; `codex-agent-overlay-root` as a child of the root element → `openai`). Checked at start, then watched until found | 100 / declared; sets `traffic_agent` |
 | `G0` | Both dimensions zero for screen, viewport or outer size; only visible, focused, top-level; rechecked final | 1 / geometry |
 | `GS` | 800×600 screen or 1280×720 screen equal to viewport | 1 / geometry |
 | `LA` | Empty/missing languages AND no language/userLanguage/browserLanguage/systemLanguage fallback | 1 / language |
@@ -57,6 +58,26 @@ UB can also flag Chrome DevTools-style device emulation or CDP user-agent overri
 Mobile human controls therefore emulate viewport/screen, device scale, mobile layout and touch while retaining the browser's native UA. They do not validate mobile-UA-specific branches or physical-device behaviour. A separate informational scenario deliberately retains the device UA override and expects `suspicious` via UB.
 
 **TP (teleport click)** requires positive jump evidence, not merely missing or sparse movement. A trusted `mousemove` must have a movement delta greater than 200px (Euclidean), or differ by more than 200px from the previous distinct position observed within 600ms. It suppresses jumps in a stream of at least three distinct moves whose successive gaps are at most 120ms. A trusted mouse click must follow within 600ms of both the jump and an explicit trusted mouse pointerdown, land within 2px of the jump endpoint, and be more than 40px from the previous recorded click if one exists. Touch/pen, keyboard activation (`detail: 0`), untrusted input, rested/expired jumps and repeated nearby clicks do not qualify. `mousemove` alone supplies the jump/path evidence, avoiding double counting compatibility pointer events. No trajectory is retained.
+
+### Agent UI markers (DM)
+
+Some browser agents act inside an ordinary browser and leave no automation flag, but they draw their own UI into the page while they control it. [Microsoft Clarity](https://github.com/microsoft/clarity) (MIT) identified these markers and their placement ([PR #1142](https://github.com/microsoft/clarity/pull/1142), [PR #1173](https://github.com/microsoft/clarity/pull/1173), live tag `0.8.79-beta`); Visitor Verdict uses the same exact IDs and parents:
+
+| Element ID | Expected parent | Operator |
+|---|---|---|
+| `claude-agent-glow-border` | `document.body` | `anthropic` (older Claude in Chrome versions) |
+| `claude-phantom-cursor` | `document.body` | `anthropic` (older Claude in Chrome versions) |
+| `codex-agent-overlay-root` | `document.documentElement` | `openai` (agent overlay of the ChatGPT desktop app's Chrome plugin) |
+
+**Current Claude in Chrome is not detected.** Extension 1.0.107 (checked 22 November 2026) still creates `claude-agent-glow-border`, `claude-phantom-cursor` and related elements, but inside a host element with a *closed* shadow root appended to `body`; the host carries no attributes. `getElementById` from the page cannot reach closed shadow content, so the ID check only matches older versions, or any version that keeps its UI in the light DOM. Detecting current versions is an open question; this release deliberately adds no heuristic for the attribute-less host element, which ordinary page widgets can resemble. The OpenAI overlay ID is confirmed in the ChatGPT desktop app's Chrome plugin code.
+
+Matching is exact: `claude-agent-glow-border-inner`, `-copy` suffixes, nested copies and markers at the wrong parent do not count. `codex-browser-sidebar-comments-root` is deliberately ignored, as in Clarity's current proposal: it marks the OpenAI browser surface (present while a person browses), not an agent in control. Evidence level: **observed, self-declared by the agent UI**. Page code can plant the IDs, but nobody has an incentive to look like an agent; a marker never yields `automated`.
+
+The start check uses `document.getElementById` for the three IDs. If none is found, one `MutationObserver` on `document.documentElement` (`childList`, `subtree`, and `id` attribute changes) re-runs the same three lookups per mutation batch, ignoring the mutation records. It disconnects on the first match or on `pagehide`, and keeps watching after final, so an agent that takes over an already open tab is still seen. Without `MutationObserver` only the start check runs. A marker added and removed within one task is not seen.
+
+Verdict only escalates. A marker found after initial publishes one extra `traffic_class` event with `traffic_phase: 'agent'`, class `declared_agent`, score 100 and `traffic_agent`, and replaces the frozen `__visitorVerdict` snapshot; final keeps `declared_agent`. No agent event is published when hard automation evidence already holds (`automated` keeps precedence; the operator still appears on later events) or when the class and operator are unchanged. The direct result is stored immediately, including the operator, so the next document starts as `declared_agent` via `CD` with the same `traffic_agent`.
+
+Limits: markers inside shadow roots (open or closed) or frames are not inspected (the detector does not run in frames; Clarity ignores both too); only the first element with each ID is checked; a BFCache-restored page is not watched again; marker names can change with agent releases. Agents without a known marker remain unlabelled unless other evidence applies.
 
 **TR (repeated teleport)** uses the decaying `tpPages` counter described in [privacy and storage](privacy.md). TP increments it synchronously in click capture before navigation, at most once per observed document, saturating at 255. At final, a document with accepted activity and no TP repays one count, subject to stale-write guards; idle and TP documents do not decay it. TR fires only at final if the remaining count is at least 2. It contributes 2 in the pointer family, capped at 3 together with TP, and uses the ordinary suspicious rule. Repeated history alone never starts a document suspicious. Duplicate inclusion, repeated clicks and BFCache restoration cannot increment again. New/reloaded documents may count separately; no unique-URL claim is possible. Blocked storage leaves page-local TP evidence; repeated clicks in one document cannot create TR alone.
 
@@ -101,15 +122,16 @@ Both phases publish the same fields (a broken/throwing data-layer consumer can p
 {
   event: 'traffic_class',
   traffic_class: 'human', // human | suspicious | automated | declared_agent
-  traffic_phase: 'initial', // initial | final
+  traffic_phase: 'initial', // initial | agent | final
   traffic_score: 0,
-  traffic_version: '1.0.0'
+  traffic_version: '1.1.0',
+  traffic_agent: 'anthropic' // openai | anthropic; present only when known from a marker
 }
 ```
 
-There is at most one initial and one final detector publication per document. `traffic_version` is static release metadata, never a visitor identifier. With `debug: true`, events additionally contain `traffic_signals`, an array of short signal codes; keep debug disabled in production.
+There is at most one initial, one agent and one final detector publication per document. Initial always comes first; agent (a `declared_agent` escalation from an agent UI marker) can come before or after final. `traffic_agent` is set only when an agent UI marker in this document, or the carried result of the previous document, names the operator; a UA token alone never sets it. `traffic_version` is static release metadata, never a visitor identifier. With `debug: true`, events additionally contain `traffic_signals`, an array of short signal codes; keep debug disabled in production.
 
-The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with exactly `{class, score, phase, version}`. Re-read the global when you need the latest phase; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
+The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with `{class, score, phase, version}` and, only when the operator is known from a marker, `agent` (`'openai'` or `'anthropic'`). `phase` is `'initial'`, `'agent'` or `'final'`. Re-read the global when you need the latest phase; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
 
 `window.__visitorVerdictLast` contains only the validated previous final class string captured at detector startup, or `undefined` when unavailable. Provenance objects are reduced to their validated class string. This is a read-only, non-configurable value; it does not refresh when storage changes. The GTM current-class variable reads the current snapshot first, then this startup fallback, and never reads storage itself or defaults to human.
 

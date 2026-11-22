@@ -1,4 +1,6 @@
-# Sessions excluding detected automation dashboard
+# Labelled traffic dashboard
+
+The dashboard labels traffic; it removes nothing. The headline is **All sessions**. Cohorts that set labelled sessions aside keep their SQL names (“Sessions excluding detected automation”) and are optional comparison views. Agent-assisted sessions are usually real customers; show their purchases and revenue as a breakdown, not as a deduction.
 
 Use [bigquery.sql](bigquery.sql) as the transformation. Set the export dataset, **one web stream ID**, timezone, date range, scan padding, optional first-observed-city filter and test windows. Run the whole script. It creates temporary tables and returns A–I plus study summary and evaluation-window outputs; for scheduled reporting, adapt each terminal SELECT to write a separate reporting table in your own dataset. Keep the export read-only, rebuild recent dates for late arrivals, and preserve session-boundary padding.
 
@@ -6,7 +8,7 @@ In Looker Studio, **Create → Data source → BigQuery**, choose the reporting 
 
 Collection requires `traffic_class={{VV - current class}}` on other GA4 event tags (`gaawe`), evaluated at fire time. The variable reads the validated current `window.__visitorVerdict` snapshot then the startup previous-class string `window.__visitorVerdictLast`; it never reads storage. The dedicated **VV - GA4 traffic_class** event instead maps class/phase/score/version and its class user property from the corresponding `VV - DLV …` variables.
 
-Container 1.0.1 sends `automated`/`declared_agent` on initial publication and all classes on final. Both hits can carry the same class. Use sessions with any matching hit; classification-event counts measure delivery volume, not visits or detection recall.
+Container 1.1.0 sends `automated`/`declared_agent` on initial publication, the `declared_agent` escalation on the agent phase and all classes on final. Several hits can carry the same class. Use sessions with any matching hit; classification-event counts measure delivery volume, not visits or detection recall.
 
 Optionally wire the existing Google tag to **VV - initial OR VV - timer fallback 1s**, with **Once per page**, replacing early All Pages/Initialization triggers. Set `traffic_class={{VV - current class}}` in its Shared event settings. The initial path can label the first `page_view`; fallback may be unlabelled. Automatic events retain the Google tag's startup settings, not later final updates. For CSP-sensitive sites, use the sandboxed variable template reading `__visitorVerdict.class` and `__visitorVerdictLast`; script deployment still needs to satisfy CSP. See [setup, timing and consent](../ga4-reporting.md).
 
@@ -14,16 +16,16 @@ The SQL aggregates events to **one row per `(user_pseudo_id, ga_session_id)` wit
 
 | Page | Result | Display |
 |---|---|---|
-| Headline | B | **Sessions excluding detected automation**, purchasing sessions, purchase CR, purchase revenue; All sessions baseline beside it |
+| Headline | B | **All sessions**, purchasing sessions, purchase CR, purchase revenue; Sessions excluding detected automation beside it as a comparison |
 | Sensitivity | B | Stricter view excluding suspicious, suspicious within retained sessions, observed human-only diagnostic |
-| Excluded revenue | B | Excluded detected automation sessions, purchasing sessions, purchase revenue explicitly separate |
+| Labelled revenue | B | Excluded detected automation sessions (automated and agent-assisted), purchasing sessions, purchase revenue as a breakdown of the total |
 | Acquisition | C | Cohort × source/medium/channel, assistant referral annotation separate from evidence |
 | Environment | D | Cohort × first observed device/browser/OS/country/city |
 | Evidence/timing review | E | Any-evidence flags, first/last class and class at first purchase; purchasing/long-engagement counts |
 | Coverage | F1, F2 separately | Sessions with any valid class vs without; detector/final delivery; missing-ID event/purchase/revenue totals |
 | Event labels | A | Class parameter distribution, including unclassified events; not session counts |
 
-Set every headline chart to the **Sessions excluding detected automation** cohort, which excludes whole sessions with any automated/declared observation and retains unknown sessions. Keep suspicious visible separately within retained traffic. Sensitivity additionally excludes suspicious. Observed human-only requires class coverage and no other class and is diagnostic only. Cohorts overlap intentionally: never sum across cohorts. A later human result does not undo earlier evidence.
+Set every headline chart to **All sessions**. Show the **Sessions excluding detected automation** cohort beside it as a comparison; it sets aside whole sessions with any automated/declared observation and retains unknown sessions. Keep suspicious visible separately within retained traffic. Sensitivity additionally excludes suspicious. Observed human-only requires class coverage and no other class and is diagnostic only. Cohorts overlap intentionally: never sum across cohorts. A later human result does not undo earlier evidence.
 
 Use `SUM(purchasing_sessions) / SUM(sessions)` for headline purchase CR, guarding a zero denominator. Both numerator and denominator must use the **same cohort/date/stream**. Never average daily rates, divide filtered purchasers by all sessions, or use `add_to_cart` as headline conversion. Show lead/cart sessions separately. Sum purchase revenue only within the selected cohort; SQL uses exported USD purchase revenue, without transaction deduplication or refund adjustment. Removing low-converting sessions raises CR by arithmetic, not demonstrated marketing improvement.
 

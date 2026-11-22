@@ -49,7 +49,7 @@ The lab defaults to the macOS Chrome installation; `TC_CHROME` overrides it. Its
 ## Design rules
 
 - No fingerprinting, identifiers or hashes of visitor/browser data. The build's SRI digest covers the static release asset only.
-- No new data leaving the detector. Production output is limited to event name, class, phase and numeric score; debug-only short signal codes remain opt-in and default off. Do not add network requests or raw-signal exports.
+- No new data leaving the detector. Production output is limited to event name, class, phase, numeric score, static version and the optional operator enum from agent UI markers; debug-only short signal codes remain opt-in and default off. Do not add network requests or raw-signal exports.
 - No cookies or localStorage. Preserve the bounded `sessionStorage` schema and failure handling; do not add URLs, IDs or click traces.
 - Prioritise avoiding human false positives over catching every bot. Preserve accessibility/input safeguards, conservative corroboration and human controls. Do not tune weights solely to make a bot fixture pass.
 - Preserve ES5 compatibility and no runtime dependencies. Document optional probes and consent/integration timing honestly; pre-consent results must never feed advertising platforms.

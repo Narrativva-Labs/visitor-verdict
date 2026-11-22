@@ -1,10 +1,12 @@
-# GA4: traffic excluding detected automation
+# GA4: reporting on labelled traffic
+
+Visitor Verdict labels traffic; nothing is excluded from GA4. **All sessions** is the headline population. The segments below that set labelled sessions aside (named “excluding detected automation” to match the SQL cohort names) are optional comparison views; they leave the data unchanged. Agent-assisted sessions (`declared_agent`, with **Traffic agent (event)** when a marker named the operator) are usually real customers using a browser agent: report them as a segment with their purchases and revenue, not as removed traffic.
 
 Use the web stream only, a consistent date range, and the event-scoped **Traffic class (event)** dimension (parameter `traffic_class`). Register it in **Admin → Data display → Custom definitions**. Optionally register event-scoped `traffic_phase`. The user-scoped dimension is **last observed class**, applies from set time and can persist into later visits: never use it to exclude sessions.
 
 On every other GA4 event tag (`gaawe`), map `traffic_class={{VV - current class}}`, evaluated at firing time. The imported variable validates `window.__visitorVerdict.class`, then `window.__visitorVerdictLast` (the previous final class captured once at detector startup), returning undefined when neither is available. It never reads storage. The dedicated **VV - GA4 traffic_class** publication event uses the four publication DLVs for class/phase/score/version and the class DLV for its user property, rather than the live variable.
 
-Container 1.0.1 sends `automated`/`declared_agent` on initial publication and all classes on final. Both hits can carry the same class. Use sessions with any matching hit; classification-event counts measure delivery volume, not visits or detection recall.
+Container 1.1.0 sends `automated`/`declared_agent` on initial publication, the `declared_agent` escalation on the agent phase and all classes on final. Several hits can carry the same class. Use sessions with any matching hit; classification-event counts measure delivery volume, not visits or detection recall.
 
 Optionally wire the existing Google tag to **VV - initial OR VV - timer fallback 1s** as two normal triggers, with **Once per page**, replacing its early All Pages/Initialization trigger. Add `traffic_class={{VV - current class}}` to its Shared event settings. The initial path can label the first `page_view`; fallback after one second can still be unlabelled. Shared settings capture a startup value once, so automatic events need not reflect later final evidence. There is no backfill or automatic refresh.
 
@@ -25,7 +27,7 @@ Use [Google's segment builder](https://support.google.com/analytics/answer/93043
 
 Headline **purchase conversion rate = purchasing sessions / sessions in the same cohort**. In a duplicate tab, create a purchasing subset of each session segment by adding a separate session condition group containing `event_name=purchase`. Divide that subset's Sessions by its parent cohort's Sessions; keep the same date/stream. Use these session counts rather than purchase-event counts or the count of all key events. Never require purchase and `traffic_class` as event names on the same event. `add_to_cart` and `generate_lead` are separate diagnostics, not headline purchase conversions.
 
-Show purchase revenue in retained and **Excluded detected automation** session segments separately. The excluded segment includes sessions with automated/declared evidence on any event. Do not add revenue from missing-ID pings to identifiable-session revenue. Removing low-converting sessions can raise CR arithmetically; it does not prove marketing improvement.
+Report purchase revenue for **All sessions**, and break it down into the retained and **Excluded detected automation** session segments. The latter contains sessions with automated/declared evidence on any event, including agent-assisted purchases, which are real revenue. Do not add revenue from missing-ID pings to identifiable-session revenue. Removing low-converting sessions can raise CR arithmetically; it does not prove marketing improvement.
 
 Use [bigquery.sql](bigquery.sql) for one row per `(user_pseudo_id, ga_session_id)` in one web stream, flags `any_automated`, `any_declared`, `any_suspicious`, `has_class`, `first_class`, `last_class`, and `class_at_first_conversion`. The last field means the first **purchase**: its own class parameter, otherwise the latest class before it. An automatic event parameter can be a captured initial or startup-fallback value from shared settings; this timing field describes exported labels, not verified current-page evidence. No future class or user property fills that value. UI “contains a label” segments cannot reliably reconstruct this timing. Later `human` never erases earlier automation evidence for session exclusion.
 
@@ -33,7 +35,7 @@ Use [bigquery.sql](bigquery.sql) for one row per `(user_pseudo_id, ga_session_id
 
 1. Open **Reports → Acquisition → Traffic acquisition → Add comparison / Create new**.
 2. Select **Traffic class (event)** where compatible, choose exact match `automated` or `declared_agent` (multiple values use OR), and keep the default baseline. Add `suspicious` as another comparison; scope the report/comparisons to the web stream.
-3. Treat these as event-label comparisons. An event-scoped comparison or “does not match” filter does not guarantee exclusion of the entire session, can handle `(not set)` differently, and can leave earlier unlabelled conversions in scope. Do not label it “sessions excluding detected automation”. Use the Exploration session segments or SQL for that headline. If the dimension is unavailable/incompatible, use Explore. See [comparison controls and compatibility](https://support.google.com/analytics/answer/9269518?hl=en).
+3. Treat these as event-label comparisons. An event-scoped comparison or “does not match” filter does not guarantee exclusion of the entire session, can handle `(not set)` differently, and can leave earlier unlabelled conversions in scope. Do not label it “sessions excluding detected automation”. Use the Exploration session segments or SQL for that comparison view. If the dimension is unavailable/incompatible, use Explore. See [comparison controls and compatibility](https://support.google.com/analytics/answer/9269518?hl=en).
 
 ## Plausibility by hour and city
 
@@ -46,6 +48,6 @@ Treat both as sanity checks, not evidence about any single session: VPNs, corpor
 
 ## Interpretation and coverage
 
-`human` means **no automation detected**, `suspicious` uncertain evidence, `automated` automation evidence without a judgement of intent, and `declared_agent` an unverified claim. Score is not a probability. Exclusion keeps unknown sessions; “only human” selects visits where classification and delivery worked and biases the headline. Always display coverage and suspicious traffic alongside the headline.
+`human` means **no automation detected**, `suspicious` uncertain evidence, `automated` automation evidence without a judgement of intent, and `declared_agent` an unverified claim. Score is not a probability. Exclusion keeps unknown sessions; “only human” selects visits where classification and delivery worked and biases the headline. Always display coverage and suspicious traffic alongside the headline, which stays All sessions.
 
 Missing-ID cookieless pings are separate event totals, not sessions. Never reconstruct identity or join via IP/UA. JS-less fetches usually send no GA4 event at all; blocked tags, consent settings, early pageviews and unload loss also affect coverage. Referrals from assistants can be ordinary people following links and never establish automation. Converting or engaged automation warrants review, not automatic relabelling as human.

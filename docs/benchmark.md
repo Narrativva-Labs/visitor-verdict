@@ -20,6 +20,18 @@ The base suite navigates index → page2 → page3 and stays about 10 seconds on
 
 The extended suite covers readers, keyboard input, rapid navigation, disabled PDF/WebGL, hidden tabs, history/reload, denied storage, UA switching, rested/repeated clicks, worker CSP, duplicate inclusion, frame no-op behaviour, opt-in defaults, one-document carry, voice-like clicks, assistive warp patterns and real Chrome over CDP. Deterministic contracts check signal semantics and lifecycle, including positive-jump TP, weighted/decaying TR, provenance consumption, storage merges, configuration validation, accessibility activity and storage failure. CDP tests start their own empty temporary Chrome profile; they do not attach to your logged-in browser. BotD comparison runs only in the test harness after our result, with monitoring disabled; it is not ground truth or a runtime dependency.
 
+## v1.1.0 agent UI marker checks (2026-11-22, macOS)
+
+| Check | Result |
+|---|---|
+| Build | ES5 source/output validation passed; minified detector **14,922 bytes** (~14.9 KB, +1,183 bytes for markers, watcher, agent phase and operator). |
+| Detector contracts | **96/96 for source and 96/96 for generated minified output**, including 7 new marker contracts: marker at load, marker 2 s after load (one `agent` event, replaced snapshot, final `declared_agent`), marker after final, exact IDs and parents (`-inner`, sidebar root, wrong parent stay human), missing/throwing DOM APIs (unchanged two-phase human result), operator carried once via CD, `automated` precedence. GTM contracts cover `VV - agent`, `traffic_agent` mapping and stable object IDs. |
+| Runner contracts | **7 checks passed**. |
+| Fuzz invariants | **3,167 cases, zero failures** (default seed), and 1,167 with `--runs 1000`; new marker schedules (start, late, after final, decoys, without `MutationObserver`) and storage records with forged operators. |
+| Base browser suite | **17 PASS, 4 INFO** (known limits and stealth), iPhone WebKit note-only; human controls unchanged. Marker scenarios on synthetic markers in headed Chromium: M1 Claude marker at load (`declared_agent`/`anthropic` in both phases, carried to page 2 via CD), M2 OpenAI overlay and M2b Claude cursor injected after 2 s (`initial human` → `agent declared_agent` → `final declared_agent`, carried), M3 similar IDs and sidebar root stay `human`, M4 headless automation stays `automated` (no agent phase; operator reported). |
+
+Synthetic markers test the detector's handling, not that a given agent release injects them. The OpenAI overlay ID was confirmed in the ChatGPT desktop app's Chrome plugin code; current Claude in Chrome (1.0.107) hides its UI in a closed shadow root and is **not** detected. The extended suite was not rerun for 1.1.0.
+
 ## v1.0.0 verification and earlier browser observations
 
 The v1.0.0 hardening pass recorded the following deterministic results:

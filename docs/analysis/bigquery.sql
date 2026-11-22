@@ -48,7 +48,7 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
 --   The dedicated detector tag sends initial automated/declared_agent and all
 --   final classes; a short visit may deliver only initial. User properties are
 --   never used here as a session-exclusion fallback.
--- * Container 1.0.1 may send two traffic_class hits per hard page. Session flags
+-- * Container 1.1.0 may send several traffic_class hits per hard page. Session flags
 --   below use ANY hit (COUNTIF > 0), so those duplicates do not inflate cohorts.
 --   A/F2/H/evaluation event counts are delivery diagnostics, NOT visits or recall;
 --   never sum initial and final event counts to estimate automated sessions.
