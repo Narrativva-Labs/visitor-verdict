@@ -49,10 +49,11 @@ function lex(raw: string): Lexeme[] {
   return out;
 }
 /** Guard only: upstream parser remains responsible for the full SF grammar. */
-export function guard(raw: string, mode: GuardMode): Set<string> {
+export function guard(raw: string, mode: GuardMode) {
   const tokens = lex(raw);
   const dictionary = mode !== 'item';
   const invalidTimestamps = new Set<string>();
+  const lossyLabels = new Set<string>();
   let label = '';
   const labels = new Set<string>();
   let parameters = new Set<string>();
@@ -77,6 +78,7 @@ export function guard(raw: string, mode: GuardMode): Set<string> {
         parameters.add(key.value);
         if (tokens[i + 1]?.value === '=') {
           const value = tokens[i + 2];
+          if (value?.kind === 'bare' && /^-?\d+\.0+$/.test(value.value)) lossyLabels.add(label);
           if (
             mode === 'signature-input' &&
             (key.value === 'created' || key.value === 'expires') &&
@@ -89,11 +91,12 @@ export function guard(raw: string, mode: GuardMode): Set<string> {
         }
       } else if (t.value !== '=') parameters = new Set();
     } else {
+      if (t.kind === 'bare' && /^-?\d+\.0+$/.test(t.value)) lossyLabels.add(label);
       // Each bare/string/bytes item starts its own parameter scope, including inner-list tokens.
       parameters = new Set();
     }
   }
-  return invalidTimestamps;
+  return { invalidTimestamps, lossyLabels };
 }
 
 /** Work around upstream Date parsing consuming following delimiters; restore Date types after SF parsing. */

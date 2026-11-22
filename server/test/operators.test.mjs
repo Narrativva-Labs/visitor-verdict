@@ -7,6 +7,7 @@ import { createHash, createPublicKey, generateKeyPairSync, sign, verify } from '
 import { readFileSync } from 'node:fs';
 import { createVerifier, defaultRegistry, MemoryNonceStore, visitorLabels } from '../dist/index.js';
 import { publicKeys } from '../dist/keys.js';
+import { headers, parsedDictionary, signatureBase, agents } from '../dist/fields.js';
 
 const clock = 1800000000;
 const entry = (identity) => defaultRegistry.find((o) => o.signatureAgent === identity);
@@ -61,6 +62,7 @@ function labelled({
   expires = clock + 3600,
   nonce = 'n-' + label,
   extra = [],
+  paramsExtra = '',
 }) {
   const components = ['"@authority"', '"@method"'];
   const lines = ['"@authority": shop.example', '"@method": GET'];
@@ -80,7 +82,8 @@ function labelled({
   const params =
     `(${components.join(' ')});created=${created};expires=${expires}` +
     `;keyid=${JSON.stringify(key.keyid)};alg="ed25519";nonce=${JSON.stringify(nonce)}` +
-    ';tag="web-bot-auth"';
+    ';tag="web-bot-auth"' +
+    paramsExtra;
   const base = lines.join('\n') + '\n"@signature-params": ' + params;
   const signature = sign(null, Buffer.from(base, 'ascii'), key.pair.privateKey).toString('base64');
   return { input: `${label}=${params}`, signature: `${label}=:${signature}:`, params };
@@ -110,6 +113,8 @@ test('registry: added operators have exact HTTPS identities and allowlisted dire
     assert.equal(o.verifiedByCapture, name === 'openai');
   }
   assert.equal(entry('https://www.browserbase.com').intermediary, true);
+  assert.equal(defaultRegistry.filter((o) => o.directoryUrl).length, 6);
+  assert.ok(entry('https://muse.ai').evidence.some((e) => e.level === 'observed'));
   for (const o of defaultRegistry)
     if (o.operator !== 'browserbase') assert.notEqual(o.intermediary, true, o.operator);
   // Amazon Bedrock AgentCore publishes no directory; the old Meta origin is not trusted for Muse.
@@ -215,7 +220,7 @@ test('dictionary with several members: each label attributes only to its own mem
   }
 });
 
-test('D.2 outer signature binds the inner signature; missing or lossy inner members are indeterminate', async () => {
+test('D.2 outer signature binds inner signatures; absent members fail, lossy members are indeterminate', async () => {
   const members = { agent: 'https://api.manus.im', browser: 'https://www.browserbase.com' };
   const outerOver = (inner, label = 'agent') =>
     labelled({
@@ -242,10 +247,13 @@ test('D.2 outer signature binds the inner signature; missing or lossy inner memb
     ],
   );
   assert.equal(swapped.verified.operator, 'manus');
-  // Covering an absent member cannot be evaluated.
+  // Stripping a covered member is a definitive verification failure (RFC 9421 §2.1.2).
   const ghost = labelled({ label: 'ghost', identity: members.agent, members });
   const absent = await verifier.verify(request(dictionary(members), outerOver(ghost, 'ghost')));
-  assert.deepEqual([absent.verification, absent.reason], ['none', 'unsupported_component']);
+  assert.deepEqual(
+    [absent.verification, absent.reason],
+    ['signature_invalid', 'required_component_missing'],
+  );
   // A Decimal timestamp in the covered member would not re-serialize to the signed octets.
   const decimal = {
     ...inner,
@@ -256,7 +264,7 @@ test('D.2 outer signature binds the inner signature; missing or lossy inner memb
   assert.deepEqual(
     lossy.signatures.map((s) => [s.label, s.result, s.reason]),
     [
-      ['agent', 'signature_invalid', 'invalid_timestamp_type'],
+      ['agent', 'none', 'invalid_timestamp_type'],
       ['browser', 'none', 'unsupported_component'],
     ],
   );
@@ -399,4 +407,282 @@ test('intermediary flag is validated configuration', () => {
   assert.throws(() => make({ ...base, intermediary: 'yes' }), TypeError);
   const { signatureAgent, directoryUrl, ...unsigned } = base;
   assert.throws(() => make({ ...unsigned, intermediary: true }), TypeError);
+});
+
+test('an intermediary cannot hide forged or replayed direct signatures in either order', async () => {
+  const members = { a: 'https://chatgpt.com', b: 'https://www.browserbase.com' };
+  for (const reason of ['crypto_mismatch', 'replay']) {
+    for (const reverse of [false, true]) {
+      const { fetcher } = network();
+      const verifier = verifierWith({
+        fetcher,
+        nonceStore: new MemoryNonceStore(100, () => clock),
+      });
+      const direct = labelled({
+        label: 'a',
+        identity: members.a,
+        members,
+        key:
+          reason === 'crypto_mismatch'
+            ? { ...stranger, keyid: keys.get(members.a).keyid }
+            : undefined,
+      });
+      if (reason === 'replay')
+        assert.equal(
+          (await verifier.verify(request(dictionary(members), direct))).verification,
+          'signature_valid',
+        );
+      const infra = labelled({ label: 'b', identity: members.b, members });
+      const v = await verifier.verify(
+        request(dictionary(members), ...(reverse ? [infra, direct] : [direct, infra])),
+      );
+      assert.deepEqual(
+        [v.verification, v.reason, v.verified, v.agent_purpose],
+        ['signature_invalid', reason, undefined, 'unknown'],
+      );
+      assert.equal(v.signatures.find((s) => s.label === 'b').result, 'signature_valid');
+      assert.equal(
+        visitorLabels({ verdict: v, browserClass: 'declared_agent', browserAgent: 'openai' })
+          .vv_type,
+        'bot_spoofed',
+      );
+      assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[0], 'none');
+    }
+  }
+});
+
+test('covered members require byte sequences and string component identifiers', async () => {
+  const members = { a: 'https://api.manus.im', b: 'https://www.browserbase.com' };
+  for (const [field, value] of [
+    ...['"not-bytes"', '123', '?1', 'foo', '("x")'].map((value) => ['signature', value]),
+    ...['"not-a-list"', '(123)', '(foo)', '(?1)', '(:AA==:)'].map((value) => [
+      'signature-input',
+      value,
+    ]),
+  ]) {
+    const outer = labelled({
+      label: 'b',
+      identity: members.b,
+      members,
+      extra: [[`"${field}";key="a"`, value]],
+    });
+    const r = request(dictionary(members), outer);
+    r.headers[field] += `, a=${value}`;
+    const { fetcher } = network();
+    const v = await verifierWith({ fetcher }).verify(r);
+    assert.deepEqual(
+      v.signatures.find((s) => s.label === 'b'),
+      { label: 'b', result: 'signature_invalid', reason: 'malformed_signature' },
+      `${field}=${value}`,
+    );
+  }
+});
+
+test('stripping either kind of covered signature member is a definitive failure', async () => {
+  const identity = 'https://www.browserbase.com';
+  for (const name of ['signature-input', 'signature']) {
+    const outer = labelled({
+      label: 'b',
+      identity,
+      extra: [[`"${name}";key="missing"`, 'unused']],
+    });
+    const { fetcher } = network();
+    const v = await verifierWith({ fetcher }).verify(request(JSON.stringify(identity), outer));
+    assert.deepEqual(
+      [v.verification, v.reason],
+      ['signature_invalid', 'required_component_missing'],
+    );
+    assert.equal(visitorLabels({ verdict: v }).vv_type, 'bot_spoofed');
+  }
+});
+
+test('lossy integral Decimals stay indeterminate; fractional and quoted extensions survive', async () => {
+  const members = { a: 'https://api.manus.im', b: 'https://www.browserbase.com' };
+  for (const extension of [
+    ';v=1.0',
+    ';v=0.0',
+    ';v=-0.0',
+    ';v=1.000',
+    ';v=1.5',
+    ';v="1.0"',
+    ';v=:MS4w:',
+  ]) {
+    const inner = labelled({ label: 'a', identity: members.a, members, paramsExtra: extension });
+    const outer = labelled({
+      label: 'b',
+      identity: members.b,
+      members,
+      extra: [
+        ['"signature-input";key="a"', inner.params],
+        ['"signature";key="a"', inner.signature.slice(2)],
+      ],
+    });
+    const { fetcher } = network();
+    const v = await verifierWith({ fetcher }).verify(request(dictionary(members), inner, outer));
+    const lossy = [';v=1.0', ';v=0.0', ';v=-0.0', ';v=1.000'].includes(extension);
+    assert.deepEqual(
+      v.signatures.map((s) => [s.result, s.reason]),
+      lossy
+        ? [
+            ['none', 'unsupported_component'],
+            ['none', 'unsupported_component'],
+          ]
+        : [
+            ['signature_valid', 'verified'],
+            ['signature_valid', 'verified'],
+          ],
+      extension,
+    );
+  }
+  for (const [field, value] of [
+    ['signature', ':AA==:;v=1.0'],
+    ['signature-input', '("@authority";v=-0.0)'],
+  ]) {
+    const outer = labelled({
+      label: 'b',
+      identity: members.b,
+      members,
+      extra: [[`"${field}";key="a"`, value]],
+    });
+    const r = request(dictionary(members), outer);
+    r.headers[field] += `, a=${value}`;
+    const { fetcher } = network();
+    const v = await verifierWith({ fetcher }).verify(r);
+    assert.equal(v.signatures.find((s) => s.label === 'b').result, 'none');
+    assert.equal(v.signatures.find((s) => s.label === 'b').reason, 'unsupported_component');
+  }
+});
+
+test('unkeyed, binary-wrapped and self-covered signature fields are unsupported', async () => {
+  const identity = 'https://chatgpt.com';
+  for (const name of ['signature', 'signature-input']) {
+    for (const suffix of ['', ';bs', ';key="s"']) {
+      const one = labelled({ label: 's', identity, extra: [[`"${name}"${suffix}`, 'unused']] });
+      const { fetcher } = network();
+      const v = await verifierWith({ fetcher }).verify(request(JSON.stringify(identity), one));
+      assert.deepEqual([v.verification, v.reason], ['none', 'unsupported_component']);
+    }
+  }
+});
+
+test('short signatures stop before base construction or directory lookup, within existing caps', async () => {
+  const identity = 'https://chatgpt.com';
+  const { fetcher, urls } = network();
+  const one = labelled({
+    label: 's',
+    identity,
+    extra: [['"signature-input";key="missing"', 'unused']],
+  });
+  one.signature = 's=:AA==:';
+  const v = await verifierWith({ fetcher }).verify(request(JSON.stringify(identity), one));
+  assert.deepEqual([v.verification, v.reason], ['signature_invalid', 'invalid_signature_length']);
+  assert.deepEqual(urls, []);
+  const oversize = request(
+    JSON.stringify(identity),
+    ...Array.from({ length: 20 }, (_, i) => ({
+      ...one,
+      input: one.input.replace(/^s=/, `s${i}=`),
+      signature: `s${i}=:AA==:`,
+    })),
+  );
+  assert.equal((await verifierWith({ fetcher }).verify(oversize)).reason, 'too_many_signatures');
+});
+
+test('base construction reuses parsed request dictionaries', () => {
+  const members = { a: 'https://api.manus.im', b: 'https://www.browserbase.com' };
+  const inner = labelled({ label: 'a', identity: members.a, members });
+  const outer = labelled({
+    label: 'b',
+    identity: members.b,
+    members,
+    extra: [
+      ['"signature-input";key="a"', inner.params],
+      ['"signature";key="a"', inner.signature.slice(2)],
+    ],
+  });
+  const r = request(dictionary(members), inner, outer);
+  const inputs = parsedDictionary(r.headers['signature-input'], 'signature-input');
+  const signatures = parsedDictionary(r.headers.signature, 'signature');
+  const h = headers(r.headers);
+  const original = h.get.bind(h);
+  h.get = (name) => {
+    assert.ok(
+      name !== 'signature' && name !== 'signature-input',
+      'must not read/reparse raw signature fields',
+    );
+    return original(name);
+  };
+  assert.ok(
+    signatureBase({ method: 'GET', authority: 'shop.example' }, h, inputs.members.get('b'), {
+      inputs,
+      signatures,
+      agent: agents(r.headers['signature-agent']),
+      label: 'b',
+    }).includes(inner.params),
+  );
+});
+
+test('purpose mappings cannot declare intermediary or conflict with its flag', () => {
+  const base = entry('https://www.browserbase.com');
+  const policy = { checked: '2026-11-22', sources: ['https://infra.example/docs'] };
+  for (const mapping of [
+    { signatureAgent: 'intermediary' },
+    { ipLists: { feed: 'intermediary' } },
+    { uaTokens: { Bot: 'intermediary' } },
+    { signatureAgent: 'user_directed' },
+  ]) {
+    assert.throws(
+      () => verifierWith({ registry: [{ ...base, purposes: { ...policy, ...mapping } }] }),
+      TypeError,
+    );
+  }
+});
+
+test('blocking provisional Muse leaves five of six directories loaded and a failed refresh', async () => {
+  let failMuse;
+  const blocked = new Promise((_, reject) => {
+    failMuse = reject;
+  });
+  const verifier = verifierWith({
+    fetcher: async (url) => {
+      if (url === entry('https://muse.ai').directoryUrl) return blocked;
+      return Response.json({ keys: [stranger.jwk] });
+    },
+  });
+  const warming = verifier.warm();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(verifier.status().directories, { loaded: 5, total: 6 });
+  failMuse(new Error('egress blocked'));
+  const result = await warming;
+  assert.deepEqual(result.failed, [entry('https://muse.ai').directoryUrl]);
+  assert.equal(verifier.status().lastRefreshOk, false);
+  verifier.close();
+});
+
+test('intermediary config describes signatures; separate IP proof retains its product purpose', async () => {
+  const base = entry('https://www.browserbase.com');
+  const verifier = verifierWith({
+    registry: [
+      {
+        ...base,
+        extraUaTokens: ['InfraBot'],
+        staticPrefixes: ['192.0.2.0/24'],
+        purposes: {
+          checked: '2026-11-22',
+          sources: ['https://infra.example/docs'],
+          uaTokens: { InfraBot: 'crawler' },
+        },
+      },
+    ],
+    fetcher: async () => {
+      throw new Error('no network needed');
+    },
+  });
+  const v = await verifier.verify({
+    method: 'GET',
+    host: 'shop.example',
+    clientIp: '192.0.2.1',
+    headers: { 'user-agent': 'InfraBot' },
+  });
+  assert.deepEqual([v.verification, v.agent_purpose], ['ip_match', 'crawler']);
 });

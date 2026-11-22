@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 — 2026-11-22
+
+- Keep replay/invalid WBA peers visible when only signing infrastructure verifies; a valid direct signature still wins. Invalid aggregate verdicts expose no verified identity.
+- Parse security dictionaries once per request, reuse lexical metadata and check Ed25519 length before base construction or directory access; retain all SSRF, count, size and timeout limits.
+- Require byte-sequence Signature members and string-only Signature-Input lists. Missing covered security members fail per RFC 9421 §2.1.2; malformed shapes fail. Lossy integral Decimals anywhere in covered members and Decimal timestamps are indeterminate, never false crypto mismatches. Reject self-coverage and bare/binary-wrapped signature fields.
+- Restrict PurposePolicy to product purposes in public types, matching existing runtime validation; reject an intermediary flag combined with a signature purpose mapping.
+- Document collector session precedence (intermediary rank 4.75, direct verified rank 5) and inherited verified purpose. Add parser, ordering, configuration and type regressions.
+- Upgrade note: 0.4.0 added provisional muse.ai and raised startup key directories from five to six; update outbound HTTPS allowlists or health can remain 5/6 with a failed refresh. Muse remains enabled by owner policy, not confirmed by Meta or a local capture.
+- Clarify 0.4.0 API change: purposePolicies.browserbase and Browserbase.purposes were removed in favor of intermediary: true. Correct source locations and coverage date. Session SQL refers to the optional docs/analysis/session-classification.sql report, not a database schema.
+
 ## 0.4.0 — 2026-11-22
 
 - Add Meta Muse as a signing operator: operator `meta`, identity `https://muse.ai`, directory `https://muse.ai/.well-known/http-message-signatures-directory`, purpose `user_directed`. Provisional (observed by DataDome, not documented by Meta; Muse signs only part of its requests). The old www.meta.com directory is not trusted.
@@ -8,7 +18,7 @@
 - `visitorLabels` maps unlisted purpose values to `unknown`.
 - Evidence versus identity: documented and tested that only verification or a page marker (`dom_marker`) names an operator; UA tokens and unverified Signature-Agent values never do.
 - Live directory re-check for Muse, Browserbase, Manus and Google (2026-11-22); Google's experimental Web Bot Auth documentation added as registry evidence. Amazon Bedrock AgentCore Browser is documented as not supported (no public directory).
-- Session SQL accepts purpose `intermediary`.
+- Optional reporting query `docs/analysis/session-classification.sql` (repository root) accepts purpose `intermediary` in both purpose allowlists; neither this library nor Vanilla has a SQL storage layer.
 
 ## 0.3.5 — 2026-11-22
 

@@ -57,12 +57,13 @@ export function checkSignaturePolicy(
     throw new Failure('required_component_missing');
   return keyid;
 }
-/** Pure aggregation: valid > invalid > indeterminate; IP can win only without signatures. */
+/** Direct valid > invalid > intermediary valid > indeterminate; IP needs no signatures. */
 export function selectOutcome(
   signatures: SignatureResult[],
   presented: boolean,
   ip?: AgentVerdict['ip'],
   ipUnavailable = false,
+  intermediaryOnly = false,
 ): Pick<AgentVerdict, 'verification' | 'reason'> {
   const relevant = signatures.filter((s) => s.reason !== 'ignored_non_wba');
   if (presented && signatures.length && !relevant.length) presented = false;
@@ -75,10 +76,13 @@ export function selectOutcome(
             verification: 'no_signature',
             reason: signatures.length ? 'ignored_non_wba' : 'signature_headers_absent',
           };
-  const selected =
-    relevant.find((s) => s.result === 'signature_valid') ??
+  const invalid =
     relevant.find((s) => s.result === 'signature_invalid' && s.reason === 'replay') ??
-    relevant.find((s) => s.result === 'signature_invalid') ??
+    relevant.find((s) => s.result === 'signature_invalid');
+  const selected =
+    (intermediaryOnly ? invalid : undefined) ??
+    relevant.find((s) => s.result === 'signature_valid') ??
+    invalid ??
     relevant[0];
   return selected
     ? { verification: selected.result, reason: selected.reason }

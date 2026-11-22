@@ -8,7 +8,7 @@ Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering
 
 ## Phase 2 (server-side verification, in progress)
 
-On branch `phase2-verifier`, the [`server/` preview library](server/README.md) verifies operator HTTP signatures and published IP evidence independently of the browser class. Its first integration is [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) (branch `agent-verification`), running on its live demo. The server package is not released or published to npm. Design and lab/demo work started before Phase 1 field validation; production use waits for that validation.
+On branch `phase2-verifier`, the 0.4.1 [`server/` preview library](server/README.md) verifies operator HTTP signatures and published IP evidence independently of the browser class. Its first integration is [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) (branch `agent-verification`), running on its live demo. The server package is not released or published to npm. Design and lab/demo work started before Phase 1 field validation; production use waits for that validation.
 
 In a 2026-11-20 ChatGPT agent smoke test on one demo shop, 32 captured requests from one header-capture run had valid signatures. GA4 Realtime showed `signature_valid` on 5/5 `view_cart` events after cache warming (1/5 before). This is one operator on one site, not an accuracy or attribution study. See [field observations](research/agents-and-tells.md#field-observations-v10-2026-11-19) and the [conversion guidance](docs/conversion-guidance.md#server-side-verification): the server labels, it withholds nothing.
 

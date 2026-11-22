@@ -66,7 +66,8 @@ test('sec-F3: SF Decimal timestamps are rejected before lossy serialization', as
       new RegExp(field + '=(\\d+)'),
       field + '=$1.0',
     );
-    assert.equal((await verifier.verify(r)).reason, 'invalid_timestamp_type');
+    const v = await verifier.verify(r);
+    assert.deepEqual([v.verification, v.reason], ['none', 'invalid_timestamp_type']);
   }
 });
 test('sec-F4: aggregate count/bytes/UA caps are enforced on first pass', async () => {

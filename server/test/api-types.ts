@@ -63,3 +63,16 @@ void marked;
 
 const tokens: string[] = serverAgentTokens(defaultRegistry);
 void tokens;
+
+import type { PurposePolicy } from '../dist/index.js';
+const role: PurposePolicy = {
+  sources: ['https://infra.example/docs'],
+  checked: '2026-11-22',
+  // @ts-expect-error Infrastructure is configured by Operator.intermediary, never a purpose mapping.
+  signatureAgent: 'intermediary',
+  // @ts-expect-error IP mappings cannot turn a product into signing infrastructure.
+  ipLists: { feed: 'intermediary' },
+  // @ts-expect-error UA mappings cannot identify signing infrastructure.
+  uaTokens: { Bot: 'intermediary' },
+};
+void role;

@@ -179,6 +179,8 @@ export function validateConfig(options: VerifierOptions) {
         (operator.intermediary && operator.signatureAgent === undefined))
     )
       throw new TypeError('Invalid intermediary flag');
+    if (operator.intermediary && operator.purposes?.signatureAgent !== undefined)
+      throw new TypeError('Intermediary cannot declare a signature purpose mapping');
     if (operator.signatureAgent !== undefined || operator.directoryUrl !== undefined) {
       httpsUrl(operator.signatureAgent);
       httpsUrl(operator.directoryUrl);

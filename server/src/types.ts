@@ -60,9 +60,9 @@ export interface RegistryEvidence {
 export type AgentPurpose = 'user_directed' | 'crawler' | 'intermediary' | 'unknown';
 /** Exact registry evidence names and known UA tokens, with primary-source provenance. */
 export interface PurposePolicy {
-  signatureAgent?: AgentPurpose;
-  ipLists?: Readonly<Record<string, AgentPurpose>>;
-  uaTokens?: Readonly<Record<string, AgentPurpose>>;
+  signatureAgent?: Exclude<AgentPurpose, 'intermediary'>;
+  ipLists?: Readonly<Record<string, Exclude<AgentPurpose, 'intermediary'>>>;
+  uaTokens?: Readonly<Record<string, Exclude<AgentPurpose, 'intermediary'>>>;
   sources: readonly string[];
   checked: string;
 }

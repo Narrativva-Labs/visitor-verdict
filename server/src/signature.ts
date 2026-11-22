@@ -1,7 +1,7 @@
 import { isMemoryNonceStore } from './replay.js';
 import { createHash, verify } from 'node:crypto';
 import type { Dictionary, InnerList } from 'structured-headers';
-import { signatureBase, type AgentClaims, type Context } from './fields.js';
+import { signatureBase, type AgentClaims, type Context, type SignatureFields } from './fields.js';
 import { Failure, failure } from './errors.js';
 import { publicKeys, activeKey, withKidAliases } from './keys.js';
 import { checkSignaturePolicy } from './policy.js';
@@ -22,7 +22,7 @@ interface SignatureContext {
   signal: AbortSignal;
   nonceStore?: NonceStore;
   nonceTimeoutMs: number;
-  invalidTimestamps: Set<string>;
+  fields: Omit<SignatureFields, 'label'>;
   maxLifetimeSeconds: number;
   cacheOnly: boolean;
 }
@@ -73,7 +73,9 @@ export async function evaluateSignature(
     )
       throw new Failure('malformed_signature');
     const inner = member as InnerList;
-    if (env.invalidTimestamps.has(label)) throw new Failure('invalid_timestamp_type');
+    if (env.fields.inputs.invalidTimestamps.has(label))
+      throw new Failure('invalid_timestamp_type', true);
+    if (env.fields.inputs.lossyLabels.has(label)) throw new Failure('unsupported_component', true);
     const keyid = checkSignaturePolicy(inner, env.now, env.maxLifetimeSeconds);
     const covered = inner[0].filter(([name]) => name === 'signature-agent');
     let identity = env.agent.legacy;
@@ -94,9 +96,9 @@ export async function evaluateSignature(
       throw new Failure('signature_agent_not_covered');
     const operator = env.registry.find((o) => o.signatureAgent === identity);
     if (!identity || !operator?.directoryUrl) throw new Failure('untrusted_signature_agent', true);
-    const base = signatureBase(env.context, env.headers, inner, env.invalidTimestamps);
+    if (sig[0].byteLength !== 64) throw new Failure('invalid_signature_length');
     const bytes = Buffer.from(sig[0]);
-    if (bytes.length !== 64) throw new Failure('invalid_signature_length');
+    const base = signatureBase(env.context, env.headers, inner, { ...env.fields, label });
     let keys = withKidAliases(
       await env.cache.load(
         operator.directoryUrl,

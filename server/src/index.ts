@@ -1,10 +1,9 @@
-import { guard } from './lexer.js';
 import { createClaimParser } from './claims.js';
 import { requiredHeaderNames as collectRequiredHeaderNames } from './fields.js';
 import { AgentCache, type DocumentKind } from './cache.js';
 import { validateConfig } from './config.js';
 import { assertHeadersInput, headers, field } from './headers.js';
-import { dictionary, coveredHeaderNames as collectCoveredHeaderNames } from './fields.js';
+import { parsedDictionary, coveredHeaderNames as collectCoveredHeaderNames } from './fields.js';
 import { Failure, failure } from './errors.js';
 import { checkContext, selectOutcome } from './policy.js';
 import { evaluateSignature } from './signature.js';
@@ -112,9 +111,10 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         if (!field(h, 'signature') || !field(h, 'signature-input'))
           throw new Failure('incomplete_signature_headers');
         const rawInput = field(h, 'signature-input');
-        const invalidTimestamps = guard(rawInput, 'signature-input');
-        const inputs = dictionary(rawInput, 'signature-input');
-        const sigs = dictionary(field(h, 'signature'), 'signature');
+        const parsedInputs = parsedDictionary(rawInput, 'signature-input');
+        const parsedSignatures = parsedDictionary(field(h, 'signature'), 'signature');
+        const inputs = parsedInputs.members;
+        const sigs = parsedSignatures.members;
         const labels = [...new Set([...inputs.keys(), ...sigs.keys()])];
         if (labels.length > 4) throw new Failure('too_many_signatures');
         for (const member of inputs.values())
@@ -131,7 +131,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             signal,
             nonceStore: config.nonceStore,
             nonceTimeoutMs: config.fetchTimeoutMs,
-            invalidTimestamps,
+            fields: { inputs: parsedInputs, signatures: parsedSignatures, agent: claims.agent },
             maxLifetimeSeconds: config.maxLifetimeSeconds,
             cacheOnly,
           });
@@ -186,6 +186,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           verdict.ip ??
             (verdict.rdns ? { operator: verdict.rdns.operator, list: 'rdns' } : undefined),
           ipUnavailable,
+          verdict.verified !== undefined && isIntermediary(verdict.verified),
         ),
       );
       if (verdict.reason === 'ip_evidence_unavailable' && ipCacheMiss)
@@ -196,11 +197,14 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           verdict.reason = 'reverse_dns_match';
           verdict.verified = { operator: verdict.rdns!.operator, method: 'rdns' };
         }
-      } else if (verdict.verification === 'no_signature' && dnsUnavailable) {
-        verdict.verification = 'none';
-        verdict.reason = 'reverse_dns_unavailable';
-      } else if (verdict.verification === 'no_signature' && dnsNotConfirmed) {
-        verdict.reason = 'reverse_dns_not_confirmed';
+      } else if (verdict.verification !== 'signature_valid') {
+        verdict.verified = undefined;
+        if (verdict.verification === 'no_signature' && dnsUnavailable) {
+          verdict.verification = 'none';
+          verdict.reason = 'reverse_dns_unavailable';
+        } else if (verdict.verification === 'no_signature' && dnsNotConfirmed) {
+          verdict.reason = 'reverse_dns_not_confirmed';
+        }
       }
     } catch (error) {
       const f = failure(error);

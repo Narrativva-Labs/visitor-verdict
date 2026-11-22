@@ -150,14 +150,15 @@ export const additionalOperators: Operator[] = [
     ipLists: [],
     reverseDns: dns(['AmazonAdBot'], ['amazonadbot.com'], 'https://adbot.amazon.com/'),
   },
-  // Claims below are intentionally NOT a verification capability or confirmed wire identity.
+  // Crawler claims below are not verification capabilities. Muse has separate provisional signing evidence.
   {
     operator: 'meta',
     verifiedByCapture: false,
     checked: '2026-11-22',
     source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
     extraUaTokens: ['meta-externalagent', 'meta-externalfetcher', 'meta-webindexer'],
-    // Muse, Meta's personal agent; Meta has not documented this signing identity.
+    // Provisional Muse signing identity; Meta has not documented it.
+    // Any future crawler IP/rDNS evidence needs its own purpose mappings.
     signatureAgent: 'https://muse.ai',
     directoryUrl: 'https://muse.ai/.well-known/http-message-signatures-directory',
     evidence: [

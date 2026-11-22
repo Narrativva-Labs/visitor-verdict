@@ -6,7 +6,7 @@ A reusable createVerifier validates and snapshots trusted configuration once and
 
 Target syntax is validated only for covered target components, so an uncovered query ending in % or OPTIONS \* cannot change the outcome. Signed request targets preserve raw path, percent escapes and dot segments, including origin-form //path; absolute HTTPS scheme/authority and empty paths are normalized. No WHATWG path normalization is applied. Only SP/HTAB is removed from field edges; raw header values represent Latin-1 octets. The signature base must be ASCII: plain covered obs-text is rejected, while ;bs wraps each occurrence from its original Latin-1 bytes. Unicode above 255 is rejected rather than silently UTF-8 re-encoded. A linear SF guard prevents duplicate overwrite, Decimal timestamp type loss, misclassification of token colons and quadratic whitespace processing. Aggregation limits apply before parsing. Unsupported components are never skipped; content-digest cannot establish body integrity without body bytes.
 
-Each label is evaluated separately. A valid trusted signature wins, then definitive invalid, then indeterminate. Other/absent tags are ignored_non_wba per label and cannot suppress IP matches or dominate WBA peers. IP evidence is separate and cannot hide a presented invalid WBA signature. Relevant feed failures without a match return none/ip_evidence_unavailable. All parameterized dictionary members (including either type=directory form, forbidden by protocol-01 §5.2.1) are untrusted at that label, not a reason to discard a valid peer. Unknown WBA identities never initiate network access; identity claims tied only to ignored non-WBA signatures do not prevent independent IP checks. Keys use RFC thumbprints; operator kid aliases require allowKidAlias, enabled only for Google by default; the verdict reports which matched. Mixed directories skip unsupported keys but reject structural ambiguity and private keys.
+Each label is evaluated separately. A valid direct trusted signature wins, then definitive invalid (replay first), then a valid intermediary, then indeterminate. An intermediary cannot mask another label's replay or crypto mismatch; invalid aggregation clears verified identity, while per-label results remain available. Other/absent tags are ignored_non_wba per label and cannot suppress IP matches or dominate WBA peers. IP evidence is separate and cannot hide a presented invalid WBA signature. Relevant feed failures without a match return none/ip_evidence_unavailable. All parameterized dictionary members (including either type=directory form, forbidden by protocol-01 §5.2.1) are untrusted at that label, not a reason to discard a valid peer. Unknown WBA identities never initiate network access; identity claims tied only to ignored non-WBA signatures do not prevent independent IP checks. Keys use RFC thumbprints; operator kid aliases require allowKidAlias, enabled only for Google by default; the verdict reports which matched. Mixed directories skip unsupported keys but reject structural ambiguity and private keys.
 
 Retention for public verification material is independent of HTTP cache semantics: a nominal 300-second minimum and 24-hour maximum, additionally capped by a positive staleMaxSeconds for all fresh and stale uses, with JWK nbf/exp checked at each use. This intentionally retains public no-store directories long enough for reliable verification, without retaining request headers/IPs/signatures/nonces. After the soft TTL the last validly fetched document is served while one background refresh runs (stale-while-revalidate), up to a hard maximum age (`staleMaxSeconds`, default 24 hours, measured from the fetch). A request never waits for a refresh while usable stale data exists, so slow operator endpoints cannot push requests past their deadline at every refresh. A newer successful fetch replaces the document entirely; a failed refresh keeps the stale document only until the hard maximum. Fresh cached data takes precedence over a separate forced-refresh flight; ordinary/forced refreshes are single-flight independently; cooldown follows failure or forced unknown-key refresh only. Compiled IP BlockLists are reused. Feed fetches run in parallel; the timer starts before work, and per-operation timeboxes bound waiting. The overall deadline is best-effort over bounded synchronous work (method 32, host 2048, target 65536 and clientIp 64 characters). A request deadline does not abort a refresh shared by another request. `warm()` prefetches registry endpoints through the same single-flight loads and reports URLs instead of throwing; opt-in refresh-ahead uses unref'd timers, costs one fetch per warmed endpoint per soft TTL, and is stopped by `close()`.
 
@@ -69,7 +69,7 @@ with DuckAssistBot. Browserbase is an intermediary (0.4.0): it signs its custome
 browser sessions, so its verified identity has purpose `intermediary` and never names the
 agent. `intermediary` is registry configuration (`intermediary: true`, requires a
 signatureAgent), not a purpose mapping, so a UA claim cannot override it. A valid direct
-signature wins `verified` over a valid intermediary one regardless of label order. Source URLs are recorded in registry-purposes.ts and the README.
+signature wins `verified` over a valid intermediary one regardless of label order. Product purpose sources are in registry-purposes.ts; Browserbase infrastructure sources are in registry.ts and the README. purposePolicies.browserbase and Browserbase.purposes were removed in 0.4.0. PurposePolicy excludes intermediary at compile time and runtime; intermediary plus a signature purpose mapping is rejected. The intermediary flag describes signature evidence only; IP/rDNS uses its own product mappings.
 The six pipe-separated detail segments are operator, verification, purpose, claim,
 browser class and phase. Missing is `-`, unknown operator is `none`. Configured operator
 names start with a lowercase ASCII letter and contain at most 24 lowercase ASCII
@@ -85,8 +85,8 @@ verified or downgrades a spoofed one. The browser phase `agent` marks the detect
 update after such a marker appears.
 
 Session aggregation belongs to the collector: pending=0, human=1, bot_suspicious=2,
-agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified/agent_verified=5;
-fresh equal-rank evidence replaces the prior type and operator. Current-hit detail remains distinct from sticky type.
+agent_unverified=3, bot_automation=4, bot_spoofed=4.5, intermediary agent_verified=4.75, direct crawler_verified/agent_verified=5;
+fresh equal-rank evidence replaces the prior type, operator and verified purpose. An intermediary cannot replace active direct proof. Verified purpose travels with the inherited operator, so intermediary survives unsigned hits. Verification, claim and browser segments describe the current hit. Same-identity renewal includes purpose; inherited evidence never extends its proof expiry. Replay overrides either verified rank for that hit only.
 Full hits use client_id+session_id, denied pings page_id; bounded memory-only storage
 must expire and clear on close. No library persistence or request waiting is introduced.
 
@@ -105,7 +105,27 @@ per-hit test. The format stays six segments; the only addition is the purpose va
 
 Draft-01 §5.2.2 lets a signer cover another label's `signature` and `signature-input`
 members. The verifier now supports these keyed components (RFC 9421 §2.1.2) and serializes
-the member per RFC 8941. Covering a member whose timestamps the lexical guard found to be
-Decimals is indeterminate, because re-serialization would not reproduce the signed octets.
+the member per RFC 8941. Since 0.4.1 absent covered members fail with
+signature_invalid/required_component_missing (RFC 9421 §2.1.2); wrong member shapes fail
+with signature_invalid/malformed_signature. These fields are already supplied, unlike
+ordinary headers potentially omitted by adapters. Integral Decimals anywhere in either
+member are indeterminate/unsupported_component because the parser erases the Decimal type;
+Decimal created/expires on the evaluated label remain indeterminate/invalid_timestamp_type.
+Fractional non-timestamp Decimals are supported when serialization preserves them.
+Both dictionaries and lexical metadata are parsed once per request and reused, as is the
+Signature-Agent dictionary. Ed25519 length is checked before constructing the base or loading
+keys; the four-label/32-component/aggregate-header bounds are unchanged. Unkeyed or self-keyed
+signature fields are unsupported; they never enter the generic header branch.
 Attribution is unchanged: each label attributes to the Signature-Agent member keyed by its own
 label; several covered keyed members without that match remain ambiguous.
+
+## Default-registry operations (0.4.1)
+
+Muse remains provisional: third-party wire observations plus a live directory, with no
+Meta confirmation or local request capture. The 0.4.0 registry raised the startup directory
+count from five to six. Egress must allow muse.ai or health may show 5/6 and a failed refresh;
+no traffic is held or excluded. Meta crawler claims in the same entry have no network proof:
+future crawler feeds must have distinct purpose mappings from the Muse signing identity.
+The session-analysis SQL is an optional reporting query at
+../docs/analysis/session-classification.sql; its two purpose allowlists already accept
+intermediary. There is no SQL persistence layer in the library or Vanilla.

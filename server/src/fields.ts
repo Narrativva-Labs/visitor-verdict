@@ -13,7 +13,11 @@ export { Failure } from './errors.js';
 export { headers } from './headers.js';
 
 export function dictionary(raw: string, mode: GuardMode = 'dictionary'): Dictionary {
-  guard(raw, mode);
+  return parsedDictionary(raw, mode).members;
+}
+/** Parse once and retain lexical type-loss information beside the parsed members. */
+export function parsedDictionary(raw: string, mode: GuardMode = 'dictionary') {
+  const metadata = guard(raw, mode);
   try {
     const compatible = dateCompatibleInput(raw);
     const parsed = parseDictionary(compatible.text);
@@ -33,7 +37,7 @@ export function dictionary(raw: string, mode: GuardMode = 'dictionary'): Diction
         else item[0] = restore(item[0]);
       }
     }
-    return parsed;
+    return { members: parsed, ...metadata };
   } catch {
     throw new Failure('malformed_structured_field');
   }
@@ -111,17 +115,25 @@ export function targetParts(context: Context): { path: string; uri: string } {
   const pathAndQuery = suffix.startsWith('?') ? '/' + suffix : suffix;
   return { path: pathAndQuery.split('?')[0], uri: 'https://' + context.authority + pathAndQuery };
 }
-/**
- * Build the RFC 9421 signature base. `lossyLabels` are Signature-Input members whose timestamps
- * the lexical guard found to be Decimals: their re-serialization would not reproduce the signed
- * octets, so covering them is indeterminate rather than a definitive mismatch.
- */
+export interface SignatureFields {
+  inputs: ReturnType<typeof parsedDictionary>;
+  signatures: ReturnType<typeof parsedDictionary>;
+  agent: AgentClaims;
+  label: string;
+}
+/** Build the RFC 9421 base, reusing dictionaries and lexical metadata for this request. */
 export function signatureBase(
   input: Context,
   h: Map<string, string[]>,
   inner: InnerList,
-  lossyLabels: ReadonlySet<string> = new Set(),
+  fields?: SignatureFields,
 ): string {
+  const parsed = new Map<string, ReturnType<typeof parsedDictionary>>();
+  const getField = (name: 'signature-input' | 'signature') => {
+    if (fields) return name === 'signature-input' ? fields.inputs : fields.signatures;
+    if (!parsed.has(name)) parsed.set(name, parsedDictionary(field(h, name), name));
+    return parsed.get(name)!;
+  };
   const seen = new Set<string>();
   const lines = inner[0].map((component: Item) => {
     const [name, params] = component;
@@ -146,25 +158,29 @@ export function signatureBase(
       if (!raw) throw new Failure('required_component_missing');
       if (!params.size) value = raw;
       else if (params.size === 1 && typeof params.get('key') === 'string') {
-        const member = dictionary(raw).get(params.get('key') as string);
+        const member = (fields ? fields.agent.members : dictionary(raw))?.get(
+          params.get('key') as string,
+        );
         if (!member || Array.isArray(member[0])) throw new Failure('required_component_missing');
         value = serializeItem(member as Item);
       } else throw new Failure('unsupported_component', true);
-    } else if (
-      (name === 'signature-input' || name === 'signature') &&
-      params.size === 1 &&
-      typeof params.get('key') === 'string'
-    ) {
+    } else if (name === 'signature-input' || name === 'signature') {
+      if (params.size !== 1 || typeof params.get('key') !== 'string')
+        throw new Failure('unsupported_component', true);
       // Draft-01 §5.2.2: a signer may cover another label's signature and its parameters as
       // dictionary members (RFC 9421 §2.1.2), serialized per RFC 8941.
       const key = params.get('key') as string;
-      if (name === 'signature-input' && lossyLabels.has(key))
-        throw new Failure('unsupported_component', true);
-      const raw = field(h, name);
-      const member = raw ? dictionary(raw, name).get(key) : undefined;
-      if (!member) throw new Failure('unsupported_component', true);
-      if (name === 'signature-input' ? !Array.isArray(member[0]) : Array.isArray(member[0]))
-        throw new Failure('unsupported_component', true);
+      if (key === fields?.label) throw new Failure('unsupported_component', true);
+      const { members, lossyLabels } = getField(name);
+      const member = members.get(key);
+      if (!member) throw new Failure('required_component_missing');
+      if (
+        name === 'signature-input'
+          ? !Array.isArray(member[0]) || !member[0].every((item) => typeof item[0] === 'string')
+          : !(member[0] instanceof ArrayBuffer)
+      )
+        throw new Failure('malformed_signature');
+      if (lossyLabels.has(key)) throw new Failure('unsupported_component', true);
       value = Array.isArray(member[0])
         ? serializeInnerList(member as InnerList)
         : serializeItem(member as Item);
