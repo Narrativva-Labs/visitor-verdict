@@ -6,10 +6,10 @@ Visitor Verdict is a first reporting layer for clear automation, not an attempt 
 |---|---|
 | `automated` | Hard browser automation evidence, or one document of carry-over (CA) from previous direct hard evidence. Does not establish intent or AI use. |
 | `declared_agent` | A configured agent/fetcher/crawler UA claim, or an agent UI marker in the page, without hard automation evidence. Tokens and markers are self-declarations, not identity verification. Agent-assisted visits usually have a real person behind them. |
-| `suspicious` | Uncertain weighted evidence satisfying corroboration rules, or the direct UB rule. Keep as a secondary reporting view. |
+| `suspicious` | Uncertain weighted evidence satisfying corroboration rules, the direct UB rule, or one document of CS carry-over. Keep as a secondary reporting view. |
 | `human` | No sufficient automation evidence; not proof of a person. |
 
-The **initial** phase runs synchronously using environment signals, agent UI markers already in the page and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes after 8 seconds of visible time, or on `pagehide`, whichever comes first. Hidden time pauses the timer; early navigation does not count as eight seconds without input. Final fires once per document. Initial automation persists; an initial declaration persists unless hard evidence appears at final. If an agent UI marker appears later (before or after final), one **agent** phase publishes the escalation immediately; see [agent UI markers](#agent-ui-markers-dm).
+The **initial** phase runs synchronously using environment signals, agent UI markers already in the page and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes on the first `visibilitychange` to `hidden`, after 8 seconds of visible time, or on `pagehide`, whichever comes first. Set `finalOnHidden: false` to retain the previous pause-on-hidden behaviour. Hidden time never counts toward inactivity; early navigation does not count as eight seconds without input. Final fires once per document. A short tab switch therefore finalizes early by default: later behaviour and unfinished async probes are not counted. Loading in an already hidden document does not itself finalize; the first hidden transition does. The agent marker watcher remains active after final until a match or pagehide. Initial automation persists; an initial declaration persists unless hard evidence appears at final. If an agent UI marker appears later (before or after final), one **agent** phase publishes the escalation immediately; see [agent UI markers](#agent-ui-markers-dm).
 
 Precedence is hard/inherited automation → declared → suspicious → human. A declared UA with WebDriver evidence is `automated`; a declaration alone is `declared_agent`. The suspicious rule requires all of:
 
@@ -17,7 +17,7 @@ Precedence is hard/inherited automation → declared → suspicious → human. A
 2. **At least three distinct positive-weight families**.
 3. At least one non-benign signal family (pointer via TP/TR, worker via WK, or explicitly synthetic input SY), **or** at least two distinct environment families plus behaviour (interaction or navigation). Environment families are geometry, language, plugins, graphics, chrome and permissions. NI alone is not the non-benign interaction evidence; SY is.
 
-“Non-benign” names a heuristic category, not a judgement about the visitor. Each family contributes its highest weight: geometry is capped at 2 (HW=2, G0/GS=1), worker at 6 (UB=6, WK=2), graphics at 1, NI/SY together at 2, and TP/TR together at 3. Hard, declared and inherited results use sentinel score 100; scores are not probabilities. Quiet reading alone scores 2; fast navigation plus inactivity scores 5. FN+NI+WG or FN+NI+GS scores 6 across three families but still remains human, because it has only one environment family and no TP/TR/SY/WK. FN+NI+GS+WG qualifies at 7 with two environment families plus behaviour. TR never bypasses these requirements or affects initial classification. UB directly yields suspicious at final without the ordinary score/family gate; declared and hard evidence retain precedence. HW remains benign: HW+FN+NI alone stays human.
+“Non-benign” names a heuristic category, not a judgement about the visitor. Each family contributes its highest weight: geometry is capped at 2 (HW=2, G0/GS=1), worker at 6 (UB=6, WK=2), graphics at 1, NI/SY together at 2, and TP/TR together at 3. Hard and declared results (including CA/CD) use sentinel score 100; CS adds no score or scoring family; scores are not probabilities. Quiet reading alone scores 2; fast navigation plus inactivity scores 5. FN+NI+WG or FN+NI+GS scores 6 across three families but still remains human, because it has only one environment family and no TP/TR/SY/WK. FN+NI+GS+WG qualifies at 7 with two environment families plus behaviour. TR never bypasses these requirements or affects initial classification. UB directly yields suspicious at final without the ordinary score/family gate; declared and hard evidence retain precedence. HW remains benign: HW+FN+NI alone stays human.
 
 Duplicate inclusion is ignored. BFCache restoration retains the document's state and does not emit a second final. Reload/history navigation does not append pageview timestamps. SPA route changes do not restart detection.
 
@@ -37,6 +37,7 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 | `PW` | Exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts` with callable values only; data-only arrays/objects, getters, DOM/host objects and window proxies ignored; initial and final | 100 / hard, feature-dependent |
 | `CA` | Previous document's result was `automated` from direct hard evidence in that document (never from a carried CA or a declaration); carries `automated` to the next document only, without an operator; plain class strings do not qualify | 100 / inherited |
 | `CD` | Previous document had a direct declaration (UA token or agent UI marker), stored at initial (marker at load), agent phase or final; carries `declared_agent` (never `automated`) to the next document only, with the stored operator if a marker set one | 100 / inherited |
+| `CS` | Previous final was suspicious from current-page evidence; plain stored `suspicious` is consumed at start and carries one document only. CS alone cannot renew itself or upgrade to automated/declared_agent | 0 / inherited |
 | `DM` | Agent UI marker: element with an exact ID at its expected parent (`codex-agent-overlay-root` as a child of the root element → `openai`; `claude-agent-glow-border` or `claude-phantom-cursor` as a child of `body` → `anthropic`, older Claude in Chrome versions only). Checked at start, then watched until found | 100 / declared; sets `traffic_agent` (with `declared_agent` only) |
 | `G0` | Both dimensions zero for screen, viewport or outer size; only visible, focused, top-level; rechecked final | 1 / geometry |
 | `GS` | 800×600 screen or 1280×720 screen equal to viewport | 1 / geometry |
@@ -97,6 +98,7 @@ Load `src/visitor-verdict.js` after optionally setting:
 <script>
 window.visitorVerdictConfig = {
   idleMs: 8000,
+  finalOnHidden: true,
   fastNavMs: 2000,
   fastNavCount: 3,
   suspiciousThreshold: 6,
@@ -151,3 +153,5 @@ If another script predefines a non-configurable `__visitorVerdict` or `__visitor
 
 
 CA carries a previous direct automated result; CD carries a previous direct declared_agent result. Both use score 100 and expire after one document without renewed direct evidence. Carried declarations never become automated without hard evidence on the current page.
+
+CS consumes a plain stored `suspicious` at start, including if no final is ever published. A clean carried page stays suspicious through final but stores `human`, so the following clean page starts human. Fresh suspicious evidence on a carried page can renew the one-page carry. A suspicious result is never stored with `direct: true`; no storage fields or identifiers are added. Blocked storage makes carry-over unavailable.

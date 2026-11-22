@@ -24,7 +24,7 @@ const life = new vm.Script(lifecycle, {filename:'fuzz-lifecycle.js'});
 const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];
 const agents = ['openai', 'anthropic'];
-const checks = ['no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability'];
+const checks = ['no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
 const base = () => ({storage:'{}', config:{}, race:'timer-first', double:true});
 function configExpression(spec) {
   return spec.configValue ?? '({' + Object.entries(spec.config || {}).map(([key,value]) => `${JSON.stringify(key)}:${value}`).join(',') + '})';
@@ -68,7 +68,7 @@ function evaluate(spec, script = detector) {
     }
     if (!classes.includes(event.traffic_class) || typeof event.traffic_score !== 'number' || !Number.isFinite(event.traffic_score)) fail('class/score', `invalid event: ${JSON.stringify(event).slice(0,250)}`);
     if (spec.expectedClass && event.traffic_class !== spec.expectedClass) fail('class/score', `expected ${spec.expectedClass}, got ${event.traffic_class}`);
-    if (event.traffic_version !== '1.1.0') fail('class/score', 'missing/invalid traffic_version');
+    if (event.traffic_version !== '1.2.0') fail('class/score', 'missing/invalid traffic_version');
     if (!['initial','agent','final'].includes(event.traffic_phase)) fail('phase-uniqueness', `invalid phase ${event.traffic_phase}`);
     if (Object.hasOwn(event,'traffic_agent') && !agents.includes(event.traffic_agent)) fail('payload-privacy', `invalid traffic_agent ${event.traffic_agent}`);
     if (event.traffic_phase === 'agent' && (event.traffic_class !== 'declared_agent' || !agents.includes(event.traffic_agent))) fail('class/score', `agent phase must escalate to declared_agent with an operator: ${JSON.stringify(event).slice(0,250)}`);
@@ -77,7 +77,7 @@ function evaluate(spec, script = detector) {
   }
   if (state && Object.hasOwn(state,'signals')) fail('payload-privacy','__visitorVerdict exposes debug signals');
   if (!result.beforeFrozen || !result.finalFrozen || !result.readOnly || !result.initialIntact) fail('snapshot-immutability', 'snapshots or public descriptor are writable/changed');
-  if (state && (state.version !== '1.1.0' || !['class,phase,score,version','agent,class,phase,score,version'].includes(Object.keys(state).sort().join(',')) ||
+  if (state && (state.version !== '1.2.0' || !['class,phase,score,version','agent,class,phase,score,version'].includes(Object.keys(state).sort().join(',')) ||
       (Object.hasOwn(state,'agent') && (!agents.includes(state.agent) || state.class !== 'declared_agent')))) fail('payload-privacy', 'invalid public snapshot fields/version');
   if (result.previous !== undefined && !classes.includes(result.previous)) fail('class/score', 'invalid previous class');
   if (!state || !classes.includes(state.class) || typeof state.score !== 'number' || !Number.isFinite(state.score)) fail('class/score','missing/invalid __visitorVerdict class or score');
@@ -123,6 +123,12 @@ function evaluate(spec, script = detector) {
     const error = validateStore('visitor_verdict', result.storage.visitor_verdict, result.now);
     if (error) fail('storage-bounds', `after run: ${error}`);
   }
+  if (spec.suspiciousCarry && !spec.blockStorage) {
+    const saved = JSON.parse(result.storage.visitor_verdict).lastClass;
+    if (events[0]?.traffic_class !== 'suspicious' || events.some(e => ['automated','declared_agent'].includes(e.traffic_class)) || saved === 'suspicious' || saved?.direct === true) {
+      fail('suspicious-carry', 'CS must start suspicious, never promote or renew without current evidence');
+    }
+  }
   return {errors, events, writes:writes.length};
 }
 
@@ -132,9 +138,9 @@ function rand() { seed += 0x6D2B79F5; let n = seed; n = Math.imul(n ^ n >>> 15, 
 const pick = xs => xs[Math.floor(rand()*xs.length)];
 const integer = n => Math.floor(rand()*n);
 const values = ['undefined','null','true','false','"true"','"false"','""','0','-1','1','2','20','255','NaN','Infinity','-Infinity','1.5','{}','[]','function () {}','({__proto__:null,constructor:"polluted"})'];
-const configKeys = ['idleMs','fastNavMs','fastNavCount','suspiciousThreshold','debug','webgl','worker','dataLayerName','agentTokens'];
+const configKeys = ['finalOnHidden','idleMs','fastNavMs','fastNavCount','suspiciousThreshold','debug','webgl','worker','dataLayerName','agentTokens'];
 function jsonValue(depth=0) {
-  const atoms = [null,true,false,0,-1,1,255,256,1.5,1e300,'true','false','__proto__','constructor','automated','declared_agent'];
+  const atoms = [null,true,false,0,-1,1,255,256,1.5,1e300,'true','false','__proto__','constructor','automated','declared_agent','suspicious'];
   if (depth > 2 || rand() < .5) return pick(atoms);
   if (rand() < .5) return Array.from({length:integer(12)}, () => jsonValue(depth+1));
   return Object.fromEntries(Array.from({length:integer(6)}, () => [pick(['timestamps','lastClass','tpPages','__proto__','constructor','prototype','value','direct']),jsonValue(depth+1)]));
@@ -188,6 +194,7 @@ function corpus() {
   for (const raw of ['{"lastClass":{"arbitrary":"raw"}}','{"lastClass":"secret"}','{"timestamps":[-1,1e999,1800000000001,null,"1"],"tpPages":-1}','{"__proto__":{"polluted":true},"constructor":{},"tpPages":1.5}',JSON.stringify({timestamps:Array(100000).fill(-1),tpPages:256})]) list.push({...base(),storage:raw,label:'storage boundary'});
   for (const token of ['(a+)+$','(a|aa)+$','.*','[','x'.repeat(100000)]) list.push({...base(),ua:'a'.repeat(32)+'!',config:{agentTokens:JSON.stringify([token])},label:'regex/token boundary'});
   list.push({...base(),config:{agentTokens:'Array(100000).fill("safe")'},label:'huge token array'});
+  for (const finalOnHidden of ['true','false']) for (const race of ['timer-first','hide-first','visibility']) list.push({...base(),config:{finalOnHidden},race,storage:JSON.stringify({lastClass:'suspicious'}),suspiciousCarry:true,label:'CS decays without promotion'});
   for (const race of ['timer-first','hide-first','visibility']) list.push({...base(),race,label:`duplicate/race ${race}`});
   for (const marker of ['start','late','after-final','decoy']) for (const race of ['timer-first','hide-first']) {
     list.push({...base(),marker,race,label:`agent UI marker ${marker} ${race}`});
@@ -249,7 +256,7 @@ if (args.includes('--self-test')) {
     ['payload-privacy','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0,raw:"oops"});'],
     ['class/score','window.dataLayer.push({event:"traffic_class",traffic_class:"alien",traffic_phase:"initial",traffic_score:Infinity});'],
     ['phase-uniqueness','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0});'],
-    ['snapshot-immutability','window.__visitorVerdict = {class:"human",score:0,phase:"initial",version:"1.1.0"};'],
+    ['snapshot-immutability','window.__visitorVerdict = {class:"human",score:0,phase:"initial",version:"1.2.0"};'],
     ['storage-bounds','window.sessionStorage.setItem("forbidden","{}");'],
     ['named-property-pollution','window.dataLayer.push({event:"traffic_class",traffic_class:window.__playwright__binding__ ? "automated" : "human",traffic_phase:"initial",traffic_score:100});']
   ];

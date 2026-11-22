@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
-  "registryVersion": "1.0.0",
-  "detectorVersion": "1.1.0",
+  "registryVersion": "1.1.0",
+  "detectorVersion": "1.2.0",
   "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit.",
   "signals": [
     {
@@ -245,6 +245,33 @@
       ],
       "falsePositives": [
         "Human manual takeover can inherit a declaration; same-origin storage is spoofable."
+      ]
+    },
+    {
+      "id": "CS",
+      "kind": "code",
+      "code": "CS",
+      "family": "carry-over",
+      "check": "Sanitised plain lastClass suspicious from a previous final result, consumed at start. Carries suspicious for one following document only; CS alone never renews it, adds score/families or upgrades to automated/declared_agent.",
+      "weight": 0,
+      "hardness": "inherited",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.2.0",
+          "result": "Implemented condition and synthetic contract semantics only; not a field accuracy result.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "A human taking over the next page can inherit uncertain evidence; same-origin storage is spoofable."
       ]
     },
     {

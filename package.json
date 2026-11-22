@@ -1,6 +1,6 @@
 {
   "name": "visitor-verdict",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Privacy-minimising browser traffic classification for Google Tag Manager and GA4",
   "scripts": {
     "build": "node scripts/build.mjs",

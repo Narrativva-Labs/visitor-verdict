@@ -21,7 +21,7 @@ event listeners, bounded timer draining, sessionStorage, Worker replies, WebGL,
 and asynchronous permissions. Cases mix malformed storage, huge arrays, invalid
 config types, literal regex attack strings, missing old browser methods, trusted
 and untrusted event paths, duplicate inclusion, timer/pagehide races, and DOM
-named elements/collections. DOM pollution uses a paired clean control, so
+named elements/collections, `finalOnHidden` on/off, and suspicious carry-over. Targeted CS invariants require an initial suspicious class, no promotion and no renewal from CS alone. DOM pollution uses a paired clean control, so
 existing hard evidence does not create a false failure. Missing methods must
 neither escape as exceptions nor prevent the required initial/final events.
 The detector uses document capture if window lacks a usable add/remove pair,

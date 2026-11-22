@@ -68,7 +68,7 @@ The dedicated event describes one data-layer publication. Use these exact mappin
 | Event parameter `traffic_agent` | `{{VV - DLV traffic_agent}}` |
 | User property `traffic_class` | `{{VV - DLV traffic_class}}` |
 
-All detector phases contain `traffic_version: '1.1.0'`. `traffic_agent` is `openai` (or `anthropic`, older Claude in Chrome versions only) only when an agent UI marker named the operator and the class is `declared_agent`, otherwise absent. Current Claude in Chrome (1.0.107) is not detected. Debug signal codes appear only in data-layer events when explicitly enabled; the production GA4 tag does not map them.
+All current detector phases contain `traffic_version: '1.2.0'`. `traffic_agent` is `openai` (or `anthropic`, older Claude in Chrome versions only) only when an agent UI marker named the operator and the class is `declared_agent`, otherwise absent. Current Claude in Chrome (1.0.107) is not detected. Debug signal codes appear only in data-layer events when explicitly enabled; the production GA4 tag does not map them.
 
 ### Manual installation
 
@@ -153,3 +153,9 @@ For GA4 UI steps use [Explorations and comparisons](analysis/ga4-explorations.md
 
 **Do not use the class to block access, deny service or make decisions about individuals.** Assistive technology can resemble some input patterns. Keep conversion collection running and send conversions as usual; the project recommends no conversion exceptions or holds by default (see [conversion guidance](conversion-guidance.md)). Pre-consent classification must never feed advertising platforms.
 
+
+## Detector 1.2.0 timing and carry-over
+
+The generated container keeps the existing tag mappings and triggers. Upgrade the detector tag from the regenerated import. Final now fires on the first visibility change to hidden (also a short tab switch), with pagehide fallback and the existing visible-time idle deadline. This lets integrations queue the hit earlier but does not guarantee browser or GA4 delivery. Later behaviour is no longer counted; set `finalOnHidden: false` to retain pause-on-hidden. The agent marker watch may still publish agent after final.
+
+`CS` makes the next document start suspicious after a suspicious final. It adds no score/family, consumes the stored result at start and expires after that document unless fresh suspicious evidence exists. It never promotes to automated or declared_agent. These are labels only: retain all traffic and conversions.

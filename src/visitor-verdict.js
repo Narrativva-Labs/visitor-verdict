@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.1.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.2.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -76,7 +76,7 @@
   }
   function start() {
     var config = {
-      idleMs: 8000, fastNavMs: 2000, fastNavCount: 3,
+      idleMs: 8000, finalOnHidden: true, fastNavMs: 2000, fastNavCount: 3,
       suspiciousThreshold: 6, debug: false, webgl: false, worker: false, dataLayerName: 'dataLayer',
       agentTokens: [
         'ChatGPT-User', 'OAI-SearchBot', 'OAI-AdsBot', 'GPTBot',
@@ -106,7 +106,7 @@
     }
     var signals = [], families = {}, score = 0, hard = false, declared = false;
     // Direct provenance is split: a declaration (AG, DM) never renews carried automation (CA).
-    var directHard = false, directDeclared = false;
+    var directHard = false, directDeclared = false, carriedSuspicious = false;
     var done = false, initial, initialPublished = false, finalPublished = false, elapsed = 0, started = null, timer;
     // Agent UI markers: operator from a marker (this or the previous document).
     var agent = '', marked = false, agentPublished = false, latest = '', observer = null, canHide = false;
@@ -342,7 +342,7 @@
       if (phase === 'initial' ? initialPublished : !initialPublished ||
           (phase === 'final' ? finalPublished : phase !== 'agent' || agentPublished)) { return initial; }
       var result = hard ? 'automated' : declared ? 'declared_agent' :
-        suspicious() ? 'suspicious' : 'human';
+        suspicious() || carriedSuspicious ? 'suspicious' : 'human';
       if (phase === 'final' && initial === 'automated') { result = initial; }
       else if (phase === 'final' && initial === 'declared_agent' && !hard) { result = initial; }
       var total = hard || declared ? 100 : score;
@@ -360,7 +360,7 @@
       if (agent && result === 'declared_agent') { state.agent = event.traffic_agent = agent; }
       snapshot = Object.freeze(state);
       if (config.debug) { event.traffic_signals = signals.slice(0); }
-      // Only direct evidence can seed one grace document. CA/CD alone store no
+      // Only current evidence can seed one grace document. CA/CD/CS alone store no
       // provenance, so a carried class cannot seed another grace document.
       // A marker seen at load is stored at once, as later phases are.
       if (phase !== 'initial' || marked) { save(provenance(result)); }
@@ -373,6 +373,8 @@
       return result;
     }
     function provenance(result) {
+      // CS must not renew itself. A fresh suspicious rule can seed the next page.
+      if (result === 'suspicious' && !suspicious()) { return 'human'; }
       // Only direct hard evidence stores automated. A direct declaration stores
       // declared_agent even when carried CA made this document automated.
       // Only a marker seen in this document renews the stored operator.
@@ -516,6 +518,7 @@
         else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); }
         if (saved.lastClass.value === 'declared_agent') { agent = cleanAgent(saved.lastClass.agent); }
       }
+      if (saved.lastClass === 'suspicious') { carriedSuspicious = true; add('CS', 0); }
       timestamps = mergeTimes(saved.timestamps);
       var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
       var revisit = navigation ? /reload|back_forward/.test(navigation.type) :
@@ -532,7 +535,7 @@
       }
       // Consume provenance now, including when this document never fires pagehide.
       // A carried class itself cannot seed another carried document.
-      if (!save(saved.lastClass && saved.lastClass.direct === true ? saved.lastClass.value : null)) { fast = false; }
+      if (!save(carriedSuspicious ? '' : saved.lastClass && saved.lastClass.direct === true ? saved.lastClass.value : null)) { fast = false; }
     } catch (ignore) { fast = false; }
     function interact(event) {
       if (done || d.visibilityState === 'hidden') { return; }
@@ -577,6 +580,7 @@
       pointerKind = '';
       if (done) { return; }
       exposure();
+      if (d.visibilityState === 'hidden' && config.finalOnHidden && initialPublished) { finish(); return; }
       if (d.visibilityState !== 'hidden') {
         started = Date.now(); timer = w.setTimeout(finish, Math.max(0, config.idleMs - elapsed));
       }

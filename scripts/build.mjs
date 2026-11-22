@@ -15,7 +15,7 @@ await writeFile(new URL('../dist/visitor-verdict.min.js', import.meta.url), code
 await writeFile(new URL('../dist/visitor-verdict.min.js.sri', import.meta.url), `${integrity}\n`);
 console.log(`SRI: ${integrity}`);
 if (Buffer.byteLength(code) >= 5000) console.warn('Size target missed: detector should be below 5,000 bytes minified');
-const config = `<script>\nwindow.visitorVerdictConfig = {\n  idleMs: 8000,\n  fastNavMs: 2000,\n  fastNavCount: 3,\n  suspiciousThreshold: 6,\n  webgl: true, // optional probe; detector default is false\n  worker: true, // optional probe; detector default is false\n  debug: false,\n  dataLayerName: 'dataLayer'\n  // agentTokens: ['your-literal-token'] // replaces the default array\n};\n`;
+const config = `<script>\nwindow.visitorVerdictConfig = {\n  idleMs: 8000,\n  finalOnHidden: true, // finalize on the first tab hide\n  fastNavMs: 2000,\n  fastNavCount: 3,\n  suspiciousThreshold: 6,\n  webgl: true, // optional probe; detector default is false\n  worker: true, // optional probe; detector default is false\n  debug: false,\n  dataLayerName: 'dataLayer'\n  // agentTokens: ['your-literal-token'] // replaces the default array\n};\n`;
 await writeFile(new URL('../gtm/custom-html.html', import.meta.url), `${config}${code}\n</script>\n`);
 console.log(`ES5 validated; minified detector: ${Buffer.byteLength(code)} bytes`);
 await import('./build-container.mjs');
