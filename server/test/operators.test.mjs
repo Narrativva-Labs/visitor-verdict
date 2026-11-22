@@ -553,6 +553,30 @@ test('lossy integral Decimals stay indeterminate; fractional and quoted extensio
   }
 });
 
+test('a fractional Decimal timestamp is indeterminate itself but faithfully covered by an outer signer', async () => {
+  const members = { a: 'https://api.manus.im', b: 'https://www.browserbase.com' };
+  const inner = labelled({ label: 'a', identity: members.a, members, created: clock + 0.5 });
+  const outer = labelled({
+    label: 'b',
+    identity: members.b,
+    members,
+    extra: [
+      ['"signature-input";key="a"', inner.params],
+      ['"signature";key="a"', inner.signature.slice(2)],
+    ],
+  });
+  const { fetcher } = network();
+  const v = await verifierWith({ fetcher }).verify(request(dictionary(members), inner, outer));
+  assert.deepEqual(
+    v.signatures.map((s) => [s.result, s.reason]),
+    [
+      ['none', 'invalid_timestamp_type'],
+      ['signature_valid', 'verified'],
+    ],
+  );
+  assert.equal(v.agent_purpose, 'intermediary');
+});
+
 test('unkeyed, binary-wrapped and self-covered signature fields are unsupported', async () => {
   const identity = 'https://chatgpt.com';
   for (const name of ['signature', 'signature-input']) {
