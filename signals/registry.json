@@ -1655,13 +1655,13 @@
       "kind": "code",
       "code": "DH",
       "family": "declaration",
-      "check": "Visible direct body child DIV with zero attributes, zero child nodes and computed display contents; initial scan and body childList/direct-child attributes, no subtree. Operator anthropic; claim dom_host. Observed evidence, not verified identity.",
+      "check": "Desktop Chromium only: visible direct body DIV, zero attributes and light children, closed or absent shadow root, computed display contents on insertion and after at least 250 ms. Reject if another populated/attributed body DIV computes to contents. Operator anthropic; claim dom_host carried with CD. Observed evidence, not verified identity.",
       "weight": 100,
       "hardness": "declared",
       "status": "experimental",
       "lastChecked": "2026-11-22",
       "sources": [
-        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
       ],
       "verification": [
         {
@@ -1669,11 +1669,11 @@
           "versions": "1.0.107; Chrome 158 on macOS; one owner-run profile with about 46 extensions",
           "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
           "kind": "field-observation",
-          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
         }
       ],
       "falsePositives": [
-        "Unknown – monitor in the field. Page-authored empty display:contents DIVs may match; persistent host does not prove each action is automated."
+        "Closed-shadow widgets with :host display:contents and persistent empty portals under selective page CSS may match. Open roots, transient containers and broad page CSS are excluded. Monitor dom_host separately in GA4; observed host evidence does not prove each action is automated."
       ]
     },
     {
@@ -1681,13 +1681,13 @@
       "kind": "code",
       "code": "BT",
       "family": "behaviour",
-      "check": "At least 3 trusted non-composing insertText input events on the same form control in at most 5 ms; final only; interaction cap 3.",
-      "weight": 3,
+      "check": "At least 3 trusted non-composing insertText events on the same control within 5 ms with positive elapsed time. Uses event creation timestamps, falling back to performance.now() or Date.now(). Final only; interaction cap 2.",
+      "weight": 2,
       "hardness": "soft",
       "status": "experimental",
       "lastChecked": "2026-11-22",
       "sources": [
-        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
       ],
       "verification": [
         {
@@ -1695,11 +1695,11 @@
           "versions": "1.0.107; Chrome 158 on macOS; one owner-run profile with about 46 extensions",
           "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
           "kind": "field-observation",
-          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
         }
       ],
       "falsePositives": [
-        "Browser timestamp resolution, accessibility or input tooling may batch input; no text or values are read. Paste and replacement input types do not qualify."
+        "Assistive technology, voice input, text expanders and hardware scanners can batch insertText. Identical quantized timestamps are ignored. No text or values are read."
       ],
       "scoringFamily": "interaction"
     },
@@ -1708,13 +1708,13 @@
       "kind": "code",
       "code": "UC",
       "family": "behaviour",
-      "check": "Untrusted input/change on INPUT, SELECT or TEXTAREA with no trusted keydown/pointerdown/touchstart/input/change in the preceding 500 ms; final only; interaction family.",
+      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, with no trusted page input in the preceding 2000 ms. Never hidden or text fields. Final only; interaction cap 2.",
       "weight": 2,
       "hardness": "soft",
       "status": "experimental",
       "lastChecked": "2026-11-22",
       "sources": [
-        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
       ],
       "verification": [
         {
@@ -1722,11 +1722,11 @@
           "versions": "1.0.107; Chrome 158 on macOS; one owner-run profile with about 46 extensions",
           "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
           "kind": "field-observation",
-          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/research/claude-host-experiment.md"
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
         }
       ],
       "falsePositives": [
-        "Site scripts/frameworks dispatching changes outside the 500 ms user-input window may match; delayed legitimate updates remain possible."
+        "Site scripts/frameworks dispatching changes outside the 2000 ms user-input window may match; delayed legitimate updates remain possible."
       ],
       "scoringFamily": "interaction"
     }

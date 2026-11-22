@@ -15,7 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## 1.4.0 — 2026-11-23
 
 - Add experimental observed Claude in Chrome 1.0.107 host declaration (DH), with anthropic operator and dom_host claim; preserve precedence, late agent phase and one-document carry.
-- Add final-only burst typing (BT, 3) and untrusted form interaction (UC, 2), sharing the interaction cap of 3. Suppress UC within 500 ms of trusted input; neither bypasses corroboration.
+- Add desktop Chromium, closed/absent shadow, 250 ms settling and page-CSS guards for DH; carry evidence claim with CD and map it to GA4 (DLV 17).
+- Add final-only burst typing (BT, 2) and untrusted form interaction (UC, 2), sharing the interaction cap of 2. Suppress UC within 2000 ms of trusted input; neither bypasses corroboration.
 - Document the owner-run evidence (4/4 hosts, 0/2 controls), privacy and false-positive limits; extend contracts/fuzz and rebuild artifacts.
 
 ## [1.3.0] - 2026-11-22

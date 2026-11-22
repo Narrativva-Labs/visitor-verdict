@@ -111,7 +111,7 @@
     // Agent UI markers: operator from a marker (this or the previous document).
     var agentClaim = '', hostClaim = false;
     var agent = '', marked = false, agentPublished = false, latest = '', observer = null, canHide = false;
-    var watchedBody = null, idWatches = 0, hostCandidates = [];
+    var watchedBody = null, idWatches = 0, hostWatches = 0, hostCandidates = [], hostTimer = null, watchedNodes = [];
     // Informational only: never add a scoring signal or carry WebMCP across pages.
     var modelContext = null, legacyContext = null, webmcpCapable = false, webmcpCount = 0, webmcpWatching = false;
     try { modelContext = d.modelContext; } catch (ignore) {}
@@ -123,13 +123,13 @@
       // Use the platform getter's brand check as well as instanceof. Chromium
       // exposes isTrusted on each Event; other hosts may put it on the prototype.
       var trustDescriptor = typeof w.Event === 'function' && Object.getOwnPropertyDescriptor(w.Event.prototype, 'isTrusted');
-      if (!trustDescriptor || !trustDescriptor.get) { trustDescriptor = Object.getOwnPropertyDescriptor(d.createEvent('Event'), 'isTrusted'); }
+      if (webmcpCapable && (!trustDescriptor || !trustDescriptor.get)) { trustDescriptor = Object.getOwnPropertyDescriptor(d.createEvent('Event'), 'isTrusted'); }
       if (trustDescriptor && typeof trustDescriptor.get === 'function') { trustedGetter = trustDescriptor.get; }
     } catch (ignore) {}
     function webmcpEvent(event) {
       try {
         if (!webmcpWatching || webmcpCount >= 255 || typeof w.Event !== 'function' ||
-            !(event instanceof w.Event) || event.isTrusted !== true ||
+            !(event instanceof w.Event) || (event.type !== 'toolactivated' && event.type !== 'toolcancel') || event.isTrusted !== true ||
             (trustedGetter && trustedGetter.call(event) !== true) || lastWebmcpEvent === event) { return; }
         lastWebmcpEvent = event;
         webmcpCount++;
@@ -161,25 +161,29 @@
       removeListener(d, 'toolcancel', webmcpEvent, listenerOptions);
     }
     function watchWebmcp() {
-      if (!canHide) { return; }
+      if (!canHide || !webmcpCapable) { return; }
       // Bypass instance methods: polyfills must never receive our internal callback.
-      var contexts = [modelContext, legacyContext], j, target;
+      var contexts = [modelContext, legacyContext, d, w], j, target;
       for (j = 0; j < contexts.length; j++) {
         target = contexts[j];
         try {
           if (!target || target === contexts[j - 1] || typeof w.EventTarget !== 'function' ||
               !(target instanceof w.EventTarget)) { continue; }
-          webmcpTargets.push(target);
           w.EventTarget.prototype.addEventListener.call(target, 'toolactivated', webmcpEvent, listenerOptions);
+          webmcpTargets.push(target);
           webmcpWatching = true;
           w.EventTarget.prototype.addEventListener.call(target, 'toolcancel', webmcpEvent, listenerOptions);
         } catch (ignore) {}
       }
-      // Capture also observes document events and contexts exposed after startup.
-      webmcpWatching = addListener(d, 'toolactivated', webmcpEvent, listenerOptions) || webmcpWatching;
-      webmcpWatching = addListener(d, 'toolcancel', webmcpEvent, listenerOptions) || webmcpWatching;
-      webmcpWatching = addListener(w, 'toolactivated', webmcpEvent, listenerOptions) || webmcpWatching;
-      webmcpWatching = addListener(w, 'toolcancel', webmcpEvent, listenerOptions) || webmcpWatching;
+      // Legacy hosts without native EventTarget still receive guarded events.
+      if (typeof w.EventTarget !== 'function' || !(d instanceof w.EventTarget)) {
+        webmcpWatching = addListener(d, 'toolactivated', webmcpEvent, listenerOptions) || webmcpWatching;
+        webmcpWatching = addListener(d, 'toolcancel', webmcpEvent, listenerOptions) || webmcpWatching;
+      }
+      if (typeof w.EventTarget !== 'function' || !(w instanceof w.EventTarget)) {
+        webmcpWatching = addListener(w, 'toolactivated', webmcpEvent, listenerOptions) || webmcpWatching;
+        webmcpWatching = addListener(w, 'toolcancel', webmcpEvent, listenerOptions) || webmcpWatching;
+      }
     }
     var burst = false, untrustedControl = false, lastTrusted = -Infinity, typingField = null, typingTimes = [];
     var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
@@ -251,8 +255,7 @@
     function distance(a, x, y) {
       return (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y);
     }
-    function pointer(event) {
-      var now = Date.now();
+    function pointer(event, now) {
       if (event.type === 'pointerdown') {
         pointerKind = event.isTrusted === true && event.pointerType === 'mouse' ? 'mouse' : '';
         downAt = now;
@@ -333,6 +336,9 @@
     function cleanAgent(value) {
       return value === 'openai' || value === 'anthropic' ? value : '';
     }
+    function cleanClaim(value) {
+      return value === 'dom_host' || value === 'dom_marker' || value === 'ua_token' ? value : '';
+    }
     function cleanClass(value) {
       if (value === 'human' || value === 'suspicious' || value === 'automated' || value === 'declared_agent') { return value; }
       if (value && tag.call(value) === '[object Object]' && value.direct === true && typeof value.value === 'string' &&
@@ -340,6 +346,7 @@
         var clean = {value: value.value, direct: true};
         // The operator belongs to declared_agent only.
         if (value.value === 'declared_agent' && cleanAgent(value.agent)) { clean.agent = value.agent; }
+        if (value.value === 'declared_agent' && cleanClaim(value.claim)) { clean.claim = value.claim; }
         return clean;
       }
       return '';
@@ -347,7 +354,8 @@
     function classText(value) {
       value = cleanClass(value);
       return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true' +
-        (value.agent ? ',"agent":"' + value.agent + '"' : '') + '}';
+        (value.agent ? ',"agent":"' + value.agent + '"' : '') +
+        (value.claim ? ',"claim":"' + value.claim + '"' : '') + '}';
     }
     function readStore() {
       // Our bounded schema fits comfortably below this cap. Ignore oversized
@@ -431,8 +439,8 @@
         traffic_webmcp: webmcpState(), traffic_webmcp_count: webmcpCount};
       // The operator is exposed only together with declared_agent; automated wins without it.
       if (agent && result === 'declared_agent') { state.agent = event.traffic_agent = agent;
-        if (agentClaim) { state.claim = event.traffic_agent_claim = agentClaim; }
       }
+      if (agentClaim && result === 'declared_agent') { state.claim = event.traffic_agent_claim = agentClaim; }
       snapshot = Object.freeze(state);
       if (config.debug) { event.traffic_signals = signals.slice(0); }
       // Only current evidence can seed one grace document. CA/CD/CS alone store no
@@ -455,7 +463,7 @@
       // Only a marker seen in this document renews the stored operator.
       if (result === 'automated' && directHard) { return {value: result, direct: true}; }
       if ((result === 'automated' || result === 'declared_agent') && directDeclared) {
-        return marked ? {value: 'declared_agent', direct: true, agent: agent} : {value: 'declared_agent', direct: true};
+        return marked ? {value: 'declared_agent', direct: true, agent: agent, claim: agentClaim} : {value: 'declared_agent', direct: true, claim: agentClaim};
       }
       return result;
     }
@@ -473,8 +481,9 @@
     }
     function mark(operator) {
       // Escalate only: automated keeps precedence; a repeated operator adds nothing.
-      var changed = !hard && (latest !== 'declared_agent' || agent !== operator);
-      marked = true; agent = operator; agentClaim = hostClaim ? 'dom_host' : '';
+      var nextClaim = hostClaim ? 'dom_host' : 'dom_marker';
+      var changed = !hard && (latest !== 'declared_agent' || agent !== operator || agentClaim !== nextClaim);
+      marked = true; agent = operator; agentClaim = nextClaim;
       if (hostClaim) { add('DH', 100); } else { add('DM', 100); }
       unwatch();
       if (!initialPublished) { return; }
@@ -484,10 +493,31 @@
     }
     function host(node) {
       try {
-        return d.visibilityState !== 'hidden' && node && node.parentNode === d.body &&
-          node.tagName === 'DIV' && node.attributes.length === 0 && node.childNodes.length === 0 &&
+        return !mobile && !embedded && (chromium || desktop) && d.visibilityState !== 'hidden' &&
+          node && node.parentNode === d.body && /^div$/i.test(node.tagName) &&
+          node.attributes.length === 0 && node.childNodes.length === 0 &&
+          ('shadowRoot' in node ? node.shadowRoot === null : true) &&
           w.getComputedStyle(node).display === 'contents';
       } catch (ignore) { return false; }
+    }
+    function pageContents(node) {
+      var children = d.body && d.body.children || [], j, other;
+      for (j = 0; j < children.length; j++) {
+        other = children[j];
+        try {
+          if (other !== node && /^div$/i.test(other.tagName) &&
+              (other.attributes.length || other.childNodes.length) &&
+              w.getComputedStyle(other).display === 'contents') { return true; }
+        } catch (ignore) {}
+      }
+      return false;
+    }
+    function settleHosts() {
+      hostTimer = null;
+      var pending = hostCandidates; hostCandidates = [];
+      for (var j = 0; j < pending.length; j++) {
+        if (host(pending[j]) && !pageContents(pending[j])) { hostClaim = true; mark('anthropic'); return; }
+      }
     }
     function check(records) {
       try {
@@ -498,37 +528,56 @@
         if (!records) { candidates = d.body && d.body.children || []; }
         else {
           for (j = 0; j < records.length; j++) {
-            if (records[j].type === 'attributes') {
-              if (hostCandidates.indexOf(records[j].target) !== -1) { candidates.push(records[j].target); }
-            }
+            if (records[j].type === 'attributes') { candidates.push(records[j].target); }
             else {
               var added = records[j].addedNodes;
               for (k = 0; added && k < added.length; k++) { candidates.push(added[k]); }
             }
           }
         }
+        // A fresh batch always gets its own full settling interval.
         for (j = 0; j < candidates.length; j++) {
-          if (host(candidates[j])) { hostClaim = true; mark('anthropic'); break; }
+          if (host(candidates[j]) && hostCandidates.indexOf(candidates[j]) === -1 && hostCandidates.length < 32) {
+            hostCandidates.push(candidates[j]);
+            w.clearTimeout(hostTimer); hostTimer = w.setTimeout(settleHosts, 250);
+          }
         }
       } catch (ignore) {}
     }
-    // Markers are direct children of body or the root element, so only those two
-    // child lists are observed (no subtree). Newly added direct children without
-    // an id get an ID watch; body DIVs get all attributes (32 watches total).
+    // ID watches use a filtered observer on new direct children without an ID.
+    // Broad attribute watches are limited to empty new body DIVs (host candidates).
     function attach(records) {
       try {
         if (!observer) { return; }
         if (d.body && d.body !== watchedBody) {
           watchedBody = d.body; observer.observe(watchedBody, {childList: true});
-          records = [{addedNodes: watchedBody.children || []}].concat(records || []);
+        }
+        var retained = [], removed = false, j;
+        for (j = 0; j < watchedNodes.length; j++) {
+          if (watchedNodes[j].node.parentNode === d.body || watchedNodes[j].node.parentNode === d.documentElement) { retained.push(watchedNodes[j]); }
+          else { removed = true; }
+        }
+        hostCandidates = hostCandidates.filter(function (node) { return node.parentNode === d.body; });
+        if (removed) {
+          observer.disconnect(); observer.observe(d.documentElement, {childList: true});
+          if (watchedBody) { observer.observe(watchedBody, {childList: true}); }
+          watchedNodes = retained; idWatches = 0; hostWatches = 0;
+          for (j = 0; j < retained.length; j++) { if (retained[j].options.attributeFilter) { idWatches++; } else { hostWatches++; } }
+          for (j = 0; j < retained.length; j++) { observer.observe(retained[j].node, retained[j].options); }
         }
         for (var k = 0; records && k < records.length; k++) {
           var added = records[k].addedNodes;
-          for (var m = 0; added && m < added.length && idWatches < 32; m++) {
-            var node = added[m];
-            if (node && node.nodeType === 1 && node !== d.body && (!node.id || node.tagName === 'DIV')) {
-              if (node.tagName === 'DIV' && node.parentNode === d.body && d.visibilityState !== 'hidden') { hostCandidates.push(node); }
-              idWatches++; observer.observe(node, node.tagName === 'DIV' && node.parentNode === d.body ? {attributes: true} : {attributes: true, attributeFilter: ['id']});
+          for (var m = 0; added && m < added.length; m++) {
+            var node = added[m], seen = false;
+            for (j = 0; j < watchedNodes.length; j++) { if (watchedNodes[j].node === node) { seen = true; break; } }
+            if (!seen && node && node.nodeType === 1 && node !== d.body &&
+                (node.parentNode === d.body || node.parentNode === d.documentElement)) {
+              var empty = node.parentNode === d.body && /^div$/i.test(node.tagName) &&
+                node.childNodes && node.childNodes.length === 0 && hostWatches < 32;
+              if (!empty && (node.id || idWatches >= 32)) { continue; }
+              var options = empty ? {attributes: true} : {attributes: true, attributeFilter: ['id']};
+              if (empty) { hostWatches++; } else { idWatches++; }
+              watchedNodes.push({node: node, options: options}); observer.observe(node, options);
             }
           }
         }
@@ -552,13 +601,14 @@
         try { observer.disconnect(); } catch (ignore) {}
         observer = null;
       }
-      hostCandidates = [];
+      w.clearTimeout(hostTimer); hostTimer = null; hostCandidates = []; watchedNodes = [];
+      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
       if (done && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
     for (i = 0; i < config.agentTokens.length; i++) {
       var token = config.agentTokens[i];
       if (typeof token === 'string' && token.length > 0 && token.length <= 128 &&
-          bounded(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))) { add('AG', 100); break; }
+          bounded(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))) { agentClaim = 'ua_token'; add('AG', 100); break; }
     }
     if (n.webdriver === true) { add('WD', 100); }
     if (bounded('HeadlessChrome')) { add('HL', 100); }
@@ -643,24 +693,34 @@
       if (consumed && saved.lastClass && saved.lastClass.direct === true &&
           classSnapshot === classText(saved.lastClass.value)) {
         if (saved.lastClass.value === 'automated') { add('CA', 100); }
-        else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); agent = cleanAgent(saved.lastClass.agent); }
+        else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); agent = cleanAgent(saved.lastClass.agent); if (!agentClaim) { agentClaim = cleanClaim(saved.lastClass.claim); } }
         else if (saved.lastClass.value === 'suspicious') { carriedSuspicious = true; add('CS', 0); }
       }
     } catch (ignore) { fast = false; }
     function interact(event) {
       if (done || d.visibilityState === 'hidden') { return; }
-      pointer(event);
-      var now = Date.now(), field = event.target, control = field &&
-        /^(INPUT|SELECT|TEXTAREA)$/.test(field.tagName);
-      if (event.isTrusted === true && /^(keydown|pointerdown|touchstart|input|change)$/.test(event.type)) { lastTrusted = now; }
-      if (event.type === 'input' && control && event.isTrusted === true && event.inputType === 'insertText' && !event.isComposing) {
-        if (typingField !== field) { typingField = field; typingTimes = []; }
-        typingTimes.push(now);
-        if (typingTimes.length > 3) { typingTimes.shift(); }
-        if (typingTimes.length === 3 && now - typingTimes[0] >= 0 && now - typingTimes[0] <= 5) { burst = true; }
-      } else if (event.type === 'input') { typingField = null; typingTimes = []; }
-      if (control && /^(input|change)$/.test(event.type) && event.isTrusted === false && now - lastTrusted > 500) { untrustedControl = true; }
-      if ((event.isTrusted === true || event.isTrusted === undefined) && event.type !== 'pointercancel') { active = true; }
+      var now = Date.now(), type = event.type;
+      pointer(event, now);
+      if (event.isTrusted === true &&
+          /^(keydown|keyup|pointerdown|pointerup|touchstart|touchend|click|focusin|input|change|mousemove|pointermove|touchmove|scroll|wheel)$/.test(type)) { lastTrusted = now; }
+      if (type === 'input' || type === 'change') {
+        var field = event.target, name = field && String(field.tagName).toUpperCase();
+        var control = name === 'INPUT' || name === 'SELECT' || name === 'TEXTAREA';
+        var clock = w.performance && typeof w.performance.now === 'function' ? w.performance.now() : now;
+        // Event creation time prevents queued human keystrokes looking like a burst.
+        if (typeof event.timeStamp === 'number' && isFinite(event.timeStamp) && event.timeStamp >= 0) { clock = event.timeStamp; }
+        if (type === 'input' && control && event.isTrusted === true && event.inputType === 'insertText' && !event.isComposing) {
+          if (typingField !== field) { typingField = field; typingTimes = []; }
+          typingTimes.push(clock);
+          if (typingTimes.length > 3) { typingTimes.shift(); }
+          if (typingTimes.length === 3 && clock - typingTimes[0] > 0 && clock - typingTimes[0] <= 5) { burst = true; }
+        } else if (type === 'input') { typingField = null; typingTimes = []; }
+        if (type === 'change' && field && !field.disabled && !field.readOnly &&
+            (name === 'SELECT' || name === 'INPUT' && /^(checkbox|radio)$/i.test(field.type)) &&
+            event.isTrusted === false && now - lastTrusted > 2000) { untrustedControl = true; }
+        return;
+      }
+      if ((event.isTrusted === true || event.isTrusted === undefined) && type !== 'pointercancel') { active = true; }
       if (/^(mousemove|pointerdown|touchstart)$/.test(event.type) && event.isTrusted === false) { synthetic = true; }
     }
     function exposure() {
@@ -670,7 +730,7 @@
     function cleanup() {
       exposure(); stopWorker();
       for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
-      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      if (!observer) { removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); }
       // Live marker/WebMCP watches keep pagehide until they disconnect.
       if (!observer && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
@@ -682,7 +742,7 @@
       if (observesInput && !active && elapsed >= config.idleMs) { add('NI', 2, 'interaction'); }
       if (fast) { add('FN', 3, 'navigation'); }
       if (synthetic && !active) { add('SY', 2, 'interaction'); }
-      if (burst) { add('BT', 3, 'interaction'); }
+      if (burst) { add('BT', 2, 'interaction'); }
       if (untrustedControl) { add('UC', 2, 'interaction'); }
       if (mismatch) { add('NP', 1, 'permissions'); }
       if (teleport) { add('TP', 3, 'pointer'); }
@@ -703,6 +763,7 @@
       var becameHidden = wasVisible && d.visibilityState === 'hidden';
       wasVisible = d.visibilityState !== 'hidden';
       pointerKind = '';
+      if (wasVisible && observer && !marked) { check(); }
       if (done) { return; }
       exposure();
       if (becameHidden && config.finalOnHidden && initialPublished) { finish(); return; }
@@ -725,10 +786,11 @@
       watchWebmcp(); visibility();
       var operator = marker();
       if (operator) { mark(operator); }
-      check();
+      check(); watch();
       initial = publish('initial'); ua = ''; brands = null;
       // Check again once watching: a consumer of the initial push may have added a marker.
-      startWorker(); watch(); check();
+      startWorker();
+      operator = marker(); if (operator && !marked) { mark(operator); }
     } catch (ignore) { done = true; stopWebmcp(); unwatch(); cleanup(); }
   }
 }(window, document, navigator));

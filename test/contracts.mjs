@@ -89,7 +89,7 @@ export async function runContracts(detectorSource) {
     const final = c.tag.find(t => t.name === 'VV - GA4 traffic_class');
     const mappings = key => final.parameter.find(p => p.key === key).list.map(row =>
       Object.fromEntries(row.map.map(p => [p.key, p.value])));
-    const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent', 'traffic_webmcp'];
+    const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent', 'traffic_webmcp', 'traffic_agent_claim'];
     assert.deepEqual(mappings('eventSettingsTable'), fields.map(name => ({parameter: name, parameterValue: '{{VV - DLV ' + name + '}}'})));
     assert.deepEqual(mappings('userProperties'), [{name: 'traffic_class', value: '{{VV - DLV traffic_class}}'}]);
     for (const name of fields) {
@@ -125,7 +125,7 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(final.firingTriggerId, [c.trigger.find(t => t.name === 'VV - final').triggerId, hard.triggerId, agent.triggerId]);
     const ids = [...c.variable.map(v => v.variableId), ...c.trigger.map(t => t.triggerId), ...c.tag.map(t => t.tagId), ...c.folder.map(f => f.folderId)];
     assert.equal(new Set(ids).size, ids.length, 'Unique object IDs');
-    assert.deepEqual(['4', '5', '6', '7', '14', '16'].map(id => c.variable.find(v => v.variableId === id).name),
+    assert.deepEqual(['4', '5', '6', '7', '14', '16', '17'].map(id => c.variable.find(v => v.variableId === id).name),
       fields.map(name => 'VV - DLV ' + name), 'Earlier IDs stay stable; traffic_webmcp is appended');
     assert.equal(final.tagFiringOption, 'ONCE_PER_EVENT', 'Allow both initial hard and final publications');
     const optional = c.folder.find(f => f.name === 'VV - OPTIONAL page_view readiness (OR, once per page)');
@@ -251,7 +251,7 @@ export async function runContracts(detectorSource) {
     assert.equal(f.window.legacyEvents, undefined); f.advance(1); assert.equal(f.window.vvEvents.length, 1);
     f.advance(30); assert.equal(f.window.vvEvents.length, 2); assert.ok(f.store.has('visitor_verdict'));
     assert.equal(JSON.parse(f.store.get('traffic_class')).tpPages, 255, 'Legacy record untouched');
-    for (const value of ['human', 'suspicious', 'automated', 'declared_agent', {value: 'automated', direct: true}, {value: 'declared_agent', direct: true}, 'human\n', 'alien', 123, null, {value: 'human'}]) {
+    for (const value of ['human', 'suspicious', 'automated', 'declared_agent', {value: 'automated', direct: true}, {value: 'declared_agent', direct: true, claim: 'ua_token'}, 'human\n', 'alien', 123, null, {value: 'human'}]) {
       const g = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: value}))});
       const expected = ['human', 'suspicious', 'automated', 'declared_agent'].includes(value) ? value : value?.direct === true ? value.value : undefined;
       assert.equal(g.window.__visitorVerdictLast, expected);
@@ -859,8 +859,8 @@ export async function runContracts(detectorSource) {
       f.emit('keydown', {isTrusted: true}); f.advance(8000);
       assert.equal(f.window.__visitorVerdict.class, kind === 'AG' ? 'declared_agent' : kind === 'production' ? 'suspicious' : 'automated');
       assert.equal(f.window.__visitorVerdict.score, kind === 'production' ? 6 : 100);
-      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
-      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
+      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', ...(kind === 'AG' ? ['traffic_agent_claim'] : []), 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
+      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), [...(kind === 'AG' ? ['claim'] : []), 'class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     }
   });
   await test('WK is zero when main and worker navigator are consistent', () => {
@@ -1096,7 +1096,7 @@ export async function runContracts(detectorSource) {
       assert.equal(second.window.__visitorVerdict.score, 100);
       assert.ok(second.window.dataLayer.every(e => e.traffic_class === 'declared_agent'));
       const saved = JSON.parse(second.store.get('visitor_verdict')).lastClass;
-      assert.deepEqual(saved, keepToken ? {value: 'declared_agent', direct: true} : 'declared_agent');
+      assert.deepEqual(saved, keepToken ? {value: 'declared_agent', direct: true, claim: 'ua_token'} : 'declared_agent');
     }
   });
   await test('Declared carry never defeats current hard evidence, including a late Playwright binding', () => {
@@ -1115,7 +1115,7 @@ export async function runContracts(detectorSource) {
     }
   });
   await test('Forged stored declarations can only carry declared_agent, never automated or renewed provenance', () => {
-    for (const lastClass of ['declared_agent', {value: 'declared_agent', direct: true},
+    for (const lastClass of ['declared_agent', {value: 'declared_agent', direct: true, claim: 'ua_token'},
       {value: 'declared_agent', direct: false}, {value: 'declared_agent', direct: true, extra: 'automated'},
       {value: 'declared_agent\n', direct: true}, {value: ['declared_agent'], direct: true}]) {
       const carry = lastClass && lastClass.value === 'declared_agent' && lastClass.direct === true;
@@ -1594,15 +1594,101 @@ export async function runContracts(detectorSource) {
     };
     return dom;
   }
+  await test('DH: browser, shadow widgets, transient portals, CSS and detached negatives', () => {
+    for (const ua of ['Safari/600', 'Firefox/150', 'Chrome/150 Mobile', 'Chrome/150 Android', 'Chrome/150; wv)', 'Chrome/150 WebView']) {
+      const dom = hostDOM(), f = fixture({modify: env => {dom.modify(env); env.navigator.userAgent = ua;}});
+      dom.placeHost(dom.host()); f.advance(300); assert.equal(f.window.__visitorVerdict.class, 'human', ua);
+    }
+    for (const mode of ['open', 'throw', 'portal', 'detach', 'attributes', 'global-css', 'populated-css']) {
+      const dom = hostDOM(), f = fixture({modify: dom.modify}), node = dom.host();
+      if (mode === 'open') node.shadowRoot = {};
+      if (mode === 'throw') Object.defineProperty(node, 'shadowRoot', {get() {throw Error('blocked');}});
+      node.attachShadow = () => {throw Error('must never attach');};
+      dom.placeHost(node); f.advance(100);
+      if (mode === 'portal') node.childNodes = [{}];
+      if (mode === 'attributes') node.attributes = [{}];
+      if (mode === 'detach') node.parentNode = null;
+      if (mode.endsWith('css')) dom.placeHost(dom.host(mode === 'global-css' ? {attributes: [{}]} : {childNodes: [{}]}));
+      f.advance(150); assert.equal(f.window.__visitorVerdict.class, 'human', mode);
+    }
+  });
+  await test('DH: hidden host rechecks on visibility, and late CD confirms claim', () => {
+    const dom = hostDOM(), f = fixture({modify: dom.modify});
+    f.document.visibilityState = 'hidden'; dom.placeHost(dom.host()); f.advance(300);
+    f.document.visibilityState = 'visible'; f.emit('visibilitychange'); f.advance(250);
+    assert.equal(f.window.__visitorVerdict.claim, 'dom_host');
+    const store = new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic'}})]]);
+    const nextDom = hostDOM(), next = fixture({store, modify: nextDom.modify}); next.advance(8000);
+    nextDom.placeHost(nextDom.host()); next.advance(250);
+    assert.equal(next.window.__visitorVerdict.claim, 'dom_host'); assert.equal(next.window.__visitorVerdict.phase, 'agent');
+    const carry = fixture({store: f.store}); assert.equal(carry.window.__visitorVerdict.claim, 'dom_host');
+  });
+  await test('DM: existing app wrappers cannot exhaust watches; removed candidates release observer targets', () => {
+    const dom = hostDOM();
+    for (let i=0;i<50;i++) dom.placeHost(dom.host({id: 'app'+i, attributes: [{}], childNodes: [{}]}));
+    const f = fixture({modify: dom.modify});
+    const late = dom.insertNode({nodeType:1, id:''}, dom.root); dom.setId(late, 'codex-agent-overlay-root');
+    assert.equal(f.window.__visitorVerdict.agent, 'openai');
+    const clean = hostDOM(), g = fixture({modify: clean.modify}), node = clean.placeHost(clean.host());
+    node.parentNode = null; clean.observers[0].fn([{type:'childList', removedNodes:[node]}]);
+    assert.ok(!clean.observers[0].targets.some(t => t.target === node)); g.advance(250);
+    assert.equal(g.window.__visitorVerdict.class, 'human');
+  });
+  await test('UC: password managers, hidden fields, readonly controls, recent trusted UI and hydration', () => {
+    for (const target of [{tagName:'INPUT',type:'hidden'}, {tagName:'INPUT',type:'password'}, {tagName:'INPUT',type:'text'},
+      {tagName:'TEXTAREA'}, {tagName:'SELECT', disabled:true}, {tagName:'SELECT',readOnly:true}]) {
+      const f=fixture(); f.emit('change',{target,isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'));
+    }
+    for (const type of ['click','keyup','pointerup','focusin','keydown','touchstart','mousemove','scroll']) {
+      const f=fixture(); f.emit(type,{isTrusted:true}); f.advance(2000);
+      f.emit('change',{target:{tagName:'SELECT'},isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'),type);
+    }
+    for (const type of ['checkbox','radio']) {
+      const f=fixture(); f.emit('change',{target:{tagName:'INPUT',type},isTrusted:false}); f.advance(8000); assert.ok(f.signals.includes('UC'));
+    }
+  });
+  await test('BT: queued events, coarse clocks, composition, performance clock and interaction cap', () => {
+    for (const mode of ['queued','coarse','composition','performance']) {
+      let clock=0;
+      const f=fixture({modify:({window})=>{window.performance={now:()=>clock};}}), target={tagName:'INPUT'};
+      for (let i=0;i<3;i++) {clock=i*2; f.emit('input',{target,isTrusted:true,inputType:'insertText',isComposing:mode==='composition',
+        ...(mode==='performance'?{}:{timeStamp:mode==='queued'?i*100:0})});}
+      f.advance(8000); assert.equal(f.signals.includes('BT'),mode==='performance',mode);
+      assert.ok(f.window.__visitorVerdict.score <= 3, 'NI/BT interaction family cap remains 2');
+    }
+  });
+  await test('Trusted form input preserves NI/SY and TR history semantics', () => {
+    for (const type of ['input','change']) {
+      const store=new Map([['visitor_verdict',JSON.stringify({tpPages:2})]]), f=fixture({store});
+      f.emit('mousemove',{isTrusted:false}); f.emit(type,{target:{tagName:'INPUT'},isTrusted:true}); f.advance(8000);
+      assert.ok(f.signals.includes('NI')); assert.ok(f.signals.includes('SY')); assert.ok(f.signals.includes('TR'));
+      assert.equal(JSON.parse(store.get('visitor_verdict')).tpPages,2);
+    }
+  });
+  await test('WebMCP rejects unrelated trusted browser events and bypasses document/window instance methods', () => {
+    const handlers={}; let calls=0;
+    const f=fixture({modify:({window,document})=>{
+      document.modelContext={};
+      window.EventTarget=class {addEventListener(name,fn){handlers[name]=fn;} removeEventListener(name){delete handlers[name];}};
+      Object.setPrototypeOf(window,window.EventTarget.prototype); Object.setPrototypeOf(document,window.EventTarget.prototype);
+      const add=window.addEventListener;
+      window.addEventListener=document.addEventListener=function(name,fn,opts){if(/^tool/.test(name)){calls++;return;}return add.call(this,name,fn,opts);};
+    }});
+    handlers.toolactivated(new f.window.Event('click',{isTrusted:true}));
+    assert.equal(calls,0); assert.equal(f.window.__visitorVerdict.webmcpCount,0);
+    handlers.toolactivated(new f.window.Event('toolactivated',{isTrusted:true})); assert.equal(f.window.__visitorVerdict.webmcpCount,1);
+    f.emit('pagehide'); assert.equal(Object.keys(handlers).length,0);
+  });
   await test('DH: initial, late and post-final hosts declare anthropic once and carry one document', () => {
     for (const timing of ['start', 'late', 'final']) {
       const dom = hostDOM(), host = dom.host();
       // Closed shadow content is invisible to the light-DOM childNodes check.
-      Object.defineProperty(host, 'shadowRoot', {get() { throw Error('must not inspect shadow'); }});
+      Object.defineProperty(host, 'shadowRoot', {value: null});
       if (timing === 'start') dom.placeHost(host);
       const f = fixture({modify: dom.modify});
       if (timing === 'final') f.advance(8000);
       if (timing !== 'start') dom.placeHost(host);
+      f.advance(249); assert.equal(f.window.__visitorVerdict.class, 'human'); f.advance(1);
       assert.equal(f.window.__visitorVerdict.class, 'declared_agent');
       assert.equal(f.window.__visitorVerdict.agent, 'anthropic');
       assert.equal(f.window.__visitorVerdict.claim, 'dom_host');
@@ -1619,14 +1705,14 @@ export async function runContracts(detectorSource) {
     const f = fixture({modify: env => { dom.modify(env); Object.defineProperty(env.document, 'body', {get: () => null, configurable: true}); }});
     const node = dom.host({parentNode: dom.body}); dom.body.children.push(node);
     Object.defineProperty(f.document, 'body', {get: () => dom.body, configurable: true});
-    dom.insertNode(dom.body, dom.root);
+    dom.insertNode(dom.body, dom.root); f.advance(250);
     assert.equal(f.window.__visitorVerdict.claim, 'dom_host');
   });
   await test('DH: attributes stripped after insertion (including id) are rechecked', () => {
     const dom = hostDOM(), f = fixture({modify: dom.modify});
     const node = dom.placeHost(dom.host({id: 'temporary', attributes: [{name: 'id'}]}));
     assert.equal(f.window.__visitorVerdict.class, 'human');
-    node.id = ''; node.attributes = []; dom.attributes(node);
+    node.id = ''; node.attributes = []; dom.attributes(node); f.advance(250);
     assert.equal(f.window.__visitorVerdict.claim, 'dom_host');
   });
   await test('DH: strict host negatives, lab logger shape, hidden insertion and hard precedence', () => {
@@ -1662,16 +1748,16 @@ export async function runContracts(detectorSource) {
       assert.equal(f.listeners.input, undefined); assert.equal(f.listeners.change, undefined);
     }
   });
-  await test('UC: form events require explicit untrust and no trusted input within 500 ms', () => {
+  await test('UC: only discrete change controls with no trusted input within 2000 ms', () => {
     for (const tagName of ['SELECT', 'INPUT', 'TEXTAREA']) for (const type of ['input', 'change']) {
       for (const mode of ['untrusted', 'trusted', 'missing', 'recent', 'expired', 'other']) {
         const f = fixture();
         if (mode === 'recent' || mode === 'expired') f.emit('keydown', {isTrusted: true});
-        if (mode === 'expired') f.advance(501);
+        if (mode === 'expired') f.advance(2001);
         f.emit(type, {target: {tagName: mode === 'other' ? 'DIV' : tagName},
           isTrusted: mode === 'trusted' ? true : mode === 'missing' ? undefined : false});
         f.advance(8000);
-        assert.equal(f.signals.includes('UC'), ['untrusted', 'expired'].includes(mode), mode);
+        assert.equal(f.signals.includes('UC'), tagName === 'SELECT' && type === 'change' && ['untrusted', 'expired'].includes(mode), mode);
         assert.equal(f.window.__visitorVerdict.class, 'human');
       }
     }
@@ -1686,14 +1772,14 @@ export async function runContracts(detectorSource) {
       assert.equal(f.window.__visitorVerdict.agent, operator);
       assert.equal(f.window.__visitorVerdict.score, 100);
       assert.ok(Object.isFrozen(f.window.__visitorVerdict));
-      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['agent', 'class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
+      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['agent', 'claim', 'class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
       assert.equal(f.window.dataLayer[0].traffic_agent, operator); assert.ok(f.signals.includes('DM'));
       assert.equal(dom.observers.length, 0, 'Found at start: no MutationObserver');
-      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator}, 'Stored at initial');
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator, claim: 'dom_marker'}, 'Stored at initial');
       f.advance(8000);
       assert.deepEqual(phases(f), ['initial', 'final']);
       assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'declared_agent' && e.traffic_agent === operator));
-      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator});
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator, claim: 'dom_marker'});
       assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     }
   });
@@ -1712,19 +1798,19 @@ export async function runContracts(detectorSource) {
       assert.deepEqual(phases(f), ['initial', 'agent']);
       const event = f.window.dataLayer[1];
       assert.deepEqual({...event, traffic_signals: undefined}, {event: 'traffic_class', traffic_class: 'declared_agent', traffic_phase: 'agent',
-        traffic_score: 100, traffic_version: '1.4.0', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_signals: undefined});
+        traffic_score: 100, traffic_version: '1.4.0', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_agent_claim: 'dom_marker', traffic_signals: undefined});
       assert.ok(event.traffic_signals.includes('DM'));
       const snapshot = f.window.__visitorVerdict;
       assert.notEqual(snapshot, initial); assert.ok(Object.isFrozen(snapshot));
-      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.0', webmcp: 'none', webmcpCount: 0, agent: operator});
+      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.0', webmcp: 'none', webmcpCount: 0, agent: operator, claim: 'dom_marker'});
       assert.equal(initial.class, 'human', 'Earlier snapshot keeps its values');
       assert.equal(dom.active, 0, 'Disconnected once found');
-      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator}, 'Persisted immediately');
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator, claim: 'dom_marker'}, 'Persisted immediately');
       dom.insert(id); f.advance(6000);
       assert.deepEqual(phases(f), ['initial', 'agent', 'final']);
       assert.equal(f.window.__visitorVerdict.class, 'declared_agent'); assert.equal(f.window.__visitorVerdict.agent, operator);
       assert.equal(f.window.dataLayer[2].traffic_agent, operator);
-      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator});
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator, claim: 'dom_marker'});
       f.emit('pagehide'); assert.equal(f.window.dataLayer.length, 3);
       assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
     }
@@ -1738,8 +1824,8 @@ export async function runContracts(detectorSource) {
     assert.equal(f.timers.size, 0);
     f.advance(30000); dom.insert('codex-agent-overlay-root');
     assert.deepEqual(phases(f), ['initial', 'final', 'agent']);
-    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.0', webmcp: 'none', webmcpCount: 0, agent: 'openai'});
-    assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'openai'});
+    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.0', webmcp: 'none', webmcpCount: 0, agent: 'openai', claim: 'dom_marker'});
+    assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'openai', claim: 'dom_marker'});
     assert.equal(dom.active, 0);
     assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     f.emit('pagehide'); assert.equal(f.window.dataLayer.length, 3);
@@ -1795,17 +1881,17 @@ export async function runContracts(detectorSource) {
     const third = fixture({store: first.store, now: 20000});
     assert.equal(third.window.__visitorVerdict.class, 'human'); assert.ok(!('agent' in third.window.__visitorVerdict));
     // Next page where the agent UI returns: same operator escalates nothing, but renews provenance.
-    const store = new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic'}})]]);
+    const store = new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic', claim: 'dom_marker'}})]]);
     const same = markerDOM();
     const g = fixture({store, modify: same.modify});
     assert.equal(JSON.parse(store.get('visitor_verdict')).lastClass, 'declared_agent', 'Carry consumed at load');
     g.advance(1000); same.insert('claude-phantom-cursor');
     assert.deepEqual(phases(g), ['initial']);
-    assert.deepEqual(JSON.parse(store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'anthropic'}, 'Renewed before final');
+    assert.deepEqual(JSON.parse(store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'anthropic', claim: 'dom_marker'}, 'Renewed before final');
     g.advance(7000);
-    assert.deepEqual(JSON.parse(store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'anthropic'});
+    assert.deepEqual(JSON.parse(store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'anthropic', claim: 'dom_marker'});
     const switched = markerDOM();
-    const h = fixture({store: new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic'}})]]), modify: switched.modify});
+    const h = fixture({store: new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic', claim: 'dom_marker'}})]]), modify: switched.modify});
     switched.insert('codex-agent-overlay-root');
     assert.deepEqual(phases(h), ['initial', 'agent']); assert.equal(h.window.__visitorVerdict.agent, 'openai');
     const declared = markerDOM();
@@ -1818,7 +1904,7 @@ export async function runContracts(detectorSource) {
       assert.equal(forged.window.__visitorVerdict.class, 'declared_agent');
       assert.ok(!('agent' in forged.window.__visitorVerdict)); assert.ok(!('traffic_agent' in forged.window.dataLayer[0]));
     }
-    const plain = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', agent: 'openai'}}))});
+    const plain = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', agent: 'openai', claim: 'dom_marker'}}))});
     assert.equal(plain.window.__visitorVerdict.class, 'human', 'Operator without direct provenance never carries');
   });
   await test('DM: automated keeps precedence over a marker, at start and late; no agent phase', () => {
@@ -1863,7 +1949,7 @@ export async function runContracts(detectorSource) {
       assert.ok(second.window.dataLayer[0].traffic_signals.includes('CA'), label);
       assert.ok(!('agent' in second.window.__visitorVerdict), label);
       const stored = JSON.parse(first.store.get('visitor_verdict')).lastClass;
-      assert.deepEqual(stored, token ? {value: 'declared_agent', direct: true} : {value: 'declared_agent', direct: true, agent: 'openai'}, label);
+      assert.deepEqual(stored, token ? {value: 'declared_agent', direct: true, claim: 'ua_token'} : {value: 'declared_agent', direct: true, agent: 'openai', claim: 'dom_marker'}, label);
       const third = fixture({store: first.store, now: 30000});
       assert.equal(third.window.__visitorVerdict.class, 'declared_agent', label + ': next page must not be automated');
       assert.ok(third.signals.includes('CD') && !third.signals.includes('CA'), label);
@@ -2022,7 +2108,8 @@ export async function runContracts(detectorSource) {
   });
   await test('WebMCP window fallback accepts document targets and preserves hard/declaration classes', () => {
     for (const expected of ['human', 'automated', 'declared_agent']) {
-      const f = fixture({modify: ({navigator}) => {
+      const f = fixture({modify: ({navigator, document}) => {
+        document.modelContext = {};
         if (expected === 'automated') navigator.webdriver = true;
         if (expected === 'declared_agent') navigator.userAgent = 'GPTBot';
       }});

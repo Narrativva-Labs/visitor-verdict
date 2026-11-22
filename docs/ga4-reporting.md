@@ -1,5 +1,9 @@
 # GTM installation and GA4 reporting
 
+## Evidence claim in 1.4.0
+
+Merge DLV `VV - DLV traffic_agent_claim` (ID 17, Version 2, key `traffic_agent_claim`, no default) and GA4 event parameter `traffic_agent_claim={{VV - DLV traffic_agent_claim}}`. Register an event-scoped custom dimension for this parameter. Keep `dom_host` separate from `dom_marker` and `ua_token` in reports, including on CD carry pages. Monitor known human controls and widget/portal sites; closed-shadow widgets using `:host { display: contents }` and persistent selective-CSS portals remain false-positive sources. Review dom_host-only changes by site/release before using the label for downstream decisions. The [experiment](../research/claude-host-experiment.md) records the monitoring plan and evidence limits.
+
 ## Import and readiness wiring
 
 1. In a GTM web container, open **Admin → Import Container**, choose [gtm/container-import.json](../gtm/container-import.json), select a workspace and **Merge**, then review conflicts and the import preview before confirming. Set **VV - GA4 measurement ID** to your existing measurement ID instead of `G-XXXXXXXXXX`. The import contains no Google tag or consent manager.
@@ -19,7 +23,7 @@ All imported named objects use `VV - `. The import creates two tags, eight varia
 | VV - initial hard | Custom event `traffic_class`, phase equals `initial` AND class matches regex `^(automated|declared_agent)$` |
 | VV - OPTIONAL page_view readiness (OR, once per page) | Folder containing VV - initial and VV - timer fallback 1s; attach both manually as ordinary OR firing triggers |
 | VV - timer fallback 1s | Timer `gtm.timer`, 1000ms, limit 1, enabled on all pages |
-| VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version / traffic_agent / traffic_webmcp | Six Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default (`traffic_agent` is absent on most events and then not sent) |
+| VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version / traffic_agent / traffic_webmcp / traffic_agent_claim | Seven Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default (`traffic_agent` is absent on most events and then not sent) |
 | VV - current class | Validated live snapshot class, then startup previous class, then `undefined` |
 | VV - GA4 measurement ID | Constant holding your destination ID |
 
@@ -35,7 +39,7 @@ To roll back, remove the two readiness triggers from the tag you changed and res
 
 ### WebMCP reporting and migration to 1.3.0
 
-Merge the current container import and review conflicts. Existing object IDs stay stable; **VV - DLV traffic_webmcp** is added as ID 16 (Data Layer Variable, Version 2, key `traffic_webmcp`, no default). The GA4 `traffic_class` tag adds event parameter `traffic_webmcp={{VV - DLV traffic_webmcp}}`. For a manual upgrade, update the detector HTML too. There are now six event mappings; no new firing trigger or user property is required.
+Merge the current container import and review conflicts. Existing object IDs stay stable; **VV - DLV traffic_webmcp** is added as ID 16 (Data Layer Variable, Version 2, key `traffic_webmcp`, no default). The GA4 `traffic_class` tag adds event parameter `traffic_webmcp={{VV - DLV traffic_webmcp}}`. For a manual upgrade, update the detector HTML too. Version 1.3.0 introduced six event mappings; 1.4.0 adds a seventh for the evidence claim; no new firing trigger or user property is required.
 
 Optionally register event-scoped **Traffic WebMCP** for `traffic_webmcp` in GA4 custom definitions. Use `none`, `capable` and `used` as a separate reporting breakdown alongside `traffic_class`. `capable` is browser API exposure, never an agent classification. `used` means a site tool was invoked through the browser's agent integration, including cancellation observations; it does not identify an operator or prove completion. Neither value changes class, score or conversion handling. An absent field from an older detector means unknown, not `none`.
 
@@ -74,9 +78,11 @@ The dedicated event describes one data-layer publication. Use these exact mappin
 | Event parameter `traffic_score` | `{{VV - DLV traffic_score}}` |
 | Event parameter `traffic_version` | `{{VV - DLV traffic_version}}` |
 | Event parameter `traffic_agent` | `{{VV - DLV traffic_agent}}` |
+| Event parameter `traffic_webmcp` | `{{VV - DLV traffic_webmcp}}` |
+| Event parameter `traffic_agent_claim` | `{{VV - DLV traffic_agent_claim}}` |
 | User property `traffic_class` | `{{VV - DLV traffic_class}}` |
 
-All current detector phases contain `traffic_version: '1.2.0'`. `traffic_agent` is `openai` (or `anthropic`, older Claude in Chrome versions only) only when an agent UI marker named the operator and the class is `declared_agent`, otherwise absent. Current Claude in Chrome (1.0.107) is not detected. Debug signal codes appear only in data-layer events when explicitly enabled; the production GA4 tag does not map them.
+All current detector phases contain `traffic_version: '1.4.0'`. `traffic_agent` is `openai` or `anthropic` when known from DOM evidence or its one-document CD carry, with class `declared_agent`. `traffic_agent_claim` distinguishes `dom_marker`, observed `dom_host`, and `ua_token`; older stored records may lack a claim. Claude in Chrome 1.0.107 is detected by the guarded host pattern, based on limited observed evidence. Debug codes are not mapped to GA4.
 
 ### Manual installation
 
@@ -128,6 +134,7 @@ In **Admin → Data display → Custom definitions**, create:
 |---|---|---|
 | Traffic class (event) | Event | Event parameter `traffic_class` |
 | Traffic agent (event) | Event | Event parameter `traffic_agent` |
+| Traffic agent claim (event) | Event | Event parameter `traffic_agent_claim` |
 | Traffic class (user — last observed) | User | User property `traffic_class` |
 | Traffic phase (event), optional | Event | Event parameter `traffic_phase` |
 
@@ -143,7 +150,7 @@ Register `traffic_score` as a custom metric only if needed. Score is a heuristic
 | `declared_agent` | Unverified agent claim (UA token or agent UI marker); can be spoofed. With `traffic_agent`, an agent UI of that operator was in the page: usually a real person's agent-assisted visit |
 | Missing | Unknown; never silently treat as human |
 
-**Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are optional comparisons that leave the data intact. Agent-assisted sessions are real visits: a browser agent such as OpenAI's in-browser agent runs in the person's own browser and pays with their card, so its purchases are revenue. The agent-assisted segment is a lower bound: current Claude in Chrome is not detected. Report them as their own segment, not as removed traffic.
+**Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are optional comparisons that leave the data intact. Agent-assisted sessions are real visits: a browser agent such as OpenAI's in-browser agent runs in the person's own browser and pays with their card, so its purchases are revenue. Coverage remains limited: the Claude 1.0.107 host pattern is observed evidence and may also match unrelated closed-shadow widgets or portals. Report them as their own segment, not as removed traffic.
 
 Use these session views, scoped to the web stream and the same date range:
 

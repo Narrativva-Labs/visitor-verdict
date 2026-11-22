@@ -24,6 +24,7 @@ const life = new vm.Script(lifecycle, {filename:'fuzz-lifecycle.js'});
 const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];
 const agents = ['openai', 'anthropic'];
+const claims = ['dom_host', 'dom_marker', 'ua_token'];
 const checks = ['webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
 const base = () => ({storage:'{}', config:{}, race:'timer-first', double:true});
 function configExpression(spec) {
@@ -78,17 +79,16 @@ function evaluate(spec, script = detector) {
     if (spec.expectedClass && event.traffic_class !== spec.expectedClass) fail('class/score', `expected ${spec.expectedClass}, got ${event.traffic_class}`);
     if (event.traffic_version !== '1.4.0') fail('class/score', 'missing/invalid traffic_version');
     if (!['initial','agent','final'].includes(event.traffic_phase)) fail('phase-uniqueness', `invalid phase ${event.traffic_phase}`);
-    if (Object.hasOwn(event,'traffic_agent_claim') && (event.traffic_agent_claim !== 'dom_host' || event.traffic_agent !== 'anthropic' || event.traffic_class !== 'declared_agent')) fail('payload-privacy','invalid host claim');
+    if (Object.hasOwn(event,'traffic_agent_claim') && (!claims.includes(event.traffic_agent_claim) || (event.traffic_agent_claim === 'dom_host' && event.traffic_agent !== 'anthropic') || event.traffic_class !== 'declared_agent')) fail('payload-privacy','invalid host claim');
     if (Object.hasOwn(event,'traffic_agent') && !agents.includes(event.traffic_agent)) fail('payload-privacy', `invalid traffic_agent ${event.traffic_agent}`);
     if (event.traffic_phase === 'agent' && (event.traffic_class !== 'declared_agent' || !agents.includes(event.traffic_agent))) fail('class/score', `agent phase must escalate to declared_agent with an operator: ${JSON.stringify(event).slice(0,250)}`);
     if (Object.hasOwn(event,'traffic_agent') && event.traffic_class !== 'declared_agent') fail('class/score', `traffic_agent with ${event.traffic_class}`);
     if (spec.marker === 'start' && !['declared_agent','automated'].includes(event.traffic_class)) fail('class/score', `marker at start not declared: ${event.traffic_phase} ${event.traffic_class}`);
   }
-  if (spec.host === 'start' && state && !['automated','declared_agent'].includes(state.class)) fail('class/score','host did not declare');
-  if (state && Object.hasOwn(state,'claim') && (state.claim !== 'dom_host' || state.agent !== 'anthropic' || state.class !== 'declared_agent')) fail('payload-privacy','invalid snapshot claim');
+  if (state && Object.hasOwn(state,'claim') && (!claims.includes(state.claim) || (state.claim === 'dom_host' && state.agent !== 'anthropic') || state.class !== 'declared_agent')) fail('payload-privacy','invalid snapshot claim');
   if (state && Object.hasOwn(state,'signals')) fail('payload-privacy','__visitorVerdict exposes debug signals');
   if (!result.beforeFrozen || !result.finalFrozen || !result.readOnly || !result.initialIntact) fail('snapshot-immutability', 'snapshots or public descriptor are writable/changed');
-  if (state && (state.version !== '1.4.0' || !['class,phase,score,version,webmcp,webmcpCount','agent,class,phase,score,version,webmcp,webmcpCount','agent,claim,class,phase,score,version,webmcp,webmcpCount'].includes(Object.keys(state).sort().join(',')) ||
+  if (state && (state.version !== '1.4.0' || !['class,phase,score,version,webmcp,webmcpCount','claim,class,phase,score,version,webmcp,webmcpCount','agent,class,phase,score,version,webmcp,webmcpCount','agent,claim,class,phase,score,version,webmcp,webmcpCount'].includes(Object.keys(state).sort().join(',')) ||
       (Object.hasOwn(state,'agent') && (!agents.includes(state.agent) || state.class !== 'declared_agent')))) fail('payload-privacy', 'invalid public snapshot fields/version');
   if (result.previous !== undefined && !classes.includes(result.previous)) fail('class/score', 'invalid previous class');
   if (!state || !classes.includes(state.class) || typeof state.score !== 'number' || !Number.isFinite(state.score)) fail('class/score','missing/invalid __visitorVerdict class or score');
@@ -120,7 +120,7 @@ function evaluate(spec, script = detector) {
     if (!Number.isInteger(record.tpPages) || record.tpPages < 0 || record.tpPages > 255) return 'tpPages outside integer 0..255';
     const last = record.lastClass;
     if (last !== '' && !classes.includes(last) && !(last && typeof last === 'object' && !Array.isArray(last) && last.direct === true && ['automated','declared_agent','suspicious'].includes(last.value) &&
-        (Object.keys(last).length === 2 || (Object.keys(last).length === 3 && last.value === 'declared_agent' && agents.includes(last.agent))))) return 'lastClass contains unapproved value/shape';
+        Object.keys(last).every(k => ['value','direct'].includes(k) || k === 'agent' && last.value === 'declared_agent' && agents.includes(last.agent) || k === 'claim' && last.value === 'declared_agent' && claims.includes(last.claim)))) return 'lastClass contains unapproved value/shape';
     // A declaration on a carried-automated document must not renew direct automated.
     if (spec.noHardRenewal && last && last.value === 'automated') return 'carried automated renewed as direct provenance without hard evidence';
     return null;
@@ -194,7 +194,7 @@ function randomSpec() {
 
 function corpus() {
   const list = [{...base(),label:'baseline'}, {...base(),poisonSnapshot:true,label:'public snapshot poisoning'}];
-  for (const host of ['start','late']) for (const webdriver of [true,false]) list.push({...base(),host,webdriver,expectedClass:webdriver ? 'automated' : host === 'start' ? 'declared_agent' : undefined,label:'host precedence'});
+  for (const host of ['start','late']) for (const webdriver of [true,false]) list.push({...base(),host,webdriver,expectedClass:webdriver ? 'automated' : undefined,label:'host precedence'});
   for (const form of ['burst','normal','paste','untrusted']) list.push({...base(),form,expectedClass:'human',label:'form signals cannot classify alone'});
   for (const webmcp of ['document','legacy','both','throw']) {
     for (const webmcpTrusted of [true,false,null]) list.push({...base(), webmcp, webmcpTrusted,
