@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-11-22
+
+- Add Meta Muse as a signing operator: operator `meta`, identity `https://muse.ai`, directory `https://muse.ai/.well-known/http-message-signatures-directory`, purpose `user_directed`. Provisional (observed by DataDome, not documented by Meta; Muse signs only part of its requests). The old www.meta.com directory is not trusted.
+- Intermediaries: registry flag `intermediary: true` (Browserbase in the default registry) and purpose value `intermediary`. A verified intermediary signature identifies the signing infrastructure, never the agent; `vv_type` stays `agent_verified`, `vv_detail` reads `browserbase|signature_valid|intermediary|…`. A valid direct signature now wins `verified` over a valid intermediary regardless of label order. Breaking for registry consumers: Browserbase's purpose changes from `user_directed` to `intermediary`, and `AgentPurpose` gains a value.
+- Support keyed `signature-input` and `signature` components (draft-01 §5.2.2, Appendix D.2): an outer signature that covers another label's signature now verifies instead of returning none/unsupported_component. Absent, wrongly shaped or Decimal-timestamp members are indeterminate. Attribution is unchanged.
+- `visitorLabels` maps unlisted purpose values to `unknown`.
+- Live directory re-check for Muse, Browserbase, Manus and Google (2026-11-22); Google's experimental Web Bot Auth documentation added as registry evidence. Amazon Bedrock AgentCore Browser is documented as not supported (no public directory).
+- Session SQL accepts purpose `intermediary`.
+
 ## 0.3.5 — 2026-11-22
 
 - `visitorLabels` accepts optional `browserAgent` (`openai` or `anthropic`, from a browser page marker). With browser class `declared_agent` and no verified identity or invalid signature, it supplies the `vv_detail` operator and the claim segment `dom_marker`; the type stays `agent_unverified`. Verified identity always wins over a conflicting marker; other values are ignored.

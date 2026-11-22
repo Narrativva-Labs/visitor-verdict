@@ -157,6 +157,12 @@ const operators: Registry = [
         uaTokens: ['Gemini-Deep-Research'],
         note: 'Owner-approved mapping to managed-fetchers and agents feeds and google.com FCrDNS; not a Google-documented token mapping.',
       },
+      {
+        level: 'documented',
+        source: 'https://developers.google.com/crawling/docs/crawlers-fetchers/web-bot-auth',
+        checked: '2026-11-22',
+        note: 'Experimental: Google-Agent signs only a subset of requests as Signature-Agent g="https://agent.bot.goog" with Signature/Signature-Input label g; unsigned requests fall back to IP verification. Live directory re-checked 2026-11-22 (five keys with short custom kids).',
+      },
     ],
     allowKidAlias: true,
     reverseDns: [
@@ -205,19 +211,28 @@ const operators: Registry = [
   },
   {
     operator: 'browserbase',
+    // Cloud browser infrastructure that signs its customers' browser sessions (beta): a valid
+    // signature identifies Browserbase, never the customer's agent.
+    intermediary: true,
     evidence: [
+      {
+        level: 'documented',
+        source: 'https://docs.browserbase.com/platform/identity/web-bot-auth',
+        checked: '2026-11-22',
+        note: "Browserbase signs its customers' browser-agent traffic with Web Bot Auth (beta, enabled per account); a signature does not identify the customer's agent or a human user.",
+      },
       {
         level: 'observed',
         source: 'https://radar.cloudflare.com/bots/directory/browserbase',
-        checked: '2026-11-20',
-        note: 'WBA identity and directory observed by Cloudflare; no local request capture.',
+        checked: '2026-11-22',
+        note: 'WBA identity and directory observed by Cloudflare; live directory re-checked 2026-11-22 (two Ed25519 keys, valid directory signatures); no local request capture.',
       },
     ],
     signatureAgent: 'https://www.browserbase.com',
     directoryUrl: 'https://www.browserbase.com/.well-known/http-message-signatures-directory',
     verifiedByCapture: false,
-    source: 'https://www.browserbase.com/contact-web-bot-auth',
-    checked: '2026-11-20',
+    source: 'https://docs.browserbase.com/platform/identity/web-bot-auth',
+    checked: '2026-11-22',
     ipLists: [],
   },
   {
@@ -227,14 +242,14 @@ const operators: Registry = [
         level: 'observed',
         source: 'https://radar.cloudflare.com/bots/directory/manus-bot',
         checked: '2026-11-20',
-        note: 'WBA identity and directory observed by Cloudflare; old operator help URL is unavailable.',
+        note: 'WBA identity and directory observed by Cloudflare; old operator help URL is unavailable. Live directory re-checked 2026-11-22 (two Ed25519 keys without kid, thumbprint keyids, valid directory signatures).',
       },
     ],
     signatureAgent: 'https://api.manus.im',
     directoryUrl: 'https://api.manus.im/.well-known/http-message-signatures-directory',
     verifiedByCapture: false,
     source: 'https://radar.cloudflare.com/bots/directory/manus-bot',
-    checked: '2026-11-20',
+    checked: '2026-11-22',
     ipLists: [],
   },
   {

@@ -94,7 +94,7 @@ export async function evaluateSignature(
       throw new Failure('signature_agent_not_covered');
     const operator = env.registry.find((o) => o.signatureAgent === identity);
     if (!identity || !operator?.directoryUrl) throw new Failure('untrusted_signature_agent', true);
-    const base = signatureBase(env.context, env.headers, inner);
+    const base = signatureBase(env.context, env.headers, inner, env.invalidTimestamps);
     const bytes = Buffer.from(sig[0]);
     if (bytes.length !== 64) throw new Failure('invalid_signature_length');
     let keys = withKidAliases(

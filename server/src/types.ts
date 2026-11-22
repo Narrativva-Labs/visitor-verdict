@@ -22,6 +22,12 @@ export interface Operator {
   directoryUrl?: string;
   /** Operator-specific compatibility for non-thumbprint keyid values; default false. */
   allowKidAlias?: boolean;
+  /**
+   * Signing infrastructure that signs on behalf of other parties' agents (Cloudflare's
+   * "intermediary", as opposed to "direct"). A valid signature identifies the
+   * infrastructure, never the agent; its purpose is `intermediary`. Default false.
+   */
+  intermediary?: boolean;
   verifiedByCapture: boolean;
   source: string;
   checked: string;
@@ -46,8 +52,12 @@ export interface RegistryEvidence {
   /** Omit for evidence applying to the entry as a whole. */
   uaTokens?: readonly string[];
 }
-/** Operator-declared product role; never a finding about a person's intent or authorization. */
-export type AgentPurpose = 'user_directed' | 'crawler' | 'unknown';
+/**
+ * Operator-declared product role; never a finding about a person's intent or authorization.
+ * `intermediary` (since 0.4.0): the verified signer is infrastructure signing for another
+ * party's agent; the agent itself is not identified.
+ */
+export type AgentPurpose = 'user_directed' | 'crawler' | 'intermediary' | 'unknown';
 /** Exact registry evidence names and known UA tokens, with primary-source provenance. */
 export interface PurposePolicy {
   signatureAgent?: AgentPurpose;

@@ -13,5 +13,7 @@
   "web_bot_auth_architecture_v1.json": "12ed35aaf50368d9cf6d3c704b8942e6603b1ef2bbd119c3040868b87e596ef4",
   "web_bot_auth_architecture_v2.json": "d0c8dbb7631dcc22639d12318af2b1ac0a339e4fa5aa4ef6df67ca45b0094576",
   "web_bot_auth_directory_response_v1.json": "ab2226c895940f0d169433ea0485ca7938e2dd2b89090945088b931031a7a1de",
-  "anthropic-sail-2026-11-20.toml": "32ccc50152b96f7e31ed606774e46026da0d7db831cc02e37c644bf2e4b031f1"
+  "anthropic-sail-2026-11-20.toml": "32ccc50152b96f7e31ed606774e46026da0d7db831cc02e37c644bf2e4b031f1",
+  "muse-directory-2026-11-22.json": "46e07c95cdb02f66eb7d16bb6044df761d25d992899d060a5950a80d386c5894",
+  "muse-directory-2026-11-22.headers.txt": "e2cf1f31117206e09dd7f96baf585cfe431a62bbdeac2ef9cdfd82b47c6315f7"
 }

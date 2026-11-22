@@ -154,15 +154,31 @@ export const additionalOperators: Operator[] = [
   {
     operator: 'meta',
     verifiedByCapture: false,
-    checked,
+    checked: '2026-11-22',
     source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
     extraUaTokens: ['meta-externalagent', 'meta-externalfetcher', 'meta-webindexer'],
+    // Muse, Meta's personal agent; Meta has not documented this signing identity.
+    signatureAgent: 'https://muse.ai',
+    directoryUrl: 'https://muse.ai/.well-known/http-message-signatures-directory',
     evidence: [
       {
         level: 'documented',
         source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
         checked,
         note: 'Documented UA claims; no published verification feed or suffix confirmed for these tokens.',
+      },
+      {
+        level: 'observed',
+        source:
+          'https://ppc.land/metas-muse-agent-gains-a-signed-id-in-a-quiet-test-datadome-finds/',
+        checked: '2026-11-22',
+        note: 'DataDome observed Muse signing only part of its requests with Web Bot Auth and moving from www.meta.com to muse.ai (7-9 Nov 2026); Meta has not announced it. Live muse.ai directory checked 2026-11-22 (two Ed25519 keys, valid directory signatures). No local request capture.',
+      },
+      {
+        level: 'documented',
+        source: 'https://muse.ai/blog/poppy-personal-agent-protocol',
+        checked: '2026-11-22',
+        note: 'Muse is a personal agent acting for its user; the post does not mention Web Bot Auth.',
       },
     ],
     ipLists: [],

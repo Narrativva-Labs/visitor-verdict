@@ -173,6 +173,12 @@ export function validateConfig(options: VerifierOptions) {
     });
     if (operator.allowKidAlias !== undefined && typeof operator.allowKidAlias !== 'boolean')
       throw new TypeError('Invalid kid alias flag');
+    if (
+      operator.intermediary !== undefined &&
+      (typeof operator.intermediary !== 'boolean' ||
+        (operator.intermediary && operator.signatureAgent === undefined))
+    )
+      throw new TypeError('Invalid intermediary flag');
     if (operator.signatureAgent !== undefined || operator.directoryUrl !== undefined) {
       httpsUrl(operator.signatureAgent);
       httpsUrl(operator.directoryUrl);

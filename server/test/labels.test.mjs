@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { visitorLabels } from '../dist/index.js';
 
 const verifications = ['none', 'no_signature', 'signature_invalid', 'signature_valid', 'ip_match'];
-const purposes = ['unknown', 'crawler', 'user_directed'];
+const purposes = ['unknown', 'crawler', 'user_directed', 'intermediary'];
 const browsers = [undefined, 'human', 'suspicious', 'automated', 'declared_agent'];
 const phases = [undefined, 'initial', 'final', 'agent'];
 const claims = ['none', 'ua_token', 'signature_agent', 'both'];
@@ -41,6 +41,7 @@ for (const verification of verifications)
                       unknown: 'agent_verified',
                       crawler: 'crawler_verified',
                       user_directed: 'agent_verified',
+                      intermediary: 'agent_verified',
                     }[purpose]
                   : fallback[bi][ci];
             const actual = visitorLabels({
@@ -195,4 +196,14 @@ test('browser marker without server evidence and precedence of verified identity
       vv_detail: 'none|signature_invalid|unknown|signature_agent|declared_agent|agent',
     },
   );
+});
+
+test('unlisted purpose values never reach vv_detail', () => {
+  for (const purpose of ['RAW|PRIVATE', 'direct', '', undefined, 'x'.repeat(200)]) {
+    const v = verdict('signature_valid', purpose, 'signature_agent');
+    assert.deepEqual(visitorLabels({ verdict: v }), {
+      vv_type: 'agent_verified',
+      vv_detail: 'openai|signature_valid|unknown|signature_agent|-|-',
+    });
+  }
 });

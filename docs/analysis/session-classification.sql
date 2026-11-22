@@ -44,6 +44,8 @@
 --   Since server 0.3.5 claim dom_marker means the operator was observed by the browser
 --   detector from a page marker (unverified); browser_phase agent is the detector's
 --   update after that marker. Verified evidence below still requires verification.
+--   Since server 0.4.0 purpose intermediary means the verified operator is signing
+--   infrastructure (Browserbase), not the agent.
 --   Missing labels may reflect budget limits/early deployment and are unknown.
 --
 -- Caveats:
@@ -128,7 +130,7 @@ WITH params AS (
     NULLIF(NULLIF(parts[SAFE_OFFSET(0)], 'none'), '-') AS operator,
     IF(parts[SAFE_OFFSET(1)] IN ('signature_valid', 'signature_invalid', 'ip_match',
        'no_signature', 'none'), parts[SAFE_OFFSET(1)], NULL) AS verification,
-    IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'unknown'),
+    IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'intermediary', 'unknown'),
        parts[SAFE_OFFSET(2)], NULL) AS purpose,
     IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'none'),
        parts[SAFE_OFFSET(3)], NULL) AS claim,
@@ -239,7 +241,7 @@ WITH params AS (
     NULLIF(NULLIF(parts[SAFE_OFFSET(0)], 'none'), '-') AS operator,
     IF(parts[SAFE_OFFSET(1)] IN ('signature_valid', 'signature_invalid', 'ip_match',
        'no_signature', 'none'), parts[SAFE_OFFSET(1)], NULL) AS verification,
-    IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'unknown'),
+    IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'intermediary', 'unknown'),
        parts[SAFE_OFFSET(2)], NULL) AS purpose,
     IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'none'),
        parts[SAFE_OFFSET(3)], NULL) AS claim,

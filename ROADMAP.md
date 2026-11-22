@@ -33,7 +33,8 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 - [x] Warm the key cache and serve cached keys while refreshing
 - [x] Browser page-marker operator in `visitorLabels` (server 0.3.5): claim `dom_marker`, type stays `agent_unverified`, verified identity wins
 - [ ] Keep evidence and identity apart in the output: a browser hint about the operator (UI marker, user-agent token) is never reported as a verified operator
-- [ ] More signing operators from public key directories (Meta Muse `muse.ai`, Browserbase, Manus, Google `agent.bot.goog`, Amazon Bedrock AgentCore when enabled), with intermediaries such as Browserbase reported as infrastructure, not as the agent
+- [x] More signing operators from public key directories (server 0.4.0, live directories checked 2026-11-22): Meta Muse `muse.ai`, Manus, Google `agent.bot.goog` (dictionary label `g`), and Browserbase reported as an intermediary (purpose `intermediary`), not as the agent
+- [ ] Amazon Bedrock AgentCore Browser once AWS documents a public key directory (signing is opt-in per customer browser)
 - [ ] Personal Agent Protocol (Poppy 1.0) as an optional verifier: a verified session means an agent acting for a person; a manifest or `client_id` alone is only a claim
 - [ ] Agents that never load the page: orders placed through agentic checkout protocols (ACP, UCP) are measured from the shop or payment backend and sent server-side with an agent label and the protocol as the channel; other API calls (catalogue, MCP) are labelled on the server, since a browser detector cannot see them
 - [ ] Longer field test on live sites

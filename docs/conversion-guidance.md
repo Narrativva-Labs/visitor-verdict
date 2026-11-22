@@ -54,7 +54,7 @@ Server-side verification of signed agents (Web Bot Auth, published IP ranges) is
 | Unverified agent | `vv_type=agent_unverified`: browser `declared_agent` or an unverified UA / Signature-Agent claim |
 | Human | `vv_type=human`: no automation evidence, no verified agent |
 
-**Count verified operators with `vv_type=agent_verified` or `crawler_verified`** (equivalently, the verification segment of `vv_detail` is `signature_valid` or `ip_match`). An operator name in `vv_detail` alone is not verification: with claim `dom_marker` it was observed by the browser detector from a page marker, and with `ua_token` or `signature_agent` and no verification it is a claim. The purpose position retains `unknown` when the role is unsettled. Unverified ≠ human.
+**Count verified operators with `vv_type=agent_verified` or `crawler_verified`** (equivalently, the verification segment of `vv_detail` is `signature_valid` or `ip_match`). An operator name in `vv_detail` alone is not verification: with claim `dom_marker` it was observed by the browser detector from a page marker, and with `ua_token` or `signature_agent` and no verification it is a claim. The purpose position retains `unknown` when the role is unsettled; `intermediary` (server 0.4.0) means the verified operator is signing infrastructure such as Browserbase, not the agent. Unverified ≠ human.
 
 ### Server-side GTM (labelling only)
 

@@ -146,10 +146,10 @@ export const purposePolicies: Record<string, PurposePolicy> = {
     sources: ['https://adbot.amazon.com/'],
     checked,
   },
-  browserbase: {
+  meta: {
     signatureAgent: 'user_directed',
-    sources: ['https://docs.browserbase.com/welcome/introduction'],
-    checked,
+    sources: ['https://muse.ai/blog/poppy-personal-agent-protocol'],
+    checked: '2026-11-22',
   },
   manus: {
     signatureAgent: 'user_directed',

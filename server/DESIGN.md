@@ -12,7 +12,7 @@ Retention for public verification material is independent of HTTP cache semantic
 
 The captured OpenAI signatures cover authority, method and Signature-Agent. They do not bind path, query, body or the initiating person. Default analytics mode allows replay and stores no nonce. Opt-in NonceStore is a caller-owned atomic replay/privacy choice with bounded calls; it does not authorize actions. Network trust rests on exact configured HTTPS endpoints, not an unauthenticated directory proof. Endpoint compromise/DNS/egress policy remains a deployment responsibility.
 
-Own-browser agents can share a person's normal browser, cookies, UA and IP without signatures. No-signature/none is not human. This verifier does not detect those agents. Anthropic Claude-Agent is documented through IP+UA/SAIL rather than an assumed WBA identity; a strict parser now supports the supplied live SAIL schema and resolves Claude-Agent service ranges; expires_after supplies the bounded retention TTL. Other Claude tokens may use bots.json. Google signing is partial/experimental; generated-key tests prove syntax, not a real signed Google session. Google-CloudVertexBot uses common-crawlers ranges, not generic user-controlled fetcher networks. DuckDuckGo/Browserbase/Manus have live directory fixtures but no captured request identity; their origin identities remain provisional, with verifiedByCapture=false. The README operator table records this distinction.
+Own-browser agents can share a person's normal browser, cookies, UA and IP without signatures. No-signature/none is not human. This verifier does not detect those agents. Anthropic Claude-Agent is documented through IP+UA/SAIL rather than an assumed WBA identity; a strict parser now supports the supplied live SAIL schema and resolves Claude-Agent service ranges; expires_after supplies the bounded retention TTL. Other Claude tokens may use bots.json. Google signing is partial/experimental; generated-key tests prove syntax, not a real signed Google session. Google-CloudVertexBot uses common-crawlers ranges, not generic user-controlled fetcher networks. DuckDuckGo/Browserbase/Manus/Meta Muse have live directory fixtures but no captured request identity; their origin identities remain provisional, with verifiedByCapture=false. Amazon Bedrock AgentCore documents no public directory and is not configured. The README operator table records this distinction.
 
 This package supplies analytics evidence separately from browser traffic_class. It does not verify a human, consent, abuse policy, robots compliance, delegated rights, payload integrity, authorization to buy, or payment authority. Applications still enforce their normal authorization and conversion policy. Services receiving original-request context must authenticate that envelope; their own HTTP request cannot reconstruct the original browser signature.
 
@@ -63,9 +63,13 @@ identities (crawler purpose gives `crawler_verified`; `user_directed` or `unknow
 `agent_verified`), browser automation, unverified claims, suspicious behavior, human and
 pending. Unknown purpose never downgrades successful verification to pending: detail
 preserves `unknown`, and `agent_verified` alone does not assert a user-directed role.
-Browserbase and Manus signature identities map to user_directed under the owner policy
-based on their documented cloud browser products; DuckDuckGo's maps to crawler in line
-with DuckAssistBot. Source URLs are recorded in registry-purposes.ts and the README.
+Manus and Meta Muse signature identities map to user_directed under the owner policy
+based on their documented agent products; DuckDuckGo's maps to crawler in line
+with DuckAssistBot. Browserbase is an intermediary (0.4.0): it signs its customers'
+browser sessions, so its verified identity has purpose `intermediary` and never names the
+agent. `intermediary` is registry configuration (`intermediary: true`, requires a
+signatureAgent), not a purpose mapping, so a UA claim cannot override it. A valid direct
+signature wins `verified` over a valid intermediary one regardless of label order. Source URLs are recorded in registry-purposes.ts and the README.
 The six pipe-separated detail segments are operator, verification, purpose, claim,
 browser class and phase. Missing is `-`, unknown operator is `none`. Configured operator
 names start with a lowercase ASCII letter and contain at most 24 lowercase ASCII
@@ -85,3 +89,12 @@ agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified/agent_ve
 fresh equal-rank evidence replaces the prior type and operator. Current-hit detail remains distinct from sticky type.
 Full hits use client_id+session_id, denied pings page_id; bounded memory-only storage
 must expire and clear on close. No library persistence or request waiting is introduced.
+
+## Keyed signature members (0.4.0)
+
+Draft-01 §5.2.2 lets a signer cover another label's `signature` and `signature-input`
+members. The verifier now supports these keyed components (RFC 9421 §2.1.2) and serializes
+the member per RFC 8941. Covering a member whose timestamps the lexical guard found to be
+Decimals is indeterminate, because re-serialization would not reproduce the signed octets.
+Attribution is unchanged: each label attributes to the Signature-Agent member keyed by its own
+label; several covered keyed members without that match remain ambiguous.

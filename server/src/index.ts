@@ -74,6 +74,11 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     }
   }
 
+  const isIntermediary = (verified: NonNullable<AgentVerdict['verified']>) =>
+    config.registry.some(
+      (o) => o.intermediary === true && o.signatureAgent === verified.signatureAgent,
+    );
+
   async function run(
     input: AgentRequest,
     verdict: AgentVerdict,
@@ -132,7 +137,14 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
           verdict.signatures.push(evaluation.result);
-          verdict.verified ??= evaluation.verified;
+          // A valid direct identity wins over a valid intermediary (signing infrastructure),
+          // so infrastructure is never reported in place of the agent that also signed.
+          if (
+            evaluation.verified &&
+            (!verdict.verified ||
+              (isIntermediary(verdict.verified) && !isIntermediary(evaluation.verified)))
+          )
+            verdict.verified = evaluation.verified;
         }
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);

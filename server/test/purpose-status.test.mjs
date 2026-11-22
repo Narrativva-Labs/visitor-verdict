@@ -66,14 +66,16 @@ test('signed identity wins over a different or contradictory unsigned UA claim',
     purposeFor(evidence('google', 'Googlebot', undefined, 'signature'), defaultRegistry),
     'user_directed',
   );
+  // Intermediary infrastructure never takes the role of the agent behind it.
   assert.equal(
     purposeFor(evidence('browserbase', 'ChatGPT-User', undefined, 'signature'), defaultRegistry),
-    'user_directed',
+    'intermediary',
   );
 });
 for (const [id, expected, type] of [
-  ['browserbase', 'user_directed', 'agent_verified'],
+  ['browserbase', 'intermediary', 'agent_verified'],
   ['manus', 'user_directed', 'agent_verified'],
+  ['meta', 'user_directed', 'agent_verified'],
   ['duckduckgo', 'crawler', 'crawler_verified'],
 ]) {
   test('signature purpose and labels: ' + id, () => {

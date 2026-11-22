@@ -1,4 +1,4 @@
-import type { AgentVerdict } from './types.js';
+import type { AgentPurpose, AgentVerdict } from './types.js';
 
 export type VisitorType =
   | 'human'
@@ -26,6 +26,12 @@ export interface VisitorLabels {
 const browserClasses = ['human', 'suspicious', 'automated', 'declared_agent'];
 const browserPhases = ['initial', 'final', 'agent'];
 const browserAgents: readonly string[] = ['openai', 'anthropic'] satisfies BrowserAgent[];
+const purposes: readonly string[] = [
+  'user_directed',
+  'crawler',
+  'intermediary',
+  'unknown',
+] satisfies AgentPurpose[];
 
 /** Pure, bounded GA4 event labels. No raw claims, request data or diagnostic reasons. */
 export function visitorLabels({
@@ -36,7 +42,14 @@ export function visitorLabels({
 }: VisitorLabelsInput = {}): VisitorLabels {
   const verification = verdict?.verification ?? '-';
   const verified = verification === 'signature_valid' || verification === 'ip_match';
-  const purpose = verified ? (verdict?.agent_purpose ?? 'unknown') : verdict ? 'unknown' : '-';
+  // Only known purposes reach the label; anything else is unknown, never copied through.
+  const purpose = verified
+    ? purposes.includes(verdict?.agent_purpose ?? '')
+      ? verdict!.agent_purpose
+      : 'unknown'
+    : verdict
+      ? 'unknown'
+      : '-';
   const browser = browserClasses.includes(browserClass ?? '') ? browserClass! : '-';
   const phase = browserPhases.includes(browserPhase ?? '') ? browserPhase! : '-';
   // A page marker is observed evidence, never verification: verified identity and an invalid
@@ -60,7 +73,9 @@ export function visitorLabels({
   let type: VisitorType;
   if (verification === 'signature_invalid') type = 'bot_spoofed';
   else if (verified) {
-    // Unknown purpose retains verified identity without asserting a user-directed role.
+    // Unknown purpose retains verified identity without asserting a user-directed role. An
+    // intermediary is verified signing infrastructure: the type is agent_verified, the purpose
+    // segment `intermediary` says the operator is the infrastructure, not the agent.
     type = purpose === 'crawler' ? 'crawler_verified' : 'agent_verified';
   } else if (browser === 'automated') type = 'bot_automation';
   else if (browser === 'declared_agent' || claim === 'ua_token' || claim === 'signature_agent')

@@ -24,6 +24,9 @@ export function purposeFor(
               (verdict.verified!.signatureAgent !== undefined &&
                 entry.signatureAgent === verdict.verified!.signatureAgent)),
         );
+  // Infrastructure signs for other parties' agents: its identity never names the agent's role.
+  if (verdict.verified.method === 'signature' && operator?.intermediary === true)
+    return 'intermediary';
   const policy = operator?.purposes;
   if (!policy) return 'unknown';
   if (verdict.verified.method === 'signature') return policy.signatureAgent ?? 'unknown';

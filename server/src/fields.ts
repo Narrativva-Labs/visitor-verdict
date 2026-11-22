@@ -111,7 +111,17 @@ export function targetParts(context: Context): { path: string; uri: string } {
   const pathAndQuery = suffix.startsWith('?') ? '/' + suffix : suffix;
   return { path: pathAndQuery.split('?')[0], uri: 'https://' + context.authority + pathAndQuery };
 }
-export function signatureBase(input: Context, h: Map<string, string[]>, inner: InnerList): string {
+/**
+ * Build the RFC 9421 signature base. `lossyLabels` are Signature-Input members whose timestamps
+ * the lexical guard found to be Decimals: their re-serialization would not reproduce the signed
+ * octets, so covering them is indeterminate rather than a definitive mismatch.
+ */
+export function signatureBase(
+  input: Context,
+  h: Map<string, string[]>,
+  inner: InnerList,
+  lossyLabels: ReadonlySet<string> = new Set(),
+): string {
   const seen = new Set<string>();
   const lines = inner[0].map((component: Item) => {
     const [name, params] = component;
@@ -140,6 +150,24 @@ export function signatureBase(input: Context, h: Map<string, string[]>, inner: I
         if (!member || Array.isArray(member[0])) throw new Failure('required_component_missing');
         value = serializeItem(member as Item);
       } else throw new Failure('unsupported_component', true);
+    } else if (
+      (name === 'signature-input' || name === 'signature') &&
+      params.size === 1 &&
+      typeof params.get('key') === 'string'
+    ) {
+      // Draft-01 §5.2.2: a signer may cover another label's signature and its parameters as
+      // dictionary members (RFC 9421 §2.1.2), serialized per RFC 8941.
+      const key = params.get('key') as string;
+      if (name === 'signature-input' && lossyLabels.has(key))
+        throw new Failure('unsupported_component', true);
+      const raw = field(h, name);
+      const member = raw ? dictionary(raw, name).get(key) : undefined;
+      if (!member) throw new Failure('unsupported_component', true);
+      if (name === 'signature-input' ? !Array.isArray(member[0]) : Array.isArray(member[0]))
+        throw new Failure('unsupported_component', true);
+      value = Array.isArray(member[0])
+        ? serializeInnerList(member as InnerList)
+        : serializeItem(member as Item);
     } else if (/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name) && h.has(name)) {
       if (!params.size) value = field(h, name);
       else if (params.size === 1 && params.get('bs') === true)
