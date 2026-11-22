@@ -45,3 +45,4 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 - Scheduled checks of official AI-agent user-agent documentation
 - Behaviour signals from published agent studies (cursor teleports, typing without key events, zero-duration scroll bursts), only after a lab check against autofill, paste, keyboard navigation and assistive technology
 - Transport fingerprints (JA4, HTTP/2, client hints versus user agent) where a site's own CDN or proxy already provides them
+- Labels joined with the real business outcome (paid, cancelled, refunded order; accepted or rejected lead) from the shop or CRM backend, so reports show revenue and valid leads by visitor type. Needs the site owner's cooperation, so it comes after the label-only reports are tested; first as a one-off order export joined on `transaction_id`, a live backend connection only later
