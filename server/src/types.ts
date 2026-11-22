@@ -86,6 +86,8 @@ export interface NonceStore {
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 /** Verification evidence. No client IP, raw headers, signature bytes or nonce are returned. */
 export interface AgentVerdict {
+  /** Weak local diagnostics; never identity or verification evidence. */
+  evidence?: readonly 'header_mismatch'[];
   agent_purpose: AgentPurpose;
   claimed: { uaTokens: string[]; signatureAgents: string[] };
   verification: 'signature_valid' | 'signature_invalid' | 'no_signature' | 'ip_match' | 'none';

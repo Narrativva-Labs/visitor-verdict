@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 — 2026-11-23
+
+- Add optional weak `AgentVerdict.evidence: [header_mismatch]` for scoped HTTPS Chromium header inconsistencies, with version and request-shape gates. No effect on identity, verification, purpose or analytics classification.
+- Add representative Chrome/Edge, Firefox, Safari, curl, Python requests and headless fixtures and protocol/policy boundaries.
+- Add Kernel Agent (`kernel`), Cloudflare Browser Run (`cloudflare_browser_run`) and Shopify Cloudsurf (`shopify_cloudsurf`) as intermediary signing operators after primary-source checks and owner-supplied live HTTPS directory fixtures. All five Ed25519 authority-binding proofs verify; no signed visitor requests captured. Kernel key nbf/exp remain enforced.
+- Startup directory count increases from six to nine; document new egress origins, infrastructure-only identity semantics and per-operator signature/replay/precedence tests.
+
 ## 0.4.1 — 2026-11-22
 
 - Keep replay/invalid WBA peers visible when only signing infrastructure verifies; a valid direct signature still wins. Invalid aggregate verdicts expose no verified identity.

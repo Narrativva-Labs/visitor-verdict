@@ -13,7 +13,7 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.4.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.5.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
@@ -91,7 +91,7 @@ on their documented products).
 
 **Intermediaries (since 0.4.0).** Some operators sign as infrastructure for other parties'
 agents; Cloudflare calls them "intermediary", as opposed to "direct". A registry entry with
-`intermediary: true` (only Browserbase in the default registry) verifies like any other
+`intermediary: true` (Browserbase, Kernel, Cloudflare Browser Run and Shopify Cloudsurf in the default registry) verifies like any other
 signature, but its purpose is always `intermediary`: the verified operator is the signing
 infrastructure, never the agent's identity, and a contradictory UA claim cannot change that.
 [Browserbase](https://docs.browserbase.com/platform/identity/web-bot-auth) signs its
@@ -279,26 +279,28 @@ Browserbase uses intermediary: true rather than a purpose mapping: purposePolici
 
 ## Operator coverage and sources (checked 2026-11-22)
 
-**Signing operators (re-checked 2026-11-22).** Each directory below was fetched live over
+**Signing operators (re-checked 2026-11-22; additions checked 2026-11-23).** Each directory below was fetched live over
 HTTPS (status 200, no redirect, `application/http-message-signatures-directory+json`), parsed
 as a JWKS-style directory of public Ed25519 keys only, and its own directory signatures
 (draft-meunier-webbotauth-httpsig-directory, tag `http-message-signatures-directory`) were
 checked as interop evidence; the verifier itself trusts only the configured URL.
 
-| Identity                           | Keys                 | Directory proofs              | Notes                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------- | -------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `https://muse.ai` (Meta Muse, new) | 2, thumbprint kids   | 2/2 valid, `"@authority";req` | Fixture `muse-directory-2026-11-22`. Meta has not documented this identity; DataDome observed Muse moving its signing from www.meta.com to muse.ai (7–9 Nov 2026) and signing only part of its requests                                                                                                                 |
-| `https://www.browserbase.com`      | 2                    | 2/2 valid, `"@authority"`     | Unchanged since 2026-11-20; directory also carries `"purpose":"rag"`, which is not used                                                                                                                                                                                                                                 |
-| `https://api.manus.im`             | 2, no kid            | 2/2 valid, `"@authority"`     | Unchanged since 2026-11-20                                                                                                                                                                                                                                                                                              |
-| `https://agent.bot.goog`           | 5, short custom kids | 1 valid (kid `DYiMjA`)        | Unchanged since 2026-11-20. Google documents [Web Bot Auth](https://developers.google.com/crawling/docs/crawlers-fetchers/web-bot-auth) as experimental: `Signature-Agent: g="https://agent.bot.goog"`, Signature/Signature-Input label `g`, only a subset of Google-Agent requests signed, IP verification as fallback |
+| Identity                                                                    | Keys                       | Directory proofs              | Notes                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------- | -------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://muse.ai` (Meta Muse, new)                                          | 2, thumbprint kids         | 2/2 valid, `"@authority";req` | Fixture `muse-directory-2026-11-22`. Meta has not documented this identity; DataDome observed Muse moving its signing from www.meta.com to muse.ai (7–9 Nov 2026) and signing only part of its requests                                                                                                                 |
+| `https://www.kernel.sh` (0.5.0)                                             | 1, thumbprint kid, nbf/exp | 1/1 valid, `"@authority";req` | Owner-supplied live directory 2026-11-23; intermediary                                                                                                                                                                                                                                                                  |
+| `https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev` (0.5.0) | 3, no kid                  | 3/3 valid, `"@authority";req` | Owner-supplied live directory 2026-11-23; intermediary                                                                                                                                                                                                                                                                  |
+| `https://cloudsurf.shopify.io` (0.5.0)                                      | 1, thumbprint kid          | 1/1 valid, `"@authority";req` | Owner-supplied live directory 2026-11-23; intermediary                                                                                                                                                                                                                                                                  |
+| `https://www.browserbase.com`                                               | 2                          | 2/2 valid, `"@authority"`     | Unchanged since 2026-11-20; directory also carries `"purpose":"rag"`, which is not used                                                                                                                                                                                                                                 |
+| `https://api.manus.im`                                                      | 2, no kid                  | 2/2 valid, `"@authority"`     | Unchanged since 2026-11-20                                                                                                                                                                                                                                                                                              |
+| `https://agent.bot.goog`                                                    | 5, short custom kids       | 1 valid (kid `DYiMjA`)        | Unchanged since 2026-11-20. Google documents [Web Bot Auth](https://developers.google.com/crawling/docs/crawlers-fetchers/web-bot-auth) as experimental: `Signature-Agent: g="https://agent.bot.goog"`, Signature/Signature-Input label `g`, only a subset of Google-Agent requests signed, IP verification as fallback |
 
 **Not supported yet.** Amazon Bedrock AgentCore Browser signs only when the customer creates a
 browser with `browserSigning` enabled, and its [documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-web-bot-auth.html)
 names no public key directory or Signature-Agent value (checked 2026-11-22; arcjet/well-known-bots
 lists no verification method for it either). No AWS origin is guessed. The www.meta.com directory
 is still live, but no Meta document ties it to a product, so it is not trusted for Muse or any
-other Meta token. Other infrastructure signers listed by third parties (Cloudflare Browser Run,
-Kernel, Shopify Cloudsurf) are candidates for the `intermediary` flag after a primary-source check.
+other Meta token. Kernel, Cloudflare Browser Run and Shopify Cloudsurf are admitted as intermediaries in 0.5.0 after primary-source and live directory checks (below).
 
 **Kimi registry evidence (checked 2026-11-21):** Kimi publishes identical IP prefixes
 for `kimi-user`, `kimibot` and `kimi-searchbot`. An `ip_match` therefore proves
@@ -314,6 +316,9 @@ and its purpose mapping. It does not independently verify that product role.
 | Anthropic                       | Claude-Agent: SAIL IP; ClaudeBot/Claude-SearchBot/Claude-User: bots.json IP                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | [SAIL](https://claude.com/.well-known/sail), [bots](https://claude.com/crawling/bots.json)                                                                                                      |
 | Perplexity                      | PerplexityBot/Perplexity-User: IP                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | [crawlers](https://docs.perplexity.ai/docs/resources/perplexity-crawlers)                                                                                                                       |
 | DuckDuckGo                      | DuckAssistBot: IP; provisional https://assistbot.duckduckgo.com signature identity                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | [operator](https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot), [directory](https://radar.cloudflare.com/bots/directory/duckassistbot)                                          |
+| Kernel Agent                    | Signature https://www.kernel.sh, purpose `intermediary`; no captured requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | [Bots and agents](https://www.kernel.sh/docs/bots)                                                                                                                                              |
+| Cloudflare Browser Run          | Signature https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev, purpose `intermediary`; no captured requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [Request headers](https://developers.cloudflare.com/browser-run/reference/automatic-request-headers/)                                                                                           |
+| Shopify Cloudsurf               | Signature https://cloudsurf.shopify.io, purpose `intermediary`; no captured requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | [Cloudsurf](https://help.shopify.com/en/manual/intro-to-shopify/bots/cloudsurf)                                                                                                                 |
 | Browserbase                     | Intermediary (signing infrastructure): https://www.browserbase.com signature, purpose `intermediary`; no captured requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | [Web Bot Auth](https://docs.browserbase.com/platform/identity/web-bot-auth), [directory](https://radar.cloudflare.com/bots/directory/browserbase)                                               |
 | Manus                           | Provisional signature origin https://api.manus.im; no captured requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | [Manus](https://radar.cloudflare.com/bots/directory/manus-bot)                                                                                                                                  |
 | Meta Muse                       | Provisional signature origin https://muse.ai (operator `meta`); Muse signs only part of its requests; no captured requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | [DataDome observation](https://ppc.land/metas-muse-agent-gains-a-signed-id-in-a-quiet-test-datadome-finds/), [Muse](https://muse.ai/blog/poppy-personal-agent-protocol)                         |
@@ -343,7 +348,7 @@ Chinese-operator coverage is uneven. Kimi publishes separate machine-readable fe
 
 Amazon's primary pages show JSON examples embedded in HTML: Amazonbot/Amzn-User/AdBot use ipv4Prefix examples, SearchBot uses ip_prefix. A raw JSON response endpoint could not be confirmed, so no second JSON shape or HTML scraper was added. You.com's docs were unavailable here: exact Signature-Agent, the reported 68.67.112.0/24 range and search.you.com suffix remain unconfirmed and disabled. The operator-confirmed directory contains public key material but does not independently prove the wire identity. No You.com signing origin is guessed. Sogou's suffix and crawl.amazonbot.amazon remain disabled for lack of current primary documentation; Petal's two suffixes are both present in its indexed primary guide. Claims without public verification docs are explicitly not promoted to network evidence.
 
-The generic Google user-triggered-fetchers feed has an empty token mapping; it does not verify Google-CloudVertexBot. SAIL uses the supplied strict TOML schema, resolves services to prefix sets, and honours bounded expires_after retention. Unknown syntax, keys, duplicate fields, invalid ranges and dangling references reject the feed. Browser Run/AWS signing remain candidates until an exact deployment directory and wire identity are confirmed. Own-browser agents and partial Google signing remain limits.
+The generic Google user-triggered-fetchers feed has an empty token mapping; it does not verify Google-CloudVertexBot. SAIL uses the supplied strict TOML schema, resolves services to prefix sets, and honours bounded expires_after retention. Unknown syntax, keys, duplicate fields, invalid ranges and dangling references reject the feed. AWS signing remains unsupported until an exact deployment directory and wire identity are confirmed. Browser Run is configured as signing infrastructure in 0.5.0. Own-browser agents and partial Google signing remain limits.
 
 Standards: [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421.html), [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638), [RFC 8037 A.3](https://www.rfc-editor.org/rfc/rfc8037#appendix-A.3), [RFC 9864](https://www.rfc-editor.org/rfc/rfc9864), evolving [WBA draft](https://www.ietf.org/archive/id/draft-ietf-webbotauth-httpsig-protocol-01.txt). The supported compatibility policy is documented here; this is not a claim of full RFC/draft conformance.
 
@@ -421,3 +426,66 @@ seconds without skew), so callers can cap derived evidence.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+## Header consistency (0.5.0)
+
+`AgentVerdict.evidence` optionally contains `header_mismatch`, a weak local
+diagnostic independent of verification, reason, identity and purpose. It never
+changes `visitorLabels`, never creates `agent_verified` or `bot_suspicious`, and
+is not exported in `vv_detail`. No raw headers are returned, cached or retained.
+
+Within the API's external HTTPS contract, checks apply only to Chrome/HeadlessChrome
+and Chromium Edge claims with recognizable navigation/resource context: Fetch Mode
+navigate, a known Fetch Dest, or GET/HEAD accepting text/html (a navigation-shaped
+claim, not proof of navigation). Arbitrary collector POSTs and ambiguous _/_
+requests are skipped. Site/Mode start at Chrome 76 / Edge 79; Dest at 80; default
+low-entropy hints conservatively at 89. No high-entropy hints or Sec-Fetch-User
+are required. Hints are expected only for top-level navigation-shaped requests
+or same-origin subresources, avoiding iframe and cross-origin Permissions Policy
+suppression. Recognized platforms are compared with Windows, Android, Chrome OS,
+macOS or Linux in the UA. iOS, explicit WebViews and known privacy derivatives
+are skipped; Firefox/Safari are outside scope.
+
+Unmarked privacy browsers, enterprise policies, extensions, UA overrides, CDNs
+and proxies can alter these defaults. False positives are expected; therefore
+this evidence does not affect classification. Consistent headers are easy to copy
+and do not prove humanity. Adapters must supply original headers and trusted HTTPS
+context; never infer identity from unchecked forwarding headers. Vanilla already
+passes rawHeaders and keeps its existing TRUST_PROXY handling.
+
+Sources: [Chromium low-entropy defaults](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints),
+[Fetch Metadata version support](https://web.dev/articles/fetch-metadata).
+Fixtures are representative protocol examples, not browser captures; headless
+Chrome with complete headers intentionally has no mismatch.
+
+### Intermediary signers (0.5.0, checked 2026-11-23)
+
+The owner supplied live curl HTTPS directory bodies and response headers for all
+three operators (HTTP 200, application/http-message-signatures-directory+json).
+All five authority-binding Ed25519 directory proofs verify using published JWK
+thumbprints. These proofs cover only `"@authority";req`, not a Content-Digest or
+the body; runtime trust remains the exact configured HTTPS URL. JSON fixture bodies
+are unchanged; response cookies and unrelated metadata were omitted from header
+fixtures. No signed visitor request has been captured: `verifiedByCapture: false`.
+
+| Operator ID              | Signature-Agent / directory origin                                | Keys / valid proofs | Primary documentation                                                              |
+| ------------------------ | ----------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| `kernel`                 | https://www.kernel.sh                                             | 1 / 1               | https://www.kernel.sh/docs/bots                                                    |
+| `cloudflare_browser_run` | https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev | 3 / 3               | https://developers.cloudflare.com/browser-run/reference/automatic-request-headers/ |
+| `shopify_cloudsurf`      | https://cloudsurf.shopify.io                                      | 1 / 1               | https://help.shopify.com/en/manual/intro-to-shopify/bots/cloudsurf                 |
+
+Each exact directory URL appends `/.well-known/http-message-signatures-directory`
+to the listed origin. All three set `intermediary: true`: valid signatures report
+`agent_verified` with purpose `intermediary`, identifying infrastructure rather
+than the customer's agent. Unsigned UA/Signature-Agent or page-marker claims never
+replace this purpose; valid direct signatures retain precedence. Kernel Search
+has a separate direct crawler identity and is outside this addition. No custom kid
+aliases are enabled. Kernel's published key has short nbf/exp validity; the verifier
+rechecks it per use and an expired cached key never verifies a request.
+
+The default registry now has **nine directories** (six previously). Add outbound
+HTTPS access to all three origins above; a blocked directory can leave health at
+8/9 with a failed refresh. No hit is held or excluded. The 0.4.1 5/6 examples above
+are historical. Tests cover exact registry endpoints, generated valid, wrong-key,
+unknown-key, expired and replayed requests for each signer, direct-signature
+precedence, unsigned claims and all live directory proofs at capture time.

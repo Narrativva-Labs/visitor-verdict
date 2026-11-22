@@ -129,3 +129,21 @@ future crawler feeds must have distinct purpose mappings from the Muse signing i
 The session-analysis SQL is an optional reporting query at
 ../docs/analysis/session-classification.sql; its two purpose allowlists already accept
 intermediary. There is no SQL persistence layer in the library or Vanilla.
+
+## Weak header consistency (0.5.0)
+
+Optional evidence `header_mismatch` is independent of signature/IP/DNS outcomes.
+It records recognizable HTTPS Chromium navigation/resource inconsistencies only;
+README records version gates, policy exceptions and proxy/privacy false positives.
+It contributes no classification weight and never changes identity, purpose or
+GA4 labels. No raw fields or header subsets are returned or cached. The six-segment
+label format and verification value dictionary stay unchanged.
+
+Kernel Agent, Cloudflare Browser Run and Shopify Cloudsurf are admitted in 0.5.0
+with intermediary: true after primary vendor documentation and owner-supplied live
+HTTPS directories (2026-11-23). All five Ed25519 authority-binding proofs verify.
+They cover @authority;req only, not the body; trust remains the exact HTTPS URL.
+Kernel's exp/nbf are checked per use. None has a captured visitor request, and none
+identifies the customer's agent. Nine directories now warm at startup; deployments
+must allow the three new origins listed in README. Labels and direct proof
+precedence remain unchanged; no traffic is withheld.

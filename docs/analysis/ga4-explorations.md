@@ -115,3 +115,17 @@ Treat both as sanity checks, not evidence about any single session: VPNs, corpor
 `human` means **no automation detected**, `suspicious` uncertain evidence, `automated` automation evidence without a judgement of intent, and `declared_agent` an unverified claim. Score is not a probability. Exclusion keeps unknown sessions; “only human” selects visits where classification and delivery worked and biases the headline. Always display coverage and suspicious traffic alongside the headline, which stays All sessions.
 
 Missing-ID cookieless pings are separate event totals, not sessions. Never reconstruct identity or join via IP/UA. JS-less fetches usually send no GA4 event at all; blocked tags, consent settings, early pageviews and unload loss also affect coverage. Referrals from assistants can be ordinary people following links and never establish automation. Converting or engaged automation warrants review, not automatic relabelling as human.
+
+Server 0.5.0 adds optional local verdict evidence `header_mismatch`. It is weak
+header-consistency evidence, never a verification value, operator or purpose. It
+is not exported to GA4 and does not change `vv_type` (including `bot_suspicious`)
+or the six `vv_detail` segments. Proxy stripping and privacy policies can cause
+it in real Chromium browsers; see the server README for scope and version gates.
+
+Server 0.5.0 adds operator IDs `kernel`, `cloudflare_browser_run` and
+`shopify_cloudsurf`. Like `browserbase`, verified signatures identify signing
+infrastructure with purpose `intermediary`, never the customer's agent. For example,
+`kernel|signature_valid|intermediary|signature_agent|human|final` has type
+`agent_verified`. Exclude intermediary purpose when counting the agents themselves.
+The six-segment format and other values stay unchanged. Unsigned claims cannot
+name these operators; their request signatures have not been captured locally.

@@ -13,6 +13,13 @@ const clock = 1800000000;
 const entry = (identity) => defaultRegistry.find((o) => o.signatureAgent === identity);
 const operators = [
   { name: 'meta', identity: 'https://muse.ai', purpose: 'user_directed' },
+  { name: 'kernel', identity: 'https://www.kernel.sh', purpose: 'intermediary' },
+  {
+    name: 'cloudflare_browser_run',
+    identity: 'https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev',
+    purpose: 'intermediary',
+  },
+  { name: 'shopify_cloudsurf', identity: 'https://cloudsurf.shopify.io', purpose: 'intermediary' },
   { name: 'browserbase', identity: 'https://www.browserbase.com', purpose: 'intermediary' },
   { name: 'manus', identity: 'https://api.manus.im', purpose: 'user_directed' },
   { name: 'google', identity: 'https://agent.bot.goog', purpose: 'user_directed', label: 'g' },
@@ -113,10 +120,14 @@ test('registry: added operators have exact HTTPS identities and allowlisted dire
     assert.equal(o.verifiedByCapture, name === 'openai');
   }
   assert.equal(entry('https://www.browserbase.com').intermediary, true);
-  assert.equal(defaultRegistry.filter((o) => o.directoryUrl).length, 6);
+  assert.equal(defaultRegistry.filter((o) => o.directoryUrl).length, 9);
   assert.ok(entry('https://muse.ai').evidence.some((e) => e.level === 'observed'));
   for (const o of defaultRegistry)
-    if (o.operator !== 'browserbase') assert.notEqual(o.intermediary, true, o.operator);
+    assert.equal(
+      o.intermediary === true,
+      ['browserbase', 'kernel', 'cloudflare_browser_run', 'shopify_cloudsurf'].includes(o.operator),
+      o.operator,
+    );
   // Amazon Bedrock AgentCore publishes no directory; the old Meta origin is not trusted for Muse.
   assert.equal(entry('https://www.meta.com'), undefined);
   assert.ok(!defaultRegistry.some((o) => /amazonaws|agentcore/i.test(o.directoryUrl ?? '')));
@@ -662,7 +673,7 @@ test('purpose mappings cannot declare intermediary or conflict with its flag', (
   }
 });
 
-test('blocking provisional Muse leaves five of six directories loaded and a failed refresh', async () => {
+test('blocking provisional Muse leaves eight of nine directories loaded and a failed refresh', async () => {
   let failMuse;
   const blocked = new Promise((_, reject) => {
     failMuse = reject;
@@ -675,7 +686,7 @@ test('blocking provisional Muse leaves five of six directories loaded and a fail
   });
   const warming = verifier.warm();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(verifier.status().directories, { loaded: 5, total: 6 });
+  assert.deepEqual(verifier.status().directories, { loaded: 8, total: 9 });
   failMuse(new Error('egress blocked'));
   const result = await warming;
   assert.deepEqual(result.failed, [entry('https://muse.ai').directoryUrl]);
@@ -710,3 +721,63 @@ test('intermediary config describes signatures; separate IP proof retains its pr
   });
   assert.deepEqual([v.verification, v.agent_purpose], ['ip_match', 'crawler']);
 });
+
+test('weak header mismatch preserves a verified intermediary identity', async () => {
+  const identity = 'https://www.browserbase.com';
+  const r = request(JSON.stringify(identity), labelled({ label: 'sig1', identity }));
+  r.headers['user-agent'] =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/142.0.0.0 Safari/537.36';
+  r.headers.accept = 'text/html';
+  const { fetcher } = network();
+  const v = await verifierWith({ fetcher }).verify(r);
+  assert.deepEqual(v.evidence, ['header_mismatch']);
+  assert.equal(v.verification, 'signature_valid');
+  assert.equal(v.verified.operator, 'browserbase');
+  assert.equal(v.agent_purpose, 'intermediary');
+  assert.equal(visitorLabels({ verdict: v }).vv_type, 'agent_verified');
+});
+
+for (const { name, identity } of operators.filter((o) => o.purpose === 'intermediary')) {
+  test(`${name}: unsigned identity cannot verify or name an operator`, async () => {
+    const { fetcher, urls } = network();
+    const v = await verifierWith({ fetcher }).verify({
+      method: 'GET',
+      host: 'shop.example',
+      headers: { 'signature-agent': JSON.stringify(identity) },
+    });
+    assert.equal(v.verification, 'no_signature');
+    assert.equal(v.verified, undefined);
+    assert.equal(v.agent_purpose, 'unknown');
+    assert.deepEqual(urls, []);
+    assert.equal(visitorLabels({ verdict: v }).vv_type, 'agent_unverified');
+    assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[0], 'none');
+  });
+
+  test(`${name}: infrastructure purpose beats unsigned UA/marker claims, direct proof wins in either order`, async () => {
+    const { fetcher } = network();
+    const v = verifierWith({ fetcher });
+    const infra = request(JSON.stringify(identity), labelled({ label: 's', identity }));
+    infra.headers['user-agent'] = 'ChatGPT-User/1.0';
+    const proof = await v.verify(infra);
+    assert.equal(proof.agent_purpose, 'intermediary');
+    assert.equal(
+      visitorLabels({
+        verdict: proof,
+        browserClass: 'declared_agent',
+        browserAgent: 'openai',
+      }).vv_detail.split('|')[0],
+      name,
+    );
+    const members = { agent: 'https://chatgpt.com', infra: identity };
+    const a = labelled({ label: 'agent', identity: members.agent, members });
+    const b = labelled({ label: 'infra', identity, members });
+    for (const signatures of [
+      [a, b],
+      [b, a],
+    ]) {
+      const direct = await v.verify(request(dictionary(members), ...signatures));
+      assert.equal(direct.verified.operator, 'openai');
+      assert.equal(direct.agent_purpose, 'user_directed');
+    }
+  });
+}

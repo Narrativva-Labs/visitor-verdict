@@ -1,0 +1,7 @@
+HTTP/2 200
+date: Sun, 22 Nov 2026 23:03:01 GMT
+content-type: application/http-message-signatures-directory+json
+content-length: 250
+cache-control: max-age=86400
+signature: binding0=:Oy9MkuZVV6MsaJJBkQ2mKeKlJQeUqRPLCDcVnyexB7Fw5wMXquu8+oasvDXeV0ZgpxrcgctD9WjHwDaHB71iBw==:, binding1=:I6maK2PK+HU3EAOPNOryAyYLBrQ7SB41DdmRzQs7likfFPbj94rpqnfWZgxo/H86DXnZIw2wlCj+vbIJxtx/DQ==:, binding2=:bOs/C7Z/pIuEa+5cZP1kSYq/E4rQBnb9NsQkYRQ6gZd8TvZz5zktcF7LQVimU5BtH/UxT005OgHw242T7YmqAg==:
+signature-input: binding0=("@authority";req);created=1795388581;keyid="QHrZVI7uYXBXsRaTTUojpmFG0UNelgU8-n5tmuRh08U";alg="ed25519";expires=1795388881;tag="http-message-signatures-directory", binding1=("@authority";req);created=1795388581;keyid="3JVD-GUlusv36Msck-1m0nvGAwt3xBNNVIVqYe15CYU";alg="ed25519";expires=1795388881;tag="http-message-signatures-directory", binding2=("@authority";req);created=1795388581;keyid="WdHpbKqU_Xqe-C5zUhXY9yUAuggIzqebBWFV04NEcpc";alg="ed25519";expires=1795388881;tag="http-message-signatures-directory"

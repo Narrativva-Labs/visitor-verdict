@@ -1,3 +1,4 @@
+import { headerMismatch } from './header-consistency.js';
 import { createClaimParser } from './claims.js';
 import { requiredHeaderNames as collectRequiredHeaderNames } from './fields.js';
 import { AgentCache, type DocumentKind } from './cache.js';
@@ -90,6 +91,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       const h = headers(input.headers);
       presented = h.has('signature') || h.has('signature-input');
       const context = checkContext(input, config.authorities);
+      if (headerMismatch(h, input.method)) verdict.evidence = ['header_mismatch'];
       let now: number;
       try {
         now = config.now();

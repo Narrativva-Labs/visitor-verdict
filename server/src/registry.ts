@@ -210,6 +210,81 @@ const operators: Registry = [
     ],
   },
   {
+    operator: 'kernel',
+    signatureAgent: 'https://www.kernel.sh',
+    directoryUrl: 'https://www.kernel.sh/.well-known/http-message-signatures-directory',
+    intermediary: true,
+    verifiedByCapture: false,
+    source: 'https://www.kernel.sh/docs/bots',
+    checked: '2026-11-23',
+    ipLists: [],
+    evidence: [
+      {
+        level: 'documented',
+        source: 'https://www.kernel.sh/docs/bots',
+        checked: '2026-11-23',
+        note: 'Signs browser traffic for other tools or agents; verified identity names signing infrastructure, never the customer agent.',
+      },
+      {
+        level: 'observed',
+        source: 'https://www.kernel.sh/.well-known/http-message-signatures-directory',
+        checked: '2026-11-23',
+        note: 'Owner-supplied live HTTPS directory: HTTP 200, 1 Ed25519 keys and 1 valid authority-binding directory proofs. No local signed request capture.',
+      },
+    ],
+  },
+  {
+    operator: 'cloudflare_browser_run',
+    signatureAgent: 'https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev',
+    directoryUrl:
+      'https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev/.well-known/http-message-signatures-directory',
+    intermediary: true,
+    verifiedByCapture: false,
+    source: 'https://developers.cloudflare.com/browser-run/reference/automatic-request-headers/',
+    checked: '2026-11-23',
+    ipLists: [],
+    evidence: [
+      {
+        level: 'documented',
+        source:
+          'https://developers.cloudflare.com/browser-run/reference/automatic-request-headers/',
+        checked: '2026-11-23',
+        note: 'Signs browser traffic for other tools or agents; verified identity names signing infrastructure, never the customer agent.',
+      },
+      {
+        level: 'observed',
+        source:
+          'https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev/.well-known/http-message-signatures-directory',
+        checked: '2026-11-23',
+        note: 'Owner-supplied live HTTPS directory: HTTP 200, 3 Ed25519 keys and 3 valid authority-binding directory proofs. No local signed request capture.',
+      },
+    ],
+  },
+  {
+    operator: 'shopify_cloudsurf',
+    signatureAgent: 'https://cloudsurf.shopify.io',
+    directoryUrl: 'https://cloudsurf.shopify.io/.well-known/http-message-signatures-directory',
+    intermediary: true,
+    verifiedByCapture: false,
+    source: 'https://help.shopify.com/en/manual/intro-to-shopify/bots/cloudsurf',
+    checked: '2026-11-23',
+    ipLists: [],
+    evidence: [
+      {
+        level: 'documented',
+        source: 'https://help.shopify.com/en/manual/intro-to-shopify/bots/cloudsurf',
+        checked: '2026-11-23',
+        note: 'Signs browser traffic for other tools or agents; verified identity names signing infrastructure, never the customer agent.',
+      },
+      {
+        level: 'observed',
+        source: 'https://cloudsurf.shopify.io/.well-known/http-message-signatures-directory',
+        checked: '2026-11-23',
+        note: 'Owner-supplied live HTTPS directory: HTTP 200, 1 Ed25519 keys and 1 valid authority-binding directory proofs. No local signed request capture.',
+      },
+    ],
+  },
+  {
     operator: 'browserbase',
     // Cloud browser infrastructure that signs its customers' browser sessions (beta): a valid
     // signature identifies Browserbase, never the customer's agent.
