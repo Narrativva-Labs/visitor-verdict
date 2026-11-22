@@ -252,14 +252,14 @@
       "kind": "code",
       "code": "CS",
       "family": "carry-over",
-      "check": "Sanitised plain lastClass suspicious from a previous final result, consumed at start. Carries suspicious for one following document only; CS alone never renews it, adds score/families or upgrades to automated/declared_agent.",
+      "check": "Sanitised lastClass.value suspicious with direct === true from current-page evidence; consumed to a passive string before applying, only after a successful storage write. Carries suspicious for one following document only; CS alone never renews it, adds score/families or upgrades to automated/declared_agent.",
       "weight": 0,
       "hardness": "inherited",
       "status": "validated",
       "lastChecked": "2026-11-22",
       "sources": [
-        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/src/visitor-verdict.js",
-        "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/test/contracts.mjs"
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
       ],
       "verification": [
         {
@@ -267,7 +267,7 @@
           "versions": "1.2.0",
           "result": "Implemented condition and synthetic contract semantics only; not a field accuracy result.",
           "kind": "code-review",
-          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/dom-markers/test/contracts.mjs"
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [

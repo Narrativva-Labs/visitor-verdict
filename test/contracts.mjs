@@ -334,22 +334,69 @@ export async function runContracts(detectorSource) {
   });
   await test('CS carries suspicious for one document only, consumes at start and never promotes or renews alone', () => {
     for (const finish of [false, true]) {
-      const store = new Map([['visitor_verdict', JSON.stringify({lastClass: 'suspicious'})]]);
+      const store = new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'suspicious', direct: true}})]]);
       const first = fixture({store, config: {debug: true}});
       assert.equal(first.window.__visitorVerdict.class, 'suspicious');
       assert.equal(first.window.__visitorVerdict.score, 0);
       assert.ok(first.signals.includes('CS'));
-      assert.equal(JSON.parse(store.get('visitor_verdict')).lastClass, '');
+      assert.equal(JSON.parse(store.get('visitor_verdict')).lastClass, 'suspicious');
+      assert.equal(first.window.__visitorVerdictLast, 'suspicious');
       if (finish) { first.emit('pagehide'); assert.equal(first.window.__visitorVerdict.class, 'suspicious'); }
       const second = fixture({store, now: 20000}); second.advance(8000);
       assert.equal(second.window.__visitorVerdict.class, 'human');
     }
     for (const webdriver of [false, true]) {
       const f = fixture({modify: ({store, navigator}) => {
-        store.set('visitor_verdict', JSON.stringify({lastClass: 'suspicious'}));
+        store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'suspicious', direct: true}}));
         navigator.userAgent = 'ChatGPT-User'; navigator.webdriver = webdriver;
       }});
       assert.equal(f.window.__visitorVerdict.class, webdriver ? 'automated' : 'declared_agent');
+    }
+  });
+  await test('Invalid boolean overrides retain defaults; only false disables hidden final', () => {
+    for (const value of [undefined, 'true', 'false', 0, null, true, false]) {
+      const f = fixture({config: {finalOnHidden: value}});
+      f.document.visibilityState = 'hidden'; f.emit('visibilitychange');
+      assert.equal(f.window.__visitorVerdict.phase, value === false ? 'initial' : 'final');
+    }
+  });
+  await test('Already-hidden visibility events do not finalize before a real visible-to-hidden transition', () => {
+    const f = fixture({modify: ({document}) => {document.visibilityState = 'hidden';}});
+    f.emit('visibilitychange'); assert.equal(f.window.__visitorVerdict.phase, 'initial');
+    f.document.visibilityState = 'visible'; f.emit('visibilitychange');
+    f.document.visibilityState = 'hidden'; f.emit('visibilitychange');
+    assert.equal(f.window.__visitorVerdict.phase, 'final');
+  });
+  await test('Read-only storage never applies or chains CA/CD/CS, and plain suspicious is passive', () => {
+    for (const value of ['automated', 'declared_agent', 'suspicious']) {
+      const store = new Map([['visitor_verdict', JSON.stringify({lastClass: {value, direct: true}})]]);
+      for (let i = 0; i < 3; i++) {
+        const f = fixture({store, modify: ({window}) => {
+          window.sessionStorage.setItem = () => {throw Error('QuotaExceededError');};
+        }});
+        assert.equal(f.window.__visitorVerdict.class, 'human');
+        assert.equal(f.window.__visitorVerdictLast, value);
+        assert.ok(!f.signals.some(s => ['CA', 'CD', 'CS'].includes(s)));
+        f.emit('pagehide');
+      }
+    }
+    const f = fixture({store: new Map([['visitor_verdict', JSON.stringify({lastClass: 'suspicious'})]])});
+    assert.equal(f.window.__visitorVerdict.class, 'human');
+    assert.equal(f.window.__visitorVerdictLast, 'suspicious');
+  });
+  await test('A concurrent storage replacement cannot apply stale carry that was not consumed', () => {
+    for (const value of ['automated', 'declared_agent', 'suspicious']) {
+      const f = fixture({modify: ({window, store}) => {
+        store.set('visitor_verdict', JSON.stringify({lastClass: {value, direct: true}}));
+        let reads = 0;
+        window.sessionStorage.getItem = key => {
+          if (++reads === 2) store.set(key, JSON.stringify({lastClass: 'human'}));
+          return store.get(key);
+        };
+      }});
+      assert.equal(f.window.__visitorVerdict.class, 'human');
+      assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'human');
+      assert.ok(!f.signals.some(s => ['CA', 'CD', 'CS'].includes(s)));
     }
   });
   await test('Hard evidence takes precedence over declared tokens and persists in final', () => {
@@ -694,7 +741,7 @@ export async function runContracts(detectorSource) {
       assert.deepEqual([...f.signals], ['UB']);
       assert.equal(f.window.__visitorVerdict.class, 'suspicious');
       assert.equal(f.window.__visitorVerdict.score, 6);
-      assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'suspicious');
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'suspicious', direct: true});
       const next = fixture({store: f.store, now: 11000});
       assert.equal(next.window.__visitorVerdict.class, 'suspicious');
       assert.ok(next.signals.includes('CS')); next.advance(8000);
@@ -702,20 +749,39 @@ export async function runContracts(detectorSource) {
       assert.equal(record.terminated, 1); assert.equal(record.revoked, 1);
     }
   });
-  await test('CS with fresh UB renews only suspicious, without direct provenance', () => {
+  await test('CS with fresh UB renews suspicious provenance without hard or declaration carry', () => {
     let worker;
     const f = fixture({config: {debug: true, worker: true}, modify: objects => {
-      objects.store.set('visitor_verdict', JSON.stringify({lastClass: 'suspicious'}));
+      objects.store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'suspicious', direct: true}}));
       objects.navigator.userAgentData = {brands: chromeBrands}; worker = fakeWorker(objects);
     }});
     assert.ok(f.signals.includes('CS'));
     worker.reply({...workerNav, userAgentData: {brands: []}});
     f.emit('keydown', {isTrusted: true}); f.advance(8000);
     assert.equal(f.window.__visitorVerdict.class, 'suspicious');
-    assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'suspicious');
+    assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'suspicious', direct: true});
     const next = fixture({store: f.store, now: 21000}); next.emit('pagehide');
     assert.equal(next.window.__visitorVerdict.class, 'suspicious');
     assert.equal(fixture({store: f.store, now: 31000}).window.__visitorVerdict.class, 'human');
+  });
+  await test('Opting out of hidden final preserves pending worker/permissions and trusted TR decay on return', async () => {
+    let worker, permissions;
+    const f = fixture({config: {debug: true, worker: true, finalOnHidden: false}, modify: objects => {
+      objects.store.set('visitor_verdict', JSON.stringify({tpPages: 2}));
+      objects.navigator.userAgentData = {brands: chromeBrands}; worker = fakeWorker(objects);
+      objects.window.isSecureContext = true;
+      objects.window.Notification = {permission: 'denied'};
+      objects.navigator.permissions = {query: () => new Promise(resolve => {permissions = resolve;})};
+    }});
+    f.document.visibilityState = 'hidden'; f.emit('visibilitychange');
+    assert.equal(f.window.__visitorVerdict.phase, 'initial');
+    worker.reply({...workerNav, userAgentData: {brands: []}});
+    permissions({state: 'prompt'}); await Promise.resolve();
+    f.document.visibilityState = 'visible'; f.emit('visibilitychange');
+    f.emit('keydown', {isTrusted: true}); f.advance(8000);
+    assert.ok(f.signals.includes('UB')); assert.ok(f.signals.includes('NP'));
+    assert.ok(!f.signals.includes('TR'));
+    assert.equal(JSON.parse(f.store.get('visitor_verdict')).tpPages, 1);
   });
   await test('UB ignores unsupported, blocked and malformed API shapes; non-empty worker brands need not match', () => {
     const cases = [

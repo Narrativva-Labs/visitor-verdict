@@ -108,7 +108,7 @@ function evaluate(spec, script = detector) {
     if (!Array.isArray(record.timestamps) || record.timestamps.length > 20 || record.timestamps.some(t => typeof t !== 'number' || !Number.isFinite(t) || t < 0 || t > at || t % 100 !== 0)) return 'timestamps must contain <=20 finite, nonnegative, nonfuture timestamps rounded to 100ms';
     if (!Number.isInteger(record.tpPages) || record.tpPages < 0 || record.tpPages > 255) return 'tpPages outside integer 0..255';
     const last = record.lastClass;
-    if (last !== '' && !classes.includes(last) && !(last && typeof last === 'object' && !Array.isArray(last) && last.direct === true && ['automated','declared_agent'].includes(last.value) &&
+    if (last !== '' && !classes.includes(last) && !(last && typeof last === 'object' && !Array.isArray(last) && last.direct === true && ['automated','declared_agent','suspicious'].includes(last.value) &&
         (Object.keys(last).length === 2 || (Object.keys(last).length === 3 && last.value === 'declared_agent' && agents.includes(last.agent))))) return 'lastClass contains unapproved value/shape';
     // A declaration on a carried-automated document must not renew direct automated.
     if (spec.noHardRenewal && last && last.value === 'automated') return 'carried automated renewed as direct provenance without hard evidence';
@@ -125,7 +125,7 @@ function evaluate(spec, script = detector) {
   }
   if (spec.suspiciousCarry && !spec.blockStorage) {
     const saved = JSON.parse(result.storage.visitor_verdict).lastClass;
-    if (events[0]?.traffic_class !== 'suspicious' || events.some(e => ['automated','declared_agent'].includes(e.traffic_class)) || saved === 'suspicious' || saved?.direct === true) {
+    if (events[0]?.traffic_class !== 'suspicious' || events.some(e => ['automated','declared_agent'].includes(e.traffic_class)) || saved !== 'suspicious' || saved?.direct === true) {
       fail('suspicious-carry', 'CS must start suspicious, never promote or renew without current evidence');
     }
   }
@@ -194,7 +194,7 @@ function corpus() {
   for (const raw of ['{"lastClass":{"arbitrary":"raw"}}','{"lastClass":"secret"}','{"timestamps":[-1,1e999,1800000000001,null,"1"],"tpPages":-1}','{"__proto__":{"polluted":true},"constructor":{},"tpPages":1.5}',JSON.stringify({timestamps:Array(100000).fill(-1),tpPages:256})]) list.push({...base(),storage:raw,label:'storage boundary'});
   for (const token of ['(a+)+$','(a|aa)+$','.*','[','x'.repeat(100000)]) list.push({...base(),ua:'a'.repeat(32)+'!',config:{agentTokens:JSON.stringify([token])},label:'regex/token boundary'});
   list.push({...base(),config:{agentTokens:'Array(100000).fill("safe")'},label:'huge token array'});
-  for (const finalOnHidden of ['true','false']) for (const race of ['timer-first','hide-first','visibility']) list.push({...base(),config:{finalOnHidden},race,storage:JSON.stringify({lastClass:'suspicious'}),suspiciousCarry:true,label:'CS decays without promotion'});
+  for (const finalOnHidden of ['true','false']) for (const race of ['timer-first','hide-first','visibility']) list.push({...base(),config:{finalOnHidden},race,storage:JSON.stringify({lastClass:{value:'suspicious',direct:true}}),suspiciousCarry:true,label:'CS decays without promotion'});
   for (const race of ['timer-first','hide-first','visibility']) list.push({...base(),race,label:`duplicate/race ${race}`});
   for (const marker of ['start','late','after-final','decoy']) for (const race of ['timer-first','hide-first']) {
     list.push({...base(),marker,race,label:`agent UI marker ${marker} ${race}`});

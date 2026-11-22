@@ -101,7 +101,7 @@
           var max = key === 'idleMs' ? 3600000 : key === 'fastNavMs' ? 60000 : key === 'fastNavCount' ? 20 : 1000;
           if (typeof value === 'number' && isFinite(value) && value >= (key === 'fastNavCount' ? 2 : 1) &&
               value <= max && Math.floor(value) === value) { config[key] = value; }
-        } else { config[key] = value === true; }
+        } else if (typeof value === 'boolean') { config[key] = value; }
       }
     }
     var signals = [], families = {}, score = 0, hard = false, declared = false;
@@ -265,7 +265,7 @@
     function cleanClass(value) {
       if (value === 'human' || value === 'suspicious' || value === 'automated' || value === 'declared_agent') { return value; }
       if (value && tag.call(value) === '[object Object]' && value.direct === true && typeof value.value === 'string' &&
-          (value.value === 'automated' || value.value === 'declared_agent')) {
+          (value.value === 'automated' || value.value === 'declared_agent' || value.value === 'suspicious')) {
         var clean = {value: value.value, direct: true};
         // The operator belongs to declared_agent only.
         if (value.value === 'declared_agent' && cleanAgent(value.agent)) { clean.agent = value.agent; }
@@ -373,8 +373,8 @@
       return result;
     }
     function provenance(result) {
-      // CS must not renew itself. A fresh suspicious rule can seed the next page.
-      if (result === 'suspicious' && !suspicious()) { return 'human'; }
+      // Preserve the reported class; only fresh evidence seeds another grace page.
+      if (result === 'suspicious') { return suspicious() ? {value: result, direct: true} : result; }
       // Only direct hard evidence stores automated. A direct declaration stores
       // declared_agent even when carried CA made this document automated.
       // Only a marker seen in this document renews the stored operator.
@@ -513,12 +513,6 @@
       catch (ignore) {}
       tpPages = boundedTP(saved.tpPages);
       classSnapshot = classText(saved.lastClass); tpSnapshot = tpPages;
-      if (saved.lastClass && saved.lastClass.direct === true) {
-        if (saved.lastClass.value === 'automated') { add('CA', 100); }
-        else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); }
-        if (saved.lastClass.value === 'declared_agent') { agent = cleanAgent(saved.lastClass.agent); }
-      }
-      if (saved.lastClass === 'suspicious') { carriedSuspicious = true; add('CS', 0); }
       timestamps = mergeTimes(saved.timestamps);
       var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
       var revisit = navigation ? /reload|back_forward/.test(navigation.type) :
@@ -535,7 +529,14 @@
       }
       // Consume provenance now, including when this document never fires pagehide.
       // A carried class itself cannot seed another carried document.
-      if (!save(carriedSuspicious ? '' : saved.lastClass && saved.lastClass.direct === true ? saved.lastClass.value : null)) { fast = false; }
+      var consumed = save(saved.lastClass && saved.lastClass.direct === true ? saved.lastClass.value : null);
+      if (!consumed) { fast = false; }
+      if (consumed && saved.lastClass && saved.lastClass.direct === true &&
+          classSnapshot === classText(saved.lastClass.value)) {
+        if (saved.lastClass.value === 'automated') { add('CA', 100); }
+        else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); agent = cleanAgent(saved.lastClass.agent); }
+        else if (saved.lastClass.value === 'suspicious') { carriedSuspicious = true; add('CS', 0); }
+      }
     } catch (ignore) { fast = false; }
     function interact(event) {
       if (done || d.visibilityState === 'hidden') { return; }
@@ -576,11 +577,14 @@
       move = clicked = null; pointerKind = '';
       try { publish('final'); } finally { signals = []; families = {}; }
     }
+    var wasVisible = d.visibilityState !== 'hidden';
     function visibility() {
+      var becameHidden = wasVisible && d.visibilityState === 'hidden';
+      wasVisible = d.visibilityState !== 'hidden';
       pointerKind = '';
       if (done) { return; }
       exposure();
-      if (d.visibilityState === 'hidden' && config.finalOnHidden && initialPublished) { finish(); return; }
+      if (becameHidden && config.finalOnHidden && initialPublished) { finish(); return; }
       if (d.visibilityState !== 'hidden') {
         started = Date.now(); timer = w.setTimeout(finish, Math.max(0, config.idleMs - elapsed));
       }

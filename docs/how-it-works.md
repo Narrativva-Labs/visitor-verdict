@@ -9,7 +9,7 @@ Visitor Verdict is a first reporting layer for clear automation, not an attempt 
 | `suspicious` | Uncertain weighted evidence satisfying corroboration rules, the direct UB rule, or one document of CS carry-over. Keep as a secondary reporting view. |
 | `human` | No sufficient automation evidence; not proof of a person. |
 
-The **initial** phase runs synchronously using environment signals, agent UI markers already in the page and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes on the first `visibilitychange` to `hidden`, after 8 seconds of visible time, or on `pagehide`, whichever comes first. Set `finalOnHidden: false` to retain the previous pause-on-hidden behaviour. Hidden time never counts toward inactivity; early navigation does not count as eight seconds without input. Final fires once per document. A short tab switch therefore finalizes early by default: later behaviour and unfinished async probes are not counted. Loading in an already hidden document does not itself finalize; the first hidden transition does. The agent marker watcher remains active after final until a match or pagehide. Initial automation persists; an initial declaration persists unless hard evidence appears at final. If an agent UI marker appears later (before or after final), one **agent** phase publishes the escalation immediately; see [agent UI markers](#agent-ui-markers-dm).
+The **initial** phase runs synchronously using environment signals, agent UI markers already in the page and permitted tab history, once the document is active. Frames return without probing, publishing, installing state or touching storage; prerendered documents defer observation until activation. The **final** phase adds behaviour and completed asynchronous probes on the first `visibilitychange` to `hidden`, after 8 seconds of visible time, or on `pagehide`, whichever comes first. Set `finalOnHidden: false` to retain the previous pause-on-hidden behaviour. Hidden time never counts toward inactivity; early navigation does not count as eight seconds without input. Final fires once per document. A short tab switch therefore finalizes early by default: later behaviour and unfinished async probes are not counted. Loading in an already hidden document does not itself finalize; only a subsequent visible-to-hidden transition does. The agent marker watcher remains active after final until a match or pagehide. Initial automation persists; an initial declaration persists unless hard evidence appears at final. If an agent UI marker appears later (before or after final), one **agent** phase publishes the escalation immediately; see [agent UI markers](#agent-ui-markers-dm).
 
 Precedence is hard/inherited automation → declared → suspicious → human. A declared UA with WebDriver evidence is `automated`; a declaration alone is `declared_agent`. The suspicious rule requires all of:
 
@@ -37,7 +37,7 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 | `PW` | Exact `__playwright__binding__`, `__playwright__binding__controller__`, `__pwInitScripts` with callable values only; data-only arrays/objects, getters, DOM/host objects and window proxies ignored; initial and final | 100 / hard, feature-dependent |
 | `CA` | Previous document's result was `automated` from direct hard evidence in that document (never from a carried CA or a declaration); carries `automated` to the next document only, without an operator; plain class strings do not qualify | 100 / inherited |
 | `CD` | Previous document had a direct declaration (UA token or agent UI marker), stored at initial (marker at load), agent phase or final; carries `declared_agent` (never `automated`) to the next document only, with the stored operator if a marker set one | 100 / inherited |
-| `CS` | Previous final was suspicious from current-page evidence; plain stored `suspicious` is consumed at start and carries one document only. CS alone cannot renew itself or upgrade to automated/declared_agent | 0 / inherited |
+| `CS` | Previous final was suspicious from current-page evidence; `{value: "suspicious", direct: true}` is consumed to a passive string at start and carries one document only. CS alone cannot renew itself or upgrade to automated/declared_agent | 0 / inherited |
 | `DM` | Agent UI marker: element with an exact ID at its expected parent (`codex-agent-overlay-root` as a child of the root element → `openai`; `claude-agent-glow-border` or `claude-phantom-cursor` as a child of `body` → `anthropic`, older Claude in Chrome versions only). Checked at start, then watched until found | 100 / declared; sets `traffic_agent` (with `declared_agent` only) |
 | `G0` | Both dimensions zero for screen, viewport or outer size; only visible, focused, top-level; rechecked final | 1 / geometry |
 | `GS` | 800×600 screen or 1280×720 screen equal to viewport | 1 / geometry |
@@ -116,7 +116,7 @@ window.visitorVerdictConfig = {
 
 `agentTokens` are **literal strings**, matched case-insensitively with token boundaries; regex metacharacters are escaped. A supplied array replaces the defaults and is truncated to 64 entries; only nonempty strings up to 128 characters are evaluated. The list is maintained in [the source](../src/visitor-verdict.js), with historical evidence in [the research notes](../research/agents-and-tells.md). It includes AI-associated fetchers and general crawlers; `Google-Extended` is not a UA and is excluded.
 
-Numeric overrides must be finite integers: `idleMs` 1–3,600,000; `fastNavMs` 1–60,000; `fastNavCount` 2–20; `suspiciousThreshold` 1–1,000. Invalid values retain defaults. `dataLayerName` must be a nonempty string of at most 128 characters and cannot be `__proto__`, `prototype` or `constructor`. Boolean options enable only on strict `true`.
+Numeric overrides must be finite integers: `idleMs` 1–3,600,000; `fastNavMs` 1–60,000; `fastNavCount` 2–20; `suspiciousThreshold` 1–1,000. Invalid values retain defaults. `dataLayerName` must be a nonempty string of at most 128 characters and cannot be `__proto__`, `prototype` or `constructor`. Boolean overrides must be actual booleans; invalid values retain defaults.
 
 ## Public interface and data contract
 
@@ -139,7 +139,7 @@ There is at most one initial, one agent and one final detector publication per d
 
 The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with `{class, score, phase, version}` and, only with class `declared_agent` when the operator is known from a marker, `agent` (`'openai'` or `'anthropic'`). `phase` is `'initial'`, `'agent'` or `'final'`. Re-read the global when you need the latest phase; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
 
-`window.__visitorVerdictLast` contains only the validated previous final class string captured at detector startup, or `undefined` when unavailable. Provenance objects are reduced to their validated class string. This is a read-only, non-configurable value; it does not refresh when storage changes. The GTM current-class variable reads the current snapshot first, then this startup fallback, and never reads storage itself or defaults to human.
+`window.__visitorVerdictLast` contains the validated previous stored class string captured at detector startup, or `undefined` when unavailable. Storage may reflect a final, an earlier marker publication, or a consumed carry when that document never finalized. Provenance objects are reduced to their validated class string. This is a read-only, non-configurable value; it does not refresh when storage changes. The GTM current-class variable reads the current snapshot first, then this startup fallback, and never reads storage itself or defaults to human.
 
 ## Hardening and its limits
 
@@ -154,4 +154,19 @@ If another script predefines a non-configurable `__visitorVerdict` or `__visitor
 
 CA carries a previous direct automated result; CD carries a previous direct declared_agent result. Both use score 100 and expire after one document without renewed direct evidence. Carried declarations never become automated without hard evidence on the current page.
 
-CS consumes a plain stored `suspicious` at start, including if no final is ever published. A clean carried page stays suspicious through final but stores `human`, so the following clean page starts human. Fresh suspicious evidence on a carried page can renew the one-page carry. A suspicious result is never stored with `direct: true`; no storage fields or identifiers are added. Blocked storage makes carry-over unavailable.
+CS uses `{value: 'suspicious', direct: true}` for fresh suspicious evidence. On the next document,
+startup first writes the passive string `'suspicious'`, then applies CS only if that write succeeds.
+CA/CD use the same consume-before-apply rule. Readable but unwritable storage cannot chain inherited
+classes. A clean CS-only page stays suspicious through final and stores the passive string,
+so `__visitorVerdictLast` remains truthful while the following clean page starts human. Plain strings
+(including those written by the earlier 1.2.0 implementation) are passive and do not seed carry.
+Fresh evidence can renew suspicious provenance. Older 1.1 detectors ignore suspicious provenance
+and may consume it to a string, so mixed versions can lose the grace classification. Opening a new
+tab with an opener may clone unconsumed sessionStorage into each tab; use noopener to avoid that
+browser-level copy. Same-origin scripts can plant provenance; this is not authenticated evidence.
+
+Keep `finalOnHidden: false` on SPA sites that need behaviour after a tab switch, or when pending
+Worker/Permissions probes must complete. Early final intentionally cancels those probes and ends
+behaviour observation. Trusted input only after return cannot repay TP history after final; the
+regression contracts verify that pause-on-hidden keeps probes and trusted-input decay available.
+The default remains immediate hidden final to improve the chance of an exit-time publication.

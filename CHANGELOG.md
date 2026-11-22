@@ -3,6 +3,8 @@
 ## 1.2.0 — 2026-11-22
 
 - Publish final on the first visibility change to hidden by default (`finalOnHidden: true`), still once per document, with pagehide fallback and the unchanged visible-time idle deadline. A brief tab switch ends behaviour collection early; the agent marker watcher can still escalate after final.
+- Require actual booleans for config overrides; consume CA/CD/CS before applying and skip carry if storage is unwritable. Suspicious provenance uses the existing `{value, direct}` shape; passive strings remain truthful previous-class labels.
+- Require a real visible-to-hidden transition for hidden finalization. Document `finalOnHidden: false` for resumed behaviour and pending probes.
 - Carry suspicious results to one following document through zero-weight `CS`; consume at start, never promote or renew from CS alone, and retain the bounded storage schema.
 - Regenerate the 1.2.0 ES5 bundle, SRI, GTM container and signal catalogue; tag mappings remain unchanged. Extend lifecycle, carry-over and fuzz contracts.
 
