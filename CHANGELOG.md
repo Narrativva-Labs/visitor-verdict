@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- Roadmap and README: Phase 2 (server-side verification on the `phase2-verifier` branch) in development alongside Phase 1 field validation; links to Vanilla Server-Side, its first integration.
+- GA4 batching note in 1.0.1 corrected after the release: leaving the page flushes the batch.
+- Field-validation status: in progress since 2026-11-19, no study results yet.
+
+## [1.0.1] - 2026-11-20
+
+### Changed
+
+- GTM container 1.0.1: the GA4 `traffic_class` tag now sends initial `automated` and `declared_agent` publications in addition to final results for every class, improving coverage when short visits end without final delivery.
+- Clearly labelled optional first-page-view readiness trigger set, with manual setup, one-second fallback, once-per-page firing, timing risks and rollback instructions.
+- Migration instructions, session-level any-hit reporting guidance and container contract coverage. Initial/final duplicates are expected; classification-event counts are not visit counts.
+- BigQuery session rollup ranks `automated` above `declared_agent`, matching detector precedence.
+- Measured GA4 batching note (corrected after the release, 21 November 2026): leaving the page flushes the GA4 batch, so short visits still send `page_view` and the initial classification; automation request listeners miss these unload requests. SPA pageviews stay in a separate tag.
+- Detector JavaScript, distribution, probe settings and `traffic_version: '1.0.0'` are unchanged.
+
 ## [1.0.0] - 2026-11-19
 
 ### Added
@@ -27,4 +46,5 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - GA4 events sent before classification cannot be backfilled. Automatic-event/shared-settings and last-observed user-property semantics require care; pre-consent classifications must not feed advertising platforms.
 - The detector exceeds the original 5 KB minified target. ES5 syntax does not imply legacy-browser support.
 
+[1.0.1]: https://github.com/Narrativva-Labs/visitor-verdict/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Narrativva-Labs/visitor-verdict/releases/tag/v1.0.0

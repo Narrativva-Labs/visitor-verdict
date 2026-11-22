@@ -155,12 +155,22 @@
           }
         ],
         "firingTriggerId": [
-          "3"
+          "3",
+          "12"
         ],
         "tagFiringOption": "ONCE_PER_EVENT",
         "consentSettings": {
           "consentStatus": "NOT_SET"
         }
+      }
+    ],
+    "folder": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "folderId": "13",
+        "name": "VV - OPTIONAL page_view readiness (OR, once per page)",
+        "notes": "Optional trigger set: attach VV - initial and VV - timer fallback 1s as two ordinary OR firing triggers to the existing Google tag (or explicit page_view tag), replacing its early trigger. Set Once per page. Do not use a trigger group (AND). May delay page_view by up to 1 s; fallback may have no class. Roll back by restoring the original trigger and firing option. Importing does not change site tags. See docs/ga4-reporting.md."
       }
     ],
     "trigger": [
@@ -208,6 +218,62 @@
       {
         "accountId": "0",
         "containerId": "0",
+        "triggerId": "12",
+        "name": "VV - initial hard",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "traffic_class"
+              }
+            ]
+          }
+        ],
+        "filter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{VV - DLV traffic_phase}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "initial"
+              }
+            ]
+          },
+          {
+            "type": "MATCH_REGEX",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{VV - DLV traffic_class}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "^(automated|declared_agent)$"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
         "triggerId": "10",
         "name": "VV - initial",
         "type": "CUSTOM_EVENT",
@@ -244,7 +310,9 @@
               }
             ]
           }
-        ]
+        ],
+        "parentFolderId": "13",
+        "notes": "Optional page_view readiness set: use this OR VV - timer fallback 1s; set the existing site tag to Once per page. See folder notes."
       },
       {
         "accountId": "0",
@@ -252,6 +320,7 @@
         "triggerId": "11",
         "name": "VV - timer fallback 1s",
         "type": "TIMER",
+        "parentFolderId": "13",
         "eventName": {
           "type": "TEMPLATE",
           "key": "eventName",
@@ -284,7 +353,7 @@
             ]
           }
         ],
-        "notes": "Attach this and VV - initial to the existing site Google tag; set that tag to Once per page. This import creates no Google tag."
+        "notes": "Optional page_view readiness set: use this OR VV - initial on the existing Google tag (or explicit page_view tag), Once per page. May delay page_view by up to 1 s. See folder notes for rollback. This import creates no Google tag."
       }
     ],
     "variable": [

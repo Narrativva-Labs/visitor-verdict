@@ -35,20 +35,25 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
 -- Semantics:
 -- * Session = the existing (user_pseudo_id, ga_session_id) pair; never coalesce
 --   missing IDs to a shared value, invent an ID or join pre-consent pings later.
--- * Flags use valid event parameters on ANY event, including the final detector
---   event. User properties are last observed class, never exclusion evidence.
+-- * Flags use valid event parameters on ANY event, including initial hard and final detector
+--   events. User properties are last observed class, never exclusion evidence.
 -- * first_class/last_class follow export order, not class precedence. Exclusion
 --   uses ANY evidence across the session, so later human cannot erase automation.
 -- * class_at_first_conversion means first purchase (not add_to_cart): its own
 --   event parameter, otherwise latest preceding parameter in the same session.
 --   No future label is backfilled. Exact export-order ties are ambiguous.
 -- * GA4 event tags must map traffic_class to VV - current class at fire time.
---   Automatic events use shared settings captured at Google tag Initialization:
---   with storage fallback, labels may be the previous page's class from page 2.
---   First-session page_view is typically unlabelled; timing fields describe
---   exported labels, not guaranteed current-page evidence. Sites without GA4
---   event tags rely on the final detector event plus last-observed user property;
---   the property is never used here as a session-exclusion fallback.
+--   Automatic events use shared settings captured when the Google tag starts.
+--   Optional initial OR 1 s fallback readiness can label the first page_view;
+--   the timer can still start it without a class. Later final evidence does not
+--   refresh that startup value. Timing fields describe observed exported labels.
+--   The dedicated detector tag sends initial automated/declared_agent and all
+--   final classes; a short visit may deliver only initial. User properties are
+--   never used here as a session-exclusion fallback.
+-- * Container 1.0.1 may send two traffic_class hits per hard page. Session flags
+--   below use ANY hit (COUNTIF > 0), so those duplicates do not inflate cohorts.
+--   A/F2/H/evaluation event counts are delivery diagnostics, NOT visits or recall;
+--   never sum initial and final event counts to estimate automated sessions.
 -- * A counts event parameters only; missing remains unknown.
 -- * B--F1 use the local date of ga_session_id (epoch seconds). Cohorts overlap;
 --   each session contributes once within each applicable cohort.
@@ -172,9 +177,11 @@ SELECT user_pseudo_id, ga_session_id,
        ELSE COALESCE(MAX(traffic_version), 'unknown') END AS traffic_version,
   COUNTIF(traffic_version IS NULL) > 0 AS has_unversioned_events,
   COUNT(DISTINCT param_class) > 1 AS class_transition,
-  CASE MAX(CASE param_class WHEN 'declared_agent' THEN 4 WHEN 'automated' THEN 3
+  -- Same precedence as the detector: automated outranks declared_agent
+  -- (initial declared_agent can become final automated, never the reverse).
+  CASE MAX(CASE param_class WHEN 'automated' THEN 4 WHEN 'declared_agent' THEN 3
     WHEN 'suspicious' THEN 2 WHEN 'human' THEN 1 ELSE 0 END)
-    WHEN 4 THEN 'declared_agent' WHEN 3 THEN 'automated'
+    WHEN 4 THEN 'automated' WHEN 3 THEN 'declared_agent'
     WHEN 2 THEN 'suspicious' WHEN 1 THEN 'human' ELSE 'unknown' END AS worst_class,
   DATE(TIMESTAMP_SECONDS(ga_session_id), property_timezone) AS session_day,
   COUNTIF(param_class = 'automated') > 0 AS any_automated,
@@ -314,6 +321,8 @@ FROM sessions GROUP BY site, stream_id, traffic_version, session_day, has_class,
 SELECT site, stream_id, traffic_version, day, analytics_storage, user_pseudo_id IS NULL AS missing_user_id,
   ga_session_id IS NULL AS missing_session_id, COUNT(*) AS events,
   COUNTIF(event_name = 'traffic_class') AS detector_events,
+  COUNTIF(event_name = 'traffic_class' AND phase = 'initial') AS initial_events,
+  COUNTIF(event_name = 'traffic_class' AND phase = 'final') AS final_events,
   COUNTIF(param_class IS NOT NULL) AS events_with_class_parameter,
   COUNTIF(event_name = 'purchase') AS purchase_events,
   SUM(IF(event_name = 'purchase', purchase_revenue_usd, 0)) AS purchase_revenue_usd
@@ -425,6 +434,7 @@ SELECT site_name AS site, web_stream_id AS stream_id, w.start_ts, w.end_ts, w.la
     ('automated', 'declared_agent')) AS clear_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.param_class = 'suspicious') AS suspicious_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.param_class = 'human') AS human_events,
+  COUNTIF(n.event_name = 'traffic_class' AND n.phase = 'initial') AS initial_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.phase = 'final') AS final_events,
   ARRAY_AGG(DISTINCT n.traffic_version IGNORE NULLS) AS observed_versions
 FROM UNNEST(labelled_windows) w LEFT JOIN normalized n

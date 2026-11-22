@@ -57,9 +57,9 @@ export async function runContracts(detectorSource) {
     // The deliberate DevTools scenario uses the original descriptor unchanged.
     assert.equal(device.userAgent, 'device UA');
   });
-  await test('GTM names, snapshot-only final event, and readiness triggers match the v1 contract', async () => {
+  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.0.1', async () => {
     const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
-    for (const object of [c.container, ...c.tag, ...c.trigger, ...c.variable]) assert.ok(object.name.startsWith('VV - '), object.name);
+    for (const object of [c.container, ...c.tag, ...c.trigger, ...c.variable, ...c.folder]) assert.ok(object.name.startsWith('VV - '), object.name);
     assert.equal(c.tag.length, 2, 'Import creates detector and event tags only');
     assert.ok(!c.tag.some(t => t.type === 'googtag' || t.type === 'gaawc'));
     const variable = c.variable.find(v => v.name === 'VV - current class');
@@ -100,6 +100,24 @@ export async function runContracts(detectorSource) {
       assert.equal(final.firingTriggerId.includes(trigger.triggerId), phase === 'final');
     }
     const timer = c.trigger.find(t => t.name === 'VV - timer fallback 1s');
+    const hard = c.trigger.find(t => t.name === 'VV - initial hard');
+    assert.equal(hard.type, 'CUSTOM_EVENT');
+    assert.deepEqual(hard.customEventFilter, c.trigger.find(t => t.name === 'VV - initial').customEventFilter);
+    assert.deepEqual(hard.filter, [
+      {type: 'EQUALS', parameter: [
+        {type: 'TEMPLATE', key: 'arg0', value: '{{VV - DLV traffic_phase}}'},
+        {type: 'TEMPLATE', key: 'arg1', value: 'initial'}]},
+      {type: 'MATCH_REGEX', parameter: [
+        {type: 'TEMPLATE', key: 'arg0', value: '{{VV - DLV traffic_class}}'},
+        {type: 'TEMPLATE', key: 'arg1', value: '^(automated|declared_agent)$'}]}
+    ]);
+    assert.deepEqual(final.firingTriggerId, [c.trigger.find(t => t.name === 'VV - final').triggerId, hard.triggerId]);
+    assert.equal(final.tagFiringOption, 'ONCE_PER_EVENT', 'Allow both initial hard and final publications');
+    const optional = c.folder.find(f => f.name === 'VV - OPTIONAL page_view readiness (OR, once per page)');
+    assert.ok(optional);
+    const readiness = c.trigger.filter(t => t.parentFolderId === optional.folderId);
+    assert.deepEqual(readiness.map(t => t.name), ['VV - initial', 'VV - timer fallback 1s']);
+    assert.ok(!c.tag.some(t => readiness.some(r => t.firingTriggerId.includes(r.triggerId))), 'Optional set does not wire site tags');
     assert.equal(timer.type, 'TIMER'); assert.equal(timer.interval.value, '1000'); assert.equal(timer.limit.value, '1');
     assert.equal(timer.eventName.value, 'gtm.timer'); assert.equal(timer.autoEventFilter.length, 1);
     assert.ok(!c.tag.some(t => t.firingTriggerId.includes(timer.triggerId)), 'Existing Google tag is wired by its owner');
@@ -109,6 +127,30 @@ export async function runContracts(detectorSource) {
     const html = detector.parameter.find(p => p.key === 'html').value;
     assert.match(html, /window\.visitorVerdictConfig =/);
     assert.ok(!html.includes('trafficClassConfig'));
+  });
+  await test('Container routes hard initial evidence without final and final evidence for every class', async () => {
+    const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
+    const tag = c.tag.find(t => t.name === 'VV - GA4 traffic_class');
+    const routes = event => c.trigger.filter(t => tag.firingTriggerId.includes(t.triggerId)).some(t =>
+      [...t.customEventFilter, ...t.filter].every(condition => {
+        const args = Object.fromEntries(condition.parameter.map(p => [p.key, p.value]));
+        const left = args.arg0 === '{{_event}}' ? event.event : event[args.arg0.slice(11, -2)];
+        return condition.type === 'EQUALS' ? left === args.arg1 : new RegExp(args.arg1).test(left);
+      }));
+    for (const traffic_class of ['human', 'suspicious', 'automated', 'declared_agent']) {
+      assert.equal(routes({event: 'traffic_class', traffic_phase: 'initial', traffic_class}),
+        ['automated', 'declared_agent'].includes(traffic_class));
+      assert.equal(routes({event: 'traffic_class', traffic_phase: 'final', traffic_class}), true);
+      assert.equal(routes({event: 'unrelated', traffic_phase: 'initial', traffic_class}), false);
+    }
+    for (const modify of [({navigator}) => {navigator.webdriver = true;},
+      ({navigator}) => {navigator.userAgent = 'GPTBot/1.0';}]) {
+      const f = fixture({modify});
+      assert.equal(f.window.dataLayer.length, 1, 'Browser can close before final publication');
+      assert.equal(routes(f.window.dataLayer[0]), true, 'Initial evidence is already routed');
+      f.advance(8000);
+      assert.equal(f.window.dataLayer.filter(routes).length, 2, 'Both phases may be sent');
+    }
   });
   await test('CSP-safe GTM template has complete sections, equivalent validation, and only two read permissions', async () => {
     const tpl = await readFile(new URL('../gtm/templates/vv-current-class.tpl', import.meta.url), 'utf8');

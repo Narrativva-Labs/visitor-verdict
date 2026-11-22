@@ -38,7 +38,7 @@ Earlier local runs, before the v1 hardening pass, observed no synthetic human co
 
 Those controls covered desktop, Pixel 7, iPhone WebKit, keyboard-only navigation, passive reading, rapid clicks followed by reading, a rested cursor, same-spot clicks, Enter navigation, a UA switcher, Android tablet/phone emulation, PDF disabled, WebGL disabled, and reload/back-forward. Some launcher/engine configurations cannot supply a clean control and must be recorded as limitations. These observations do not establish a population false-positive rate. Earlier CDP-driven Chrome without mouse paths became suspicious on later pages; TR still has no initial effect.
 
-The [field-validation protocol](study/protocol.md) is prospective and has no field results yet. It checks deployment, coverage and clear automation with a small real-device panel and canaries; it makes no accuracy guarantee. See the [roadmap](../ROADMAP.md).
+The [field-validation protocol](study/protocol.md) is in progress and has no study results yet. It checks deployment, coverage and clear automation with a small real-device panel and canaries; it makes no accuracy guarantee. See the [roadmap](../ROADMAP.md).
 
 ### Adversarial benchmark
 

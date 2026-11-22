@@ -1,6 +1,6 @@
 # Lightweight field validation: clear automation in GA4
 
-Status: prospective protocol; no field results yet. Owner: František Bujnovský. This replaces the proposed 30-day accuracy study. The purpose is to describe **clear automation observed in GA4** and check deployment and obvious human misclassification over **14–28 consecutive days per site**. It is not an accuracy certification or an attempt to catch sophisticated evaders.
+Status: in progress since 2026-11-19; no study results yet. Owner: František Bujnovský. This replaces the proposed 30-day accuracy study. The purpose is to describe **clear automation observed in GA4** and check deployment and obvious human misclassification over **14–28 consecutive days per site**. It is not an accuracy certification or an attempt to catch sophisticated evaders.
 
 ## Freeze before starting
 
@@ -21,7 +21,7 @@ Complete this record separately for every site before collecting study data. Do 
 
 Freeze detector logic/configuration and the GTM mapping for the interval. Both data-layer phases must include the same static `traffic_version`; the GA4 detector event must forward it as an event parameter. Forward it on other tagged events where available. Verify it in the export before day 1. The version is release metadata, never a visitor identifier. v1.0.0 implements this versioned payload; verify the deployed build and final GA4 DLV mapping before starting.
 
-If a correctness fix is necessary, log the change and start a new version interval. Do not silently combine it with the frozen interval. Report unversioned and mixed-version sessions separately, alongside a total that retains them. A session with some unversioned automatic events is not necessarily a version failure: the dedicated final tag forwards version, while other tags need explicit version mapping. Shared settings capture values at Google-tag startup and the timer fallback can fire before the detector loads. Use the [readiness setup](../ga4-reporting.md#import-and-readiness-wiring) to make the initial class available to the first page_view when possible.
+If a correctness fix is necessary, log the change and start a new version interval. Do not silently combine it with the frozen interval. Report unversioned and mixed-version sessions separately, alongside a total that retains them. A session with some unversioned automatic events is not necessarily a version failure: the dedicated traffic_class tag (initial hard and final) forwards version, while other tags need explicit version mapping. Shared settings capture values at Google-tag startup and the timer fallback can fire before the detector loads. Use the [readiness setup](../ga4-reporting.md#import-and-readiness-wiring) to make the initial class available to the first page_view when possible.
 
 No held-out split, manual traffic-labelling exercise, kappa, threshold tuning or accuracy target is required. Check operational health during the interval; produce one small final report per site. Do not change thresholds to fit a missed canary.
 
@@ -79,7 +79,7 @@ Report per configuration: scheduled, skipped, launched, completed, local clear-f
 
 Run [bigquery.sql](../analysis/bigquery.sql) for **one web stream/site at a time**, with the frozen date interval and deployment guard. Use completed daily exports and wait at least 72 hours after the last study day before the final extraction. Preserve finite boundary padding. Do not fabricate sessions from missing IDs or join cookieless pings to later consented sessions.
 
-A session is the existing `(user_pseudo_id, ga_session_id)` pair in that web stream. The session start date derives from `ga_session_id` in the property timezone. “Worst class” precedence is **declared_agent > automated > suspicious > human > unknown** across all valid event parameters in the observed session; unknown means no valid class. A later human label never cancels earlier evidence. `class_transition` means more than one distinct valid class was observed; it is not proof of a chronological transition when export order ties. User properties are not exclusion evidence.
+A session is the existing `(user_pseudo_id, ga_session_id)` pair in that web stream. The session start date derives from `ga_session_id` in the property timezone. “Worst class” precedence is **automated > declared_agent > suspicious > human > unknown** across all valid event parameters in the observed session; unknown means no valid class. A later human label never cancels earlier evidence. `class_transition` means more than one distinct valid class was observed; it is not proof of a chronological transition when export order ties. User properties are not exclusion evidence.
 
 | Measure | Exact numerator / denominator or rule |
 |---|---|

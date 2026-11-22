@@ -1,6 +1,6 @@
 # Roadmap
 
-Phase 1 field validation and its exit criterion remain open. Phase 2 started early as separate design and lab/demo work on branch `phase2-verifier`; its server package is not released. Production use of Phase 2 waits for Phase 1 validation.
+Visitor Verdict grows in small, verified steps. Each release states what has and has not been validated; field validation on real traffic is in progress. Phase 2 development runs alongside it on this branch (`phase2-verifier`); its server package is not released, and Phase 2 is released only after Phase 1 meets its exit criterion.
 
 ## Phase 1 — Label clear automation in GA4 (current)
 
@@ -12,13 +12,13 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [x] CSP-friendly sandboxed variable template
 - [x] v1.0.0 release (hardening, CI, pinned CDN build with SRI)
 - [x] Class on the first `page_view` (Google tag fired on the detector's initial result, with a short timer fallback)
-- [ ] Lightweight field validation, 2–4 weeks on a few live sites: share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
+- [ ] Lightweight field validation, 2–4 weeks on a few live sites (in progress since 2026-11-19): share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
 - [ ] Publish the results, including what is missed
 - [ ] Next major version of the browser detector: the GTM tag also sends `vv_type` (only values derivable without a server: `human`, `pending`, `bot_automation`, `bot_suspicious`, `agent_unverified`) and `traffic_class` is phased out after a deprecation period — after the Phase 1 field test.
 
 **Exit criterion (open):** field results show clear automation is labelled and real visitors are not, on every validated site.
 
-## Phase 2 — Recognise and measure AI agents on the server (in progress)
+## Phase 2 — Recognise and measure AI agents on the server (in development)
 
 Goal: recognise and measure AI agents and verified bots, keep their conversions and label them. Planned conversion routing uses how the conversion itself is verified (paid order, confirmed lead); routing is not implemented in the library or collector. See [conversion guidance](docs/conversion-guidance.md).
 
@@ -30,6 +30,7 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing
 - [ ] Then test the browser class as a negative screen for ad conversions (after the privacy review)
 - [ ] Server-side GTM: verification service and optional routing of conversions by verification, built only for a real lead-spam case
+- [ ] Merge to `main` and release after Phase 1 meets its exit criterion
 
 ## Later (ideas, not commitments)
 

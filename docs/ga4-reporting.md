@@ -4,24 +4,45 @@
 
 1. In a GTM web container, open **Admin → Import Container**, choose [gtm/container-import.json](../gtm/container-import.json), select a workspace and **Merge**, then review conflicts and the import preview before confirming. Set **VV - GA4 measurement ID** to your existing measurement ID instead of `G-XXXXXXXXXX`. The import contains no Google tag or consent manager.
 2. Keep **VV - detector** on **All Pages**, **Once per page**, priority **100**, with **No additional consent required**. Consent defaults should already be established. Do not put the detector on Initialization: it can run with consent unset on sites that push an earlier event.
-3. Open the site's **existing Google tag**. Replace its early All Pages/Initialization firing trigger with **VV - initial OR VV - timer fallback 1s** as two ordinary firing triggers, not a trigger group. Set its advanced firing option to **Once per page**, so whichever trigger fires first starts it once. The timer interval is 1000ms, limit 1, enabled on all pages; it covers an unavailable or delayed detector.
+3. **Optional first `page_view` recipe:** open the site's **existing Google tag**. The import folder **VV - OPTIONAL page_view readiness (OR, once per page)** groups the two triggers for this manual step. Replace its early All Pages/Initialization firing trigger with **VV - initial OR VV - timer fallback 1s** as two ordinary firing triggers, not a trigger group. Set its advanced firing option to **Once per page**, so whichever trigger fires first starts it once. The timer interval is 1000ms, limit 1, enabled on all pages; it covers an unavailable or delayed detector.
 4. In the existing Google tag's **Shared event settings** (using an event settings variable where appropriate), set event parameter **traffic_class = `{{VV - current class}}`**. Preserve existing consent handling. With a timely initial result, the first `page_view` can carry the current page's initial class rather than waiting for a later page. This setup requires changing the existing tag; importing alone does not wire it.
-5. On every other **GA4 Event tag** (`gaawe`), add **traffic_class = `{{VV - current class}}`**, evaluated at that tag's firing time. Audit ecommerce, click and other tagged events. The dedicated final event described below is the exception: it must use the publication's DLVs.
-6. Keep **VV - GA4 traffic_class** on **VV - final** with the mappings below. Preview initial/final events, version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Neither a user property nor this setup backfills earlier events.
+5. On every other **GA4 Event tag** (`gaawe`), add **traffic_class = `{{VV - current class}}`**, evaluated at that tag's firing time. Audit ecommerce, click and other tagged events. The dedicated publication event described below is the exception: it must use the publication's DLVs.
+6. Keep **VV - GA4 traffic_class** on **VV - initial hard OR VV - final**, **Once per event**, with the mappings below. Preview initial/final events, version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Neither a user property nor this setup backfills earlier events.
 
-All imported named objects use `VV - `. The import creates two tags, six variables and three triggers. Underlying event/data names do not carry the prefix:
+All imported named objects use `VV - `. The import creates two tags, six variables, four triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
 
 | Object | Definition |
 |---|---|
 | VV - detector | Custom HTML, All Pages, once per page, priority 100 |
-| VV - GA4 traffic_class | GA4 Event, event name `traffic_class`, measurement ID `{{VV - GA4 measurement ID}}`, trigger VV - final |
+| VV - GA4 traffic_class | GA4 Event, event name `traffic_class`, measurement ID `{{VV - GA4 measurement ID}}`, triggers VV - initial hard OR VV - final, once per event |
 | VV - initial / VV - final | Custom event `traffic_class`, filtered by `{{VV - DLV traffic_phase}}` equal to `initial` / `final` |
+| VV - initial hard | Custom event `traffic_class`, phase equals `initial` AND class matches regex `^(automated|declared_agent)$` |
+| VV - OPTIONAL page_view readiness (OR, once per page) | Folder containing VV - initial and VV - timer fallback 1s; attach both manually as ordinary OR firing triggers |
 | VV - timer fallback 1s | Timer `gtm.timer`, 1000ms, limit 1, enabled on all pages |
 | VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version | Four Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default |
 | VV - current class | Validated live snapshot class, then startup previous class, then `undefined` |
 | VV - GA4 measurement ID | Constant holding your destination ID |
 
-### Final-event mappings
+### Optional first page_view timing and rollback
+
+Steps 3–4 above are opt-in; importing the folder does not change the site's Google tag. Attaching its two ordinary triggers implements **OR**, so the first initial publication or one-second timer starts the tag once per page. A GTM Trigger Group waits for **both** and does not implement this recipe. Save the original trigger list and firing option before editing.
+
+This can delay `page_view` by up to **1 s** after GTM starts; browser scheduling or existing consent gates can delay delivery further. The fallback keeps collection available but may send an unlabelled pageview. Delaying the Google tag can also delay other tags that depend on it; check those in Preview.
+
+If the site uses an explicit GA4 `page_view` event tag, leave the Google tag's startup trigger in place, attach the two readiness triggers to the explicit event tag instead, set **Once per page**, and map `traffic_class={{VV - current class}}` on that event. Ensure the Google tag's automatic pageview is disabled so only one pageview is sent. Keep SPA/history pageviews in a **separate tag** with **Once per event**: Once per page on a shared tag would suppress later virtual pageviews.
+
+To roll back, remove the two readiness triggers from the tag you changed and restore its saved trigger list and firing option. Restore any pageview sending setting changed for the explicit-event variant. The dedicated classification event can remain on initial hard plus final.
+
+### Migrating an existing install to container 1.0.1
+
+1. Add **VV - initial hard**: Custom Event name `traffic_class`; fire on some custom events where `{{VV - DLV traffic_phase}}` **equals** `initial` AND `{{VV - DLV traffic_class}}` **matches RegEx** `^(automated|declared_agent)$`.
+2. Add it as a second ordinary firing trigger to the existing **VV - GA4 traffic_class** tag, keeping **VV - final**. Keep **Once per event**, allowing initial and final to send independently.
+3. Ensure event parameter `traffic_phase={{VV - DLV traffic_phase}}` exists alongside the existing class/score/version mappings. Keep the publication DLVs and class user property.
+4. Optionally apply the first-page-view recipe above. Preview a hard initial result before closing the browser, all final classes, both readiness paths and one pageview per page, then publish through the site's usual review process. No detector JavaScript update is needed; `traffic_version` remains `1.0.0`.
+
+Initial and final hits for the same hard class are expected. Use **session-level any-hit evidence**; do not interpret `traffic_class` event counts as bot visits. Initial delivery improves short-visit coverage but remains subject to browser, network and consent timing. Measured on 21 November 2026 with Chrome (headless and headed) on the demo shop, recording each GA4 request in page storage at send time: GA4 batches events, but leaving the page flushes the batch. With 0.7 s and 1.5 s per page, every page sent `page_view` and the initial `traffic_class` (usually also final, which the detector publishes on page hide). Automation listeners such as Playwright `request` events miss these unload requests, so do not conclude from them that hits were lost. An unflushed batch remains possible when the browser process is killed without leaving the page. The first-page-view recipe additionally puts the class on `page_view` itself.
+
+### Publication-event mappings
 
 The dedicated event describes one data-layer publication. Use these exact mappings; do not substitute the live current-class variable:
 
@@ -37,7 +58,7 @@ Both detector phases contain `traffic_version: '1.0.0'`. Debug signal codes appe
 
 ### Manual installation
 
-Instead of importing, paste [gtm/custom-html.html](../gtm/custom-html.html) into a **VV - detector** Custom HTML tag, then create the variables, triggers and final event from the tables above. Retain the detector's once-per-page, priority and consent settings. Keep `debug: false`; review the wrapper's explicit `webgl: true` and `worker: true` opt-ins. Match any custom data-layer name in the GTM snippet and detector configuration.
+Instead of importing, paste [gtm/custom-html.html](../gtm/custom-html.html) into a **VV - detector** Custom HTML tag, then create the variables, triggers and publication event from the tables above. Retain the detector's once-per-page, priority and consent settings. Keep `debug: false`; review the wrapper's explicit `webgl: true` and `worker: true` opt-ins. Match any custom data-layer name in the GTM snippet and detector configuration.
 
 The imported **VV - current class** Custom JavaScript variable uses:
 
@@ -75,7 +96,7 @@ The readiness pattern makes an initial class available to the Google tag's first
 
 Shared event settings are evaluated when the Google tag fires, once for that document. Automatic `page_view`, `user_engagement` and enhanced-measurement events can retain that startup value; later final classifications do not refresh it. Other explicitly tagged GA4 events re-evaluate `VV - current class` when they fire. An initial human label can therefore coexist with later final automation evidence. Use any observed automated/declared evidence for whole-session reporting; a later human never cancels it.
 
-Keep the dedicated final event even if no later interactions occur: it provides coverage and final class/phase/score/version. Never mark `traffic_class` as a key event. The user property means **last observed class**, applies from set time, may persist into later visits, and is not a stable visitor attribute. Never use it for session exclusion or backfill. The detector cannot retract collected events.
+Keep the dedicated event on both initial hard and final even if no later interactions occur: initial hard can reach GA4 before a short-lived browser closes without publishing final, while final provides coverage and final class/phase/score/version. Hard visits can send two hits; count sessions with any matching hit rather than summing classification events. Never mark `traffic_class` as a key event. The user property means **last observed class**, applies from set time, may persist into later visits, and is not a stable visitor attribute. Never use it for session exclusion or backfill. The detector cannot retract collected events.
 
 ## Reporting
 
