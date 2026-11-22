@@ -1,6 +1,6 @@
 # Validation runs 2026-11-22
 
-Generated 2026-11-22T19:28:25.339Z from runs.csv (74 rows; rounds: pilot-1, pilot-1b, pilot-1c). Units are runs, not pages. Match = worst class across all pages and phases is in the expected set (and the expected operator for agent scenarios). Wilson intervals are descriptive; repeated runs of one configuration on one machine are not independent samples of real traffic. Skipped and errored runs are not detection results.
+Generated 2026-11-22T22:07:22.245Z from runs.csv (110 rows; rounds: pilot-1, pilot-1b, pilot-1c, round-2). Units are runs, not pages. Match = worst class across all pages and phases is in the expected set (and the expected operator for agent scenarios). Wilson intervals are descriptive; repeated runs of one configuration on one machine are not independent samples of real traffic. Skipped and errored runs are not detection results.
 
 | Round | Scenario | True class | Expected | Runs | Complete | Skip/error | Worst class (complete runs) | Match k/n | Wilson 95% | Agent phase | BotD (lab) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -30,6 +30,18 @@ Generated 2026-11-22T19:28:25.339Z from runs.csv (74 rows; rounds: pilot-1, pilo
 | pilot-1b | fetch-nojs | crawler_nojs | no_event | 3 | 3 | 0 | no_eventx3 | 3/3 | 44–100% | — | — |
 | pilot-1c | pw-headless | automation | automated | 1 | 1 | 0 | automated | 1/1 | 21–100% | — | botd-2.0.0:bot/headless_chrome |
 | pilot-1c | pw-headless-masked-quiet | automation_masked | automated or suspicious | 1 | 1 | 0 | suspicious | 1/1 | 21–100% | — | botd-2.0.0:bot/headless_chrome |
+| round-2 | pw-headless | automation | automated | 3 | 3 | 0 | automatedx3 | 3/3 | 44–100% | — | botd-2.0.0:bot/headless_chromex3 |
+| round-2 | pw-headless-masked | automation | automated | 3 | 3 | 0 | automatedx3 | 3/3 | 44–100% | — | botd-2.0.0:bot/headless_chromex3 |
+| round-2 | pw-headless-masked-quiet | automation_masked | automated or suspicious | 3 | 3 | 0 | suspiciousx3 | 3/3 | 44–100% | — | botd-2.0.0:bot/headless_chromex3 |
+| round-2 | pw-headed | automation | automated | 3 | 3 | 0 | automatedx3 | 3/3 | 44–100% | — | botd-2.0.0:bot/headless_chromex3 |
+| round-2 | pw-headed-quiet | automation_masked | automated or suspicious | 3 | 3 | 0 | humanx3 | 0/3 | 0–56% | — | botd-2.0.0:not_botx3 |
+| round-2 | pw-dom-marker | browser_agent_synthetic | declared_agent/openai | 3 | 3 | 0 | declared_agentx3 | 3/3 | 44–100% | p1:declared_agent/openaix3 | botd-2.0.0:not_botx3 |
+| round-2 | patchright-headed | automation_stealth | automated or suspicious | 3 | 0 | 3 | — | — | n/e | — | — |
+| round-2 | nodriver-headed | automation_stealth | automated or suspicious | 3 | 0 | 3 | — | — | n/e | — | — |
+| round-2 | zendriver-headed | automation_stealth | automated or suspicious | 3 | 0 | 3 | — | — | n/e | — | — |
+| round-2 | ga4f-headless | automation | automated | 3 | 3 | 0 | automatedx3 | 3/3 | 44–100% | — | botd-2.0.0:bot/headless_chromex3 |
+| round-2 | ga4f-masked | automation | automated | 3 | 3 | 0 | automatedx3 | 3/3 | 44–100% | — | botd-2.0.0:bot/headless_chromex3 |
+| round-2 | fetch-nojs | crawler_nojs | no_event | 3 | 3 | 0 | no_eventx3 | 3/3 | 44–100% | — | — |
 
 <!-- notes: everything below is kept when the runner regenerates the tables -->
 
