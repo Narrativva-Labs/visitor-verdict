@@ -33,7 +33,7 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 - [ ] Keep evidence and identity apart in the output: a browser hint about the operator (UI marker, user-agent token) is never reported as a verified operator
 - [ ] More signing operators from public key directories (Meta Muse `muse.ai`, Browserbase, Manus, Google `agent.bot.goog`, Amazon Bedrock AgentCore when enabled), with intermediaries such as Browserbase reported as infrastructure, not as the agent
 - [ ] Personal Agent Protocol (Poppy 1.0) as an optional verifier: a verified session means an agent acting for a person; a manifest or `client_id` alone is only a claim
-- [ ] Agents that never load the page (commerce and agent protocols such as ACP, UCP, A2A, MCP): label those requests on the server, since a browser detector cannot see them
+- [ ] Agents that never load the page: orders placed through agentic checkout protocols (ACP, UCP) are measured from the shop or payment backend and sent server-side with an agent label and the protocol as the channel; other API calls (catalogue, MCP) are labelled on the server, since a browser detector cannot see them
 - [ ] Longer field test on live sites
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing
 - [ ] Label conversions for Meta Conversions API and Google Ads Enhanced Conversions in server-side GTM; nothing withheld by default (see [conversion guidance](docs/conversion-guidance.md))
@@ -43,6 +43,5 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 
 - GTM Community Template Gallery template (separate repository, pinned CDN build)
 - Scheduled checks of official AI-agent user-agent documentation
-- Visits sent by AI answers (a person who clicked a link in ChatGPT, Perplexity, Gemini or Copilot) as a separate view next to agent and bot labels
 - Behaviour signals from published agent studies (cursor teleports, typing without key events, zero-duration scroll bursts), only after a lab check against autofill, paste, keyboard navigation and assistive technology
 - Transport fingerprints (JA4, HTTP/2, client hints versus user agent) where a site's own CDN or proxy already provides them
