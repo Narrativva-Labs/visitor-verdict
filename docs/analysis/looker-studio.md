@@ -36,3 +36,45 @@ Connect each result at its own grain. Do not blend B/C/D on date/cohort: multipl
 Keep missing-ID/cookieless pings in F2 as event-level totals, never fabricated sessions. Never join via IP/UA, coalesce missing IDs to one visitor, or retroactively link pre-consent pings. JS-less traffic is generally absent even here. Raw observed BigQuery totals can differ from GA4 modeled UI reporting.
 
 Display labels: `human` = **no automation detected**, `suspicious` = uncertain evidence, `automated` = automation evidence rather than intent, `declared_agent` = unverified claim. Score is not a probability. User property `traffic_class` is last observed class, applies from set time and is never session-exclusion evidence. Never mark `traffic_class` as a key event.
+
+## Campaign dashboard: AI agents and bots in campaigns
+
+[campaign-dashboard.sql](campaign-dashboard.sql) holds two plain SELECTs that run with read-only access and can be pasted as BigQuery **custom queries**: Query A for the browser integration (`traffic_class`, `traffic_agent`), Query B for the server collector (`vv_type`, `vv_detail`). Each returns **one row per unit** (session; Query B also denied-ping pages and unjoinable hits, see `unit_type`), so Looker Studio can sum rows without double counting. Columns: site, `session_date`, source/medium/campaign with `source_basis`, default channel, `has_gclid`, device, landing page, strongest `class` and `class_group`, agent operator, coverage flags, engagement, purchases, unique transactions, revenue, leads and other key events. Test traffic is flagged in `traffic_scope`/`test_reason`, never dropped; edit the test regexes and `key_events_regex` in the `params` CTE.
+
+### Create the data source
+
+1. **Create → Data source → BigQuery → Custom query**, choose the billing project, paste Query A or B with your dataset, tick **Enable date range parameters** (the SQL uses `@DS_START_DATE`/`@DS_END_DATE`) and **Connect**. Several properties: UNION ALL one `src` block per property with its own site label.
+2. Or create the report from a link with the [Linking API](https://developers.google.com/looker-studio/integrate/linking-api). Without `c.reportId` the default report gets one embedded data source, so no alias is needed; URL-encode every value:
+
+```text
+https://lookerstudio.google.com/reporting/create?c.mode=edit
+  &r.reportName=<name>&ds.connector=bigQuery&ds.type=CUSTOM_QUERY
+  &ds.billingProjectId=<billing-project>&ds.datasourceName=<name>&ds.sql=<encoded SQL>
+```
+
+The Linking API cannot tick date range parameters, so for a link replace `@DS_START_DATE`/`@DS_END_DATE` with a rolling window (for example `FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 28 DAY))` and `... INTERVAL 1 DAY`) and filter with the report's date control on `session_date`. Remove comments and repeated whitespace first: very long links (about 16 kB and more) are rejected, so use one link per query, and add the second data source in the report with **Resource → Add data**. The report opens with a default table; the person who opens the link owns the report and its data source credentials.
+
+### Calculated fields and charts
+
+Add these fields to the data source (Query B: filter `unit_type = session` for session metrics; ping pages are shown separately, never added):
+
+| Field | Formula |
+|---|---|
+| Units | `SUM(units)` |
+| Engaged | `SUM(IF(engaged, 1, 0))` |
+| Purchasing units | `SUM(IF(purchases > 0, 1, 0))` |
+| Coverage | `SUM(IF(has_class, 1, 0)) / SUM(units)` |
+| Pending share (B) | `SUM(IF(is_pending, 1, 0)) / SUM(units)` |
+| Labelled non-human revenue share | `SUM(IF(is_labelled_non_human, purchase_revenue, 0)) / SUM(purchase_revenue)` |
+| Labelled non-human conversion share | `SUM(IF(is_labelled_non_human, purchases + leads, 0)) / SUM(purchases + leads)` |
+
+Six charts are enough for a first version. Put a date control, a `site` control and a `traffic_scope` control (default `real`) on top.
+
+1. **Scorecards:** Units, Purchasing units, purchase revenue, leads, Coverage, Labelled non-human revenue share.
+2. **Stacked bar by campaign** (dimension `campaign`, breakdown `class_group`): Units.
+3. **Table by source / medium / campaign** with `class_group` as pivot: Units, Engaged, purchases, purchase revenue, leads.
+4. **Table by default channel and `has_gclid`**: Units, Labelled non-human conversion share, Labelled non-human revenue share.
+5. **Table by landing page × class**: Units, purchases, leads.
+6. **Time series by `session_date`**: Coverage and Pending share, so a drop in labels is visible as a measurement gap rather than as zero agents.
+
+Read the numbers as labels, not removals: the headline stays all units. `unknown`/`missing` means no label reached the export (before deployment, blocked tag, short visit), not human. `suspicious` and `bot_suspicious` are uncertain; show them apart from the clear classes. Agent-assisted sessions are usually real customers. GA4 drops traffic from known bots and spiders before export, so obvious crawlers are absent and the denominators describe only what reached GA4. Revenue is property-currency purchase revenue, not deduplicated or refund-adjusted.
