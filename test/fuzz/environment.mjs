@@ -82,6 +82,19 @@ document.createElement = function () {
   };
   return el;
 };
+// Agent UI marker DOM: id lookup with fixed parents and a recording MutationObserver.
+var rootNode = {}, bodyNode = {}, markerNodes = Object.create(null), observers = [];
+document.documentElement = rootNode; document.body = bodyNode;
+document.getElementById = function (id) { return markerNodes[id] || null; };
+function placeMarker(id, parent) {
+  markerNodes[id] = {id: id, parentNode: parent};
+  observers.forEach(function (o) { if (o.active) { o.fn([{type: 'childList'}], o); } });
+}
+window.MutationObserver = function (fn) { this.fn = fn; this.active = false; observers.push(this); };
+window.MutationObserver.prototype.observe = function () { this.active = true; };
+window.MutationObserver.prototype.disconnect = function () { this.active = false; };
+if (spec.marker === 'start') { placeMarker('claude-agent-glow-border', bodyNode); }
+if (spec.marker === 'decoy') { placeMarker('claude-agent-glow-border-inner', bodyNode); placeMarker('codex-browser-sidebar-comments-root', rootNode); placeMarker('claude-phantom-cursor', rootNode); }
 Object.defineProperty(document, 'cookie', {get: function () { throw Error('forbidden cookie read'); }, set: function () { throw Error('forbidden cookie write'); }});
 window.URL = {createObjectURL: function () { return 'blob:local-fake'; }, revokeObjectURL: function () {}};
 window.Blob = function (parts) { this.parts = parts; };
@@ -116,6 +129,7 @@ if (old.indexOf('noWindowAdd') !== -1) { window.addEventListener = undefined; }
 if (old.indexOf('noDocumentAdd') !== -1) { document.addEventListener = undefined; }
 if (old.indexOf('noWindowRemove') !== -1) { window.removeEventListener = undefined; }
 if (old.indexOf('noDocumentRemove') !== -1) { document.removeEventListener = undefined; }
+if (old.indexOf('noMutationObserver') !== -1) { delete window.MutationObserver; }
 `;
 
 export const lifecycle = String.raw`
@@ -138,12 +152,14 @@ if (spec.teleport) {
     dispatch(document, 'click', {clientX:500+j*100,clientY:500,pointerType:'mouse',detail:1,isTrusted:true});
   }
 }
+if (spec.marker === 'late') { advance(2000); placeMarker('codex-agent-overlay-root', rootNode); }
 if (spec.race === 'hide-first') { dispatch(window, 'pagehide'); }
 if (spec.race === 'visibility') {
   advance(100); document.visibilityState = 'hidden'; dispatch(document, 'visibilitychange');
   advance(4000000); document.visibilityState = 'visible'; dispatch(document, 'visibilitychange');
 }
 advance(4000001);
+if (spec.marker === 'after-final') { placeMarker('claude-phantom-cursor', bodyNode); placeMarker('claude-phantom-cursor', bodyNode); }
 dispatch(window, 'pagehide'); dispatch(window, 'pagehide');
 stale.forEach(function (t) { t.fn(); });
 dispatch(window, 'pageshow', {persisted:true}); dispatch(window, 'pagehide');
@@ -163,5 +179,5 @@ if (spec.poisonSnapshot) {
 export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
   beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
   readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
-  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.0.0',
+  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.1.0',
   previous:window.__visitorVerdictLast})`;

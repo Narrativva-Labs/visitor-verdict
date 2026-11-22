@@ -15,7 +15,7 @@ export function summarize(raw) {
     const final = entries.filter(e => e.traffic_phase === 'final');
     if (initial.length !== 1 || final.length !== 1) issues.push(`${path}: ${initial.length} initial, ${final.length} final events (expected one each)`);
     for (const event of entries) {
-      if (event.traffic_version !== '1.0.0' || !classes.has(event.traffic_class) || !Number.isFinite(event.traffic_score) || !Array.isArray(event.traffic_signals) || event.traffic_signals.some(s => typeof s !== 'string')) issues.push(`${path}: malformed detector event or debug signals missing`);
+      if (event.traffic_version !== '1.1.0' || !classes.has(event.traffic_class) || !Number.isFinite(event.traffic_score) || !Array.isArray(event.traffic_signals) || event.traffic_signals.some(s => typeof s !== 'string')) issues.push(`${path}: malformed detector event or debug signals missing`);
     }
     return {path, initial: initial[0] ? cleanEvent(initial[0]) : null, final: final[0] ? cleanEvent(final[0]) : null,
       initialCount: initial.length, finalCount: final.length};

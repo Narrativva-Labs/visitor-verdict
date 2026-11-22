@@ -17,3 +17,18 @@ window.dataLayer.push = function (event) {
     body: JSON.stringify(event), keepalive: true}).catch(function () {});
   return this.length;
 };
+// Test harness only: ?marker=id[,id] places synthetic agent UI markers where the
+// agents put them (Claude markers in body, the OpenAI overlay on the root element);
+// &markerDelay=ms inserts them later instead of before the detector loads.
+(function () {
+  var match = /[?&]marker=([a-z,-]+)/.exec(location.search), delay = /[?&]markerDelay=(\d+)/.exec(location.search);
+  if (!match) { return; }
+  function place() {
+    match[1].split(',').forEach(function (id) {
+      var node = document.createElement('div');
+      node.id = id;
+      (id.indexOf('claude-') === 0 ? document.body : document.documentElement).appendChild(node);
+    });
+  }
+  if (delay) { setTimeout(place, Number(delay[1])); } else { place(); }
+}());

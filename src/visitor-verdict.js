@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.0.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.1.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -106,6 +106,8 @@
     }
     var signals = [], families = {}, score = 0, hard = false, declared = false, direct = false;
     var done = false, initial, initialPublished = false, finalPublished = false, elapsed = 0, started = null, timer;
+    // Agent UI markers: operator from a marker (this or the previous document).
+    var agent = '', marked = false, agentPublished = false, latest = '', observer = null;
     var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
     var inputTarget = canListen(w) ? w : canListen(d) ? d : null, observesInput = true;
     var visibilityTarget = canListen(d) ? d : w;
@@ -208,7 +210,7 @@
       signals.push(code);
       if (weight === 100) {
         if (code !== 'CA' && code !== 'CD') { direct = true; }
-        if (code === 'AG' || code === 'CD') { declared = true; } else { hard = true; }
+        if (code === 'AG' || code === 'CD' || code === 'DM') { declared = true; } else { hard = true; }
       }
       else if (weight) {
         score += Math.max(0, weight - (families[family] || 0));
@@ -254,15 +256,23 @@
       return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 255 &&
         Math.floor(value) === value ? value : 0;
     }
+    function cleanAgent(value) {
+      return value === 'openai' || value === 'anthropic' ? value : '';
+    }
     function cleanClass(value) {
       if (value === 'human' || value === 'suspicious' || value === 'automated' || value === 'declared_agent') { return value; }
       if (value && tag.call(value) === '[object Object]' && value.direct === true && typeof value.value === 'string' &&
-          (value.value === 'automated' || value.value === 'declared_agent')) { return {value: value.value, direct: true}; }
+          (value.value === 'automated' || value.value === 'declared_agent')) {
+        var clean = {value: value.value, direct: true};
+        if (cleanAgent(value.agent)) { clean.agent = value.agent; }
+        return clean;
+      }
       return '';
     }
     function classText(value) {
       value = cleanClass(value);
-      return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true}';
+      return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true' +
+        (value.agent ? ',"agent":"' + value.agent + '"' : '') + '}';
     }
     function readStore() {
       // Our bounded schema fits comfortably below this cap. Ignore oversized
@@ -324,7 +334,9 @@
         (env >= 2 && (families.interaction || families.navigation)));
     }
     function publish(phase) {
-      if (phase === 'initial' ? initialPublished : phase !== 'final' || finalPublished || !initialPublished) { return initial; }
+      // One initial, at most one agent escalation and one final, in any order after initial.
+      if (phase === 'initial' ? initialPublished : !initialPublished ||
+          (phase === 'final' ? finalPublished : phase !== 'agent' || agentPublished)) { return initial; }
       var result = hard ? 'automated' : declared ? 'declared_agent' :
         suspicious() ? 'suspicious' : 'human';
       if (phase === 'final' && initial === 'automated') { result = initial; }
@@ -334,14 +346,18 @@
           typeof total !== 'number' || !isFinite(total)) { return initial; }
       // Mark before any consumer callback can reenter. Never read public state.
       if (phase === 'initial') { initialPublished = true; initial = result; }
-      else { finalPublished = true; }
-      snapshot = Object.freeze({'class': result, score: total, phase: phase, version: version});
+      else if (phase === 'final') { finalPublished = true; }
+      else { agentPublished = true; }
+      latest = result;
+      var state = {'class': result, score: total, phase: phase, version: version};
       var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase,
         traffic_score: total, traffic_version: version};
+      if (agent) { state.agent = event.traffic_agent = agent; }
+      snapshot = Object.freeze(state);
       if (config.debug) { event.traffic_signals = signals.slice(0); }
       // Only direct evidence can seed one grace document. CA/CD alone store no
       // provenance, so a carried class cannot seed another grace document.
-      if (phase === 'final') { save(direct ? {value: result, direct: true} : result); }
+      if (phase !== 'initial') { save(provenance(result)); }
       try {
         var layer = w[config.dataLayerName];
         if (layer === undefined || layer === null) { layer = w[config.dataLayerName] = []; }
@@ -349,6 +365,50 @@
             Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); }
       } catch (ignore) {}
       return result;
+    }
+    function provenance(result) {
+      // Only a marker seen in this document renews the stored operator.
+      return direct ? (marked ? {value: result, direct: true, agent: agent} : {value: result, direct: true}) : result;
+    }
+    // Agent UI markers (DM): exact IDs and parents that browser agents inject
+    // while they control the tab. Presence only; content is never read.
+    var markers = ['claude-agent-glow-border', 'claude-phantom-cursor', 'codex-agent-overlay-root'];
+    function marker() {
+      try {
+        for (var j = 0; j < markers.length; j++) {
+          var node = d.getElementById(markers[j]);
+          if (node && node.parentNode === (j < 2 ? d.body : d.documentElement)) { return j < 2 ? 'anthropic' : 'openai'; }
+        }
+      } catch (ignore) {}
+      return '';
+    }
+    function mark(operator) {
+      // Escalate only: automated keeps precedence; a repeated operator adds nothing.
+      var changed = !hard && (latest !== 'declared_agent' || agent !== operator);
+      marked = true; agent = operator; add('DM', 100); unwatch();
+      if (!initialPublished) { return; }
+      if (changed) { publish('agent'); }
+      else if (finalPublished) { save(provenance(latest)); }
+    }
+    function check() {
+      try {
+        var operator = marker();
+        if (operator && !marked) { mark(operator); }
+      } catch (ignore) {}
+    }
+    function watch() {
+      try {
+        if (done || marked || typeof w.MutationObserver !== 'function' || !d.documentElement) { return; }
+        observer = new w.MutationObserver(check);
+        observer.observe(d.documentElement, {childList: true, subtree: true, attributes: true, attributeFilter: ['id']});
+      } catch (ignore) { unwatch(); }
+    }
+    function unwatch() {
+      if (observer) {
+        try { observer.disconnect(); } catch (ignore) {}
+        observer = null;
+      }
+      if (done) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
     for (i = 0; i < config.agentTokens.length; i++) {
       var token = config.agentTokens[i];
@@ -420,6 +480,7 @@
       if (saved.lastClass && saved.lastClass.direct === true) {
         if (saved.lastClass.value === 'automated') { add('CA', 100); }
         else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); }
+        agent = cleanAgent(saved.lastClass.agent);
       }
       timestamps = mergeTimes(saved.timestamps);
       var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
@@ -452,8 +513,11 @@
     function cleanup() {
       exposure(); stopWorker();
       for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
-      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); removeListener(w, 'pagehide', finish, listenerOptions);
+      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      // A live marker watch keeps pagehide until it disconnects.
+      if (!observer) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
+    function hide() { unwatch(); finish(); }
     function finish() {
       if (done) { return; }
       done = true; cleanup();
@@ -494,10 +558,12 @@
       for (i = 0; i < events.length; i++) {
         if (!addListener(inputTarget, events[i], interact, listenerOptions)) { observesInput = false; }
       }
-      addListener(w, 'pagehide', finish, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      addListener(w, 'pagehide', hide, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
       visibility();
+      var operator = marker();
+      if (operator) { mark(operator); }
       initial = publish('initial'); ua = ''; brands = null;
-      startWorker();
-    } catch (ignore) { done = true; cleanup(); }
+      startWorker(); watch();
+    } catch (ignore) { done = true; unwatch(); cleanup(); }
   }
 }(window, document, navigator));
