@@ -13,7 +13,7 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.4.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.3.5.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
@@ -145,7 +145,7 @@ After a document's soft TTL (`max-age` minus `Age`, 300 seconds for no-store, bo
 
 ## Server-side GTM
 
-Use the canonical [Server-side GTM reference design](../docs/conversion-guidance.md#server-side-gtm-reference-design).
+Use the canonical [Server-side GTM reference design](../docs/conversion-guidance.md#server-side-gtm-reference-design-optional-routing).
 It places this Node library in a verifying proxy before sGTM; the library does not run
 inside the template sandbox. The reference specifies raw-header preservation, trusted
 X-VV-\* headers, Request Header variables, tag routing and transformations. It is not a
@@ -170,26 +170,33 @@ Other/absent signature tags are reported per-label as none/ignored_non_wba and d
 
 Selection is pure and tested: valid signature wins; otherwise definitive invalid wins over indeterminate. An invalid presented signature never becomes ip_match, though independent IP evidence is attached after evaluable signature failures. Early malformed/resource/context failures avoid further fetches. Unknown WBA Signature-Agent identities trigger no network I/O. Identity claims attached only to ignored non-WBA signatures do not restrict independent IP checks. Unsupported dictionary members are untrusted for their label without poisoning valid peers.
 
-Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabels({ verdict?, browserClass?, browserPhase? })`. It returns exactly two GA4 event parameters; register both as **event-scoped custom dimensions** (`customEvent:vv_type` and `customEvent:vv_detail` in the Data API).
+Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabels({ verdict?, browserClass?, browserPhase?, browserAgent? })` (`browserAgent` since 0.3.5). It returns exactly two GA4 event parameters; register both as **event-scoped custom dimensions** (`customEvent:vv_type` and `customEvent:vv_detail` in the Data API).
 
-| `vv_type`          | First matching evidence                                                   |
-| ------------------ | ------------------------------------------------------------------------- |
-| `bot_spoofed`      | Server `signature_invalid`                                                |
-| `agent_verified`   | Server `signature_valid`/`ip_match`, purpose `user_directed` or `unknown` |
-| `crawler_verified` | Server `signature_valid`/`ip_match`, purpose `crawler`                    |
-| `bot_automation`   | Browser `automated`                                                       |
-| `agent_unverified` | Browser `declared_agent` or unverified UA/Signature-Agent claim           |
-| `bot_suspicious`   | Browser `suspicious`                                                      |
-| `human`            | Browser `human`                                                           |
-| `pending`          | No browser class or qualifying server evidence                            |
+| `vv_type`          | First matching evidence                                                                         |
+| ------------------ | ----------------------------------------------------------------------------------------------- |
+| `bot_spoofed`      | Server `signature_invalid`                                                                      |
+| `agent_verified`   | Server `signature_valid`/`ip_match`, purpose `user_directed` or `unknown`                       |
+| `crawler_verified` | Server `signature_valid`/`ip_match`, purpose `crawler`                                          |
+| `bot_automation`   | Browser `automated`                                                                             |
+| `agent_unverified` | Browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent claim |
+| `bot_suspicious`   | Browser `suspicious`                                                                            |
+| `human`            | Browser `human`                                                                                 |
+| `pending`          | No browser class or qualifying server evidence                                                  |
 
 Every verified result (`signature_valid` or `ip_match`) with unknown purpose yields `agent_verified`, never `pending`, even if browser evidence exists. The purpose segment remains `unknown`: `agent_verified` confirms identity and does not by itself establish a user-directed product role. Only an explicit crawler purpose yields `crawler_verified`.
 
-`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, e.g. `openai|signature_valid|user_directed|signature_agent|human|final`. Missing segments are `-`, unknown operator is `none`. With a verdict, claim is `signature_agent` (takes precedence), `ua_token` or `none`; unverified purpose is `unknown`. Browser classes are `human`, `suspicious`, `automated`, `declared_agent`; phases initial/final. Invalid browser values become `-`. Operators must begin with a lowercase ASCII letter, followed by at most 23 lowercase ASCII letters, digits or underscores; invalid/long configured names become `none`, never truncated. Detail is at most 100 characters, with no version segment or raw claims.
+`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, e.g. `openai|signature_valid|user_directed|signature_agent|human|final`. Missing segments are `-`, unknown operator is `none`. With a verdict, claim is `signature_agent` (takes precedence), `ua_token` or `none`; `dom_marker` when a browser page marker supplies the operator (below); unverified purpose is `unknown`. Browser classes are `human`, `suspicious`, `automated`, `declared_agent`; phases `initial`, `final`, `agent`. Invalid browser values become `-`. Operators must begin with a lowercase ASCII letter, followed by at most 23 lowercase ASCII letters, digits or underscores; invalid/long configured names become `none`, never truncated. Detail is at most 100 characters, with no version segment or raw claims.
 
-The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified=agent_verified=5. Fresh equal-rank evidence replaces the earlier type and operator. Same-type/same-operator renewal never shortens active expiry; lower-ranked inherited hits do not extend it. Verified sticky expiry is capped to the accepted proof deadline and the configured TTL. A detected replay overrides active verified memory for that hit only; malformed headers or other invalid signatures can inherit active verified evidence without extending it. Detail describes the current hit, optionally using a previously verified operator. Scope full events to client_id + session_id and denied pings to page_id + client_id, with a bounded memory-only LRU/TTL and no stored IPs.
+`browserAgent` (since 0.3.5) is the operator a browser detector observed from a page marker, for example an in-browser agent's own DOM element. Only `openai` and `anthropic` are accepted; any other value is ignored. A marker is observed evidence, never verification, and it never changes `vv_type`. Operator precedence:
 
-Filter `vv_type` beginning with `agent_` or `bot_`, or `vv_detail` beginning with `openai|`. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Browser/GTM-only sites keep `traffic_class` for now.
+1. A verified identity (`signature_valid` or `ip_match`) always supplies the operator and the claim from server evidence. A conflicting marker is ignored: an OpenAI signature with an Anthropic marker stays `openai|signature_valid|…|signature_agent|…`, `agent_verified`.
+2. `signature_invalid` stays `bot_spoofed` with operator `none`; a marker does not name an operator for a failed signature.
+3. Otherwise, with browser class `declared_agent` and an accepted marker, the marker supplies the operator and claim becomes `dom_marker`, replacing an unverified UA or Signature-Agent claim, so the claim segment names the source of the operator. The type stays `agent_unverified`. Example without server evidence: `anthropic|-|-|dom_marker|declared_agent|agent`.
+4. A marker with any other browser class is ignored.
+
+The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified=agent_verified=5. Fresh equal-rank evidence replaces the earlier type and operator. Same-type/same-operator renewal never shortens active expiry; lower-ranked inherited hits do not extend it. Verified sticky expiry is capped to the accepted proof deadline and the configured TTL. A detected replay overrides active verified memory for that hit only; malformed headers or other invalid signatures can inherit active verified evidence without extending it. Detail describes the current hit, optionally using a previously known operator (verified, or since 0.3.5 a page marker's operator inherited with a stronger `agent_unverified` type). Scope full events to client_id + session_id and denied pings to page_id + client_id, with a bounded memory-only LRU/TTL and no stored IPs.
+
+Filter `vv_type` beginning with `agent_` or `bot_`, or `vv_detail` beginning with `openai|`. Since 0.3.5 that operator can come from a page marker (claim `dom_marker`, unverified); add `vv_type = agent_verified` when only verified operators count. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Browser/GTM-only sites keep `traffic_class` for now.
 
 Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
 

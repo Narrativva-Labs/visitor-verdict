@@ -30,7 +30,7 @@ operator|verification|purpose|claim|browser_class|browser_phase
 openai|signature_valid|user_directed|signature_agent|human|final
 ```
 
-Unknown operator is `none`; absent positions are `-`. Verification values are `signature_valid`, `signature_invalid`, `ip_match`, `no_signature`, `none`; purpose is `user_directed`, `crawler`, `unknown`; claim is `signature_agent`, `ua_token`, `none`; browser class is `human`, `suspicious`, `automated`, `declared_agent`; browser phase is `initial`, `final`. Never forward raw claims or the diagnostic verdict to GA4. Detail can be dropped before type when the hit exceeds the body budget; missing detail does not invalidate type.
+Unknown operator is `none`; absent positions are `-`. Verification values are `signature_valid`, `signature_invalid`, `ip_match`, `no_signature`, `none`; purpose is `user_directed`, `crawler`, `unknown`; claim is `signature_agent`, `ua_token`, `dom_marker`, `none`; browser class is `human`, `suspicious`, `automated`, `declared_agent`; browser phase is `initial`, `final`, `agent`. `dom_marker` (server 0.3.5) means the browser detector observed the operator from a page marker, for example `anthropic|-|-|dom_marker|declared_agent|agent`: the operator is named but not verified, and the type stays `agent_unverified`. Never forward raw claims or the diagnostic verdict to GA4. Detail can be dropped before type when the hit exceeds the body budget; missing detail does not invalidate type.
 
 ## Build whole-session segments in Explorations
 

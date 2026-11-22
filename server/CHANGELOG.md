@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.5 — 2026-11-22
+
+- `visitorLabels` accepts optional `browserAgent` (`openai` or `anthropic`, from a browser page marker). With browser class `declared_agent` and no verified identity or invalid signature, it supplies the `vv_detail` operator and the claim segment `dom_marker`; the type stays `agent_unverified`. Verified identity always wins over a conflicting marker; other values are ignored.
+- Accept browser phase `agent` in `vv_detail`.
+- Export the `BrowserAgent` type. Correct the session ranks in DESIGN.md.
+
 ## 0.3.4 — 2026-11-21
 
 - Preserve typed failures across independent package copies.

@@ -50,9 +50,16 @@ const health = verifier.status();
 const lastRefresh: boolean | null = health.lastRefreshOk;
 void lastRefresh;
 
-import { visitorLabels, type VisitorType } from '../dist/index.js';
+import { visitorLabels, type VisitorType, type BrowserAgent } from '../dist/index.js';
 const label: VisitorType = visitorLabels({ browserClass: 'human', browserPhase: 'final' }).vv_type;
 void label;
+const marker: BrowserAgent = 'anthropic';
+const marked: VisitorType = visitorLabels({
+  browserClass: 'declared_agent',
+  browserPhase: 'agent',
+  browserAgent: marker,
+}).vv_type;
+void marked;
 
 const tokens: string[] = serverAgentTokens(defaultRegistry);
 void tokens;

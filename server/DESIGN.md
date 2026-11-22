@@ -72,8 +72,16 @@ names start with a lowercase ASCII letter and contain at most 24 lowercase ASCII
 letters, digits or underscores; rejecting invalid names preserves separators
 and guarantees the 100-character bound, including a sticky operator in collectors.
 
+Since 0.3.5 `browserAgent` carries an operator observed by the browser detector from a
+page marker (`openai` or `anthropic` only). It is used only with browser class
+`declared_agent` and only when the server has neither a verified identity nor an
+invalid signature; the claim segment is then `dom_marker` and the type stays
+`agent_unverified`. Verified identity always wins, and a marker never upgrades a type to
+verified or downgrades a spoofed one. The browser phase `agent` marks the detector's
+update after such a marker appears.
+
 Session aggregation belongs to the collector: pending=0, human=1, bot_suspicious=2,
-agent_unverified=3, bot_automation=4, crawler_verified/agent_verified=5, bot_spoofed=6;
-equal ranks keep the prior type. Current-hit detail remains distinct from sticky type.
+agent_unverified=3, bot_automation=4, bot_spoofed=4.5, crawler_verified/agent_verified=5;
+fresh equal-rank evidence replaces the prior type and operator. Current-hit detail remains distinct from sticky type.
 Full hits use client_id+session_id, denied pings page_id; bounded memory-only storage
 must expire and clear on close. No library persistence or request waiting is introduced.

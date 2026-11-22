@@ -2,7 +2,7 @@
 
 **Reference design; not implemented in the library or the collector.**
 
-Recommendations as of November 2026. They are not part of the library: the verifier and the browser detector only label traffic. What you send to ad platforms is the integrator's decision. Evidence is still thin in places; each rule says why it exists, and the open questions are listed at the end.
+Recommendations as of November 2026. They are not part of the library: the verifier and the browser detector only label traffic. **By default nothing is held or excluded:** every conversion goes where it would go without Visitor Verdict, and the labels only describe it in GA4. Holding or dropping conversions for ad platforms is an optional policy that the integrator decides, best after measuring their own share of agent and bot traffic. Evidence is still thin in places; each rule says why it exists, and the open questions are listed at the end.
 
 ## The principle
 
@@ -23,24 +23,35 @@ Use `vv_type=agent_verified` for verified signature/IP evidence with `user_direc
 or `unknown` purpose, and `vv_type=crawler_verified` for a verified crawler.
 The purpose position in `vv_detail` retains `unknown` when the role is unsettled;
 inspect it to distinguish user-directed from unknown purpose. Unverified ≠ human.
+An operator in `vv_detail` with claim `dom_marker` (server 0.3.5) was observed by the browser
+detector from a page marker and is not verified; the type stays `agent_unverified`.
 
-## Rules
+## Default: label only
+
+Send conversions as you do today, to GA4 and to ad platforms. Report agents and automation
+separately in GA4 with `vv_type` and `vv_detail`. Neither the library nor Vanilla holds,
+delays or drops a conversion.
+
+## Optional routing rules
+
+Only if you decide to route conversions for ad platforms by verification status, this is a
+starting point. Without such a decision, every cell is "send".
 
 | Visitor | Paid order (payment captured, fraud checks passed) | Lead or sign-up, unverified | Lead verified (confirmed email, CRM qualified) |
 |---|---|---|---|
 | Human | Send everywhere | Send; prefer optimising on qualified leads | Send |
-| Verified agent | **Send everywhere**; label in GA4 | **Hold** from Meta and Google Ads until verified; label in GA4 | Send |
-| Clear automation | Send only after payment settlement and fraud review | **Do not send** to Meta or Google Ads; label in GA4 | Send (rare; review manually) |
-| Crawler | Never | Never | Never |
+| Verified agent | **Send everywhere**; label in GA4 | Optional: hold from Meta and Google Ads until verified; label in GA4 | Send |
+| Clear automation | Optional: send only after payment settlement and fraud review | Optional: do not send to Meta or Google Ads; label in GA4 | Send (rare; review manually) |
+| Crawler | Optional: do not send (crawlers rarely convert) | Optional: do not send | Optional: do not send |
 
-Additional rules:
+Additional rules (rules 1–3 apply with or without routing):
 
-1. **Never send the visitor label to ad platforms.** Use it in server-side GTM only to decide send / wait / drop. The label stays in GA4. Reasons: data minimisation, and no platform defines a parameter for it.
+1. **Never send the visitor label to ad platforms.** If you route conversions, use it in server-side GTM only to decide send / wait / drop. The label stays in GA4. Reasons: data minimisation, and no platform defines a parameter for it.
 2. **Omit the agent's IP from Meta `client_ip_address`.** For `action_source=website`, keep `client_user_agent` and `event_source_url`: Meta requires both for website events ([customer information parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/customer-information-parameters), [server event parameters](https://developers.facebook.com/documentation/ads-commerce/conversions-api/parameters/server-event)). A UA describes browser context, not the customer's identity. For backend-confirmed agent orders, retain `website` when accurate; use a matching non-website `action_source` such as `other` only for genuinely non-website events and check the attribution and optimisation impact. `system_generated` describes automatic system events such as subscription renewals, not a generic backend-confirmed order. A webhook alone does not change a website purchase's action source. Use customer match data only under the site's consent and platform rules.
 3. **Send orders from the server after payment confirmation, with the order ID.** Google Ads can then retract or restate a conversion after a refund or chargeback.
 4. **Delete nothing in GA4.** Report conversion rate and A/B tests with humans only, or show agents and automation separately. This is where most of the value lies.
 
-## Server-side GTM reference design
+## Server-side GTM reference design (optional routing)
 
 A trusted verifying proxy runs the Node library **in front of sGTM**, retaining the
 original method, raw target, trusted configured authority and separate raw header
@@ -55,13 +66,14 @@ Create **Request Header** variables for the X-VV-* fields (or use a custom Clien
 with [getRequestHeader](https://developers.google.com/tag-platform/tag-manager/server-side/api#getrequestheader)).
 Use those variables directly for trigger conditions, and an **Augment Event**
 Transformation to populate only `vv_type` and `vv_detail` for the GA4 tag.
-Compute them in the trusted proxy with `visitorLabels({ verdict, browserClass, browserPhase })`,
+Compute them in the trusted proxy with `visitorLabels({ verdict, browserClass, browserPhase, browserAgent })`,
 and expose their trusted values to the transformation. Register both as event-scoped
 custom dimensions; the GA4 Data API names are `customEvent:vv_type` and
 `customEvent:vv_detail`. `vv_detail` has the format
 `operator|verification|purpose|claim|browser_class|browser_phase` (at most 100 characters).
 The browser class and phase are inputs to the proxy, not separate GA4 label parameters.
-A Regex Table takes one input: read the trusted X-VV-Route and map it to send/hold/drop.
+A Regex Table takes one input: read the trusted X-VV-Route and map it to send/hold/drop;
+its default output is send.
 Do not expect Transformations to alter trigger conditions. Keep all events in GA4 with their labels.
 
 Verification happens before sGTM because getRequestHeader joins repeated field lines
@@ -77,8 +89,8 @@ this reference does not ship a separate HTTP-callout adapter.
 | Clear automation with an unverified lead, or crawler activity | drop from advertising |
 | Confirmed lead | send under the site's normal consent and quality rules |
 
-Add exception triggers to advertising tags for anything other than send, including
-hold/drop and missing or unknown routes. Hold means the backend
+Add exception triggers to advertising tags only for the hold/drop values you chose;
+missing or unknown routes send, as without routing. Hold means the backend
 later emits a confirmed conversion; sGTM is not a durable queue. Use
 [Transformations](https://developers.google.com/tag-platform/tag-manager/server-side/transformations)
 to exclude `vv_type` and `vv_detail` (and any legacy visitor label fields)

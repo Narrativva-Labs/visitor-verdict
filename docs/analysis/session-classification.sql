@@ -38,6 +38,9 @@
 --   vv_detail = operator|verification|purpose|claim|browser_class|browser_phase.
 --   It describes CURRENT hit evidence plus a sticky known operator. Do not treat
 --   a sticky vv_type as verification of that hit or combine detail fields across hits.
+--   Since server 0.3.5 claim dom_marker means the operator was observed by the browser
+--   detector from a page marker (unverified); browser_phase agent is the detector's
+--   update after that marker. Verified evidence below still requires verification.
 --   Missing labels may reflect budget limits/early deployment and are unknown.
 --
 -- Caveats:
@@ -124,11 +127,12 @@ WITH params AS (
        'no_signature', 'none'), parts[SAFE_OFFSET(1)], NULL) AS verification,
     IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'unknown'),
        parts[SAFE_OFFSET(2)], NULL) AS purpose,
-    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'none'),
+    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'none'),
        parts[SAFE_OFFSET(3)], NULL) AS claim,
     IF(parts[SAFE_OFFSET(4)] IN ('human', 'suspicious', 'automated', 'declared_agent'),
        parts[SAFE_OFFSET(4)], NULL) AS browser_class,
-    IF(parts[SAFE_OFFSET(5)] IN ('initial', 'final'), parts[SAFE_OFFSET(5)], NULL) AS browser_phase,
+    IF(parts[SAFE_OFFSET(5)] IN ('initial', 'final', 'agent'), parts[SAFE_OFFSET(5)], NULL)
+      AS browser_phase,
     CASE
       WHEN user_pseudo_id IS NOT NULL AND ga_session_id IS NOT NULL
         AND COALESCE(analytics_storage, 'Unset') != 'No' THEN 'session'
@@ -234,11 +238,12 @@ WITH params AS (
        'no_signature', 'none'), parts[SAFE_OFFSET(1)], NULL) AS verification,
     IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'unknown'),
        parts[SAFE_OFFSET(2)], NULL) AS purpose,
-    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'none'),
+    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'none'),
        parts[SAFE_OFFSET(3)], NULL) AS claim,
     IF(parts[SAFE_OFFSET(4)] IN ('human', 'suspicious', 'automated', 'declared_agent'),
        parts[SAFE_OFFSET(4)], NULL) AS browser_class,
-    IF(parts[SAFE_OFFSET(5)] IN ('initial', 'final'), parts[SAFE_OFFSET(5)], NULL) AS browser_phase,
+    IF(parts[SAFE_OFFSET(5)] IN ('initial', 'final', 'agent'), parts[SAFE_OFFSET(5)], NULL)
+      AS browser_phase,
     CASE
       WHEN user_pseudo_id IS NOT NULL AND ga_session_id IS NOT NULL
         AND COALESCE(analytics_storage, 'Unset') != 'No' THEN 'session'
