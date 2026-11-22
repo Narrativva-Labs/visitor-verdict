@@ -67,7 +67,7 @@ const catalog = {
   WK: 'Opt-in Worker: supported main/worker navigator mismatch; unknown ignored (2, worker)',
   UB: 'Opt-in Worker: non-empty main UA-CH brands but exposed worker API has no value or empty brands (6, worker; direct suspicious, never hard)',
   TR: 'Final-only repeat-TP weight 2 in pointer family, capped at 3 with TP; never a direct class override; decays on any trusted-input document without TP',
-  DM: 'Agent UI marker: exact element ID and parent injected by Claude in Chrome or the OpenAI agent overlay, at start or watched until found (100, declared; operator in traffic_agent)'
+  DM: 'Agent UI marker: exact element ID and parent injected by the OpenAI agent overlay or older Claude in Chrome versions (current 1.0.107 uses a closed shadow root and is not seen), at start or watched until found (100, declared; operator in traffic_agent, only with declared_agent)'
 };
 // Synthetic agent UI markers on the test site (site.js ?marker=…). Page 1 carries
 // the marker; page 2 has none and shows the carried class and operator.
@@ -81,7 +81,10 @@ const markerScenarios = [
   {name: 'M3 Similar IDs and sidebar root are not markers', marker: 'claude-agent-glow-border-inner,codex-browser-sidebar-comments-root,codex-agent-overlay-root-copy',
     page1: [['initial', 'human', undefined], ['final', 'human', undefined]], page2: ['human', undefined]},
   {name: 'M4 Headless automation keeps precedence over a marker', marker: 'claude-agent-glow-border', delay: 2000, launch: {headless: true},
-    page1: [['initial', 'automated', undefined], ['final', 'automated', 'anthropic']], page2: ['automated', 'anthropic']}
+    page1: [['initial', 'automated', undefined], ['final', 'automated', undefined]], page2: ['automated', undefined]},
+  {name: 'M5 Carried automated plus OpenAI overlay: next page declared_agent, not automated', marker: 'codex-agent-overlay-root',
+    seed: {timestamps: [], lastClass: {value: 'automated', direct: true}, tpPages: 0},
+    page1: [['initial', 'automated', undefined], ['final', 'automated', undefined]], page2: ['declared_agent', 'openai']}
 ];
 const results = [];
 let server, origin, serverError;
@@ -224,7 +227,14 @@ try {
       if (serverError) throw serverError;
       browser = await chromium.launch({headless: false, args: quiet, ...scenario.launch});
       row.browserVersion = browser.version();
-      const page = await (await browser.newContext({viewport: {width: 1440, height: 900}})).newPage();
+      const context = await browser.newContext({viewport: {width: 1440, height: 900}});
+      // Planted direct automated record from an earlier page, once per tab.
+      if (scenario.seed) await context.addInitScript(seed => {
+        if (!sessionStorage.getItem('vv_test_seeded')) {
+          sessionStorage.setItem('vv_test_seeded', '1'); sessionStorage.setItem('visitor_verdict', JSON.stringify(seed));
+        }
+      }, scenario.seed);
+      const page = await context.newPage();
       page.on('pageerror', error => row.notes.push(`Page error: ${error.message}`));
       await page.goto(`${origin}/index.html?marker=${scenario.marker}${scenario.delay ? '&markerDelay=' + scenario.delay : ''}`);
       await sleep((scenario.delay || 0) + 1000);

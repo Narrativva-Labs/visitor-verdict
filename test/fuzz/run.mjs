@@ -72,12 +72,13 @@ function evaluate(spec, script = detector) {
     if (!['initial','agent','final'].includes(event.traffic_phase)) fail('phase-uniqueness', `invalid phase ${event.traffic_phase}`);
     if (Object.hasOwn(event,'traffic_agent') && !agents.includes(event.traffic_agent)) fail('payload-privacy', `invalid traffic_agent ${event.traffic_agent}`);
     if (event.traffic_phase === 'agent' && (event.traffic_class !== 'declared_agent' || !agents.includes(event.traffic_agent))) fail('class/score', `agent phase must escalate to declared_agent with an operator: ${JSON.stringify(event).slice(0,250)}`);
+    if (Object.hasOwn(event,'traffic_agent') && event.traffic_class !== 'declared_agent') fail('class/score', `traffic_agent with ${event.traffic_class}`);
     if (spec.marker === 'start' && !['declared_agent','automated'].includes(event.traffic_class)) fail('class/score', `marker at start not declared: ${event.traffic_phase} ${event.traffic_class}`);
   }
   if (state && Object.hasOwn(state,'signals')) fail('payload-privacy','__visitorVerdict exposes debug signals');
   if (!result.beforeFrozen || !result.finalFrozen || !result.readOnly || !result.initialIntact) fail('snapshot-immutability', 'snapshots or public descriptor are writable/changed');
   if (state && (state.version !== '1.1.0' || !['class,phase,score,version','agent,class,phase,score,version'].includes(Object.keys(state).sort().join(',')) ||
-      (Object.hasOwn(state,'agent') && !agents.includes(state.agent)))) fail('payload-privacy', 'invalid public snapshot fields/version');
+      (Object.hasOwn(state,'agent') && (!agents.includes(state.agent) || state.class !== 'declared_agent')))) fail('payload-privacy', 'invalid public snapshot fields/version');
   if (result.previous !== undefined && !classes.includes(result.previous)) fail('class/score', 'invalid previous class');
   if (!state || !classes.includes(state.class) || typeof state.score !== 'number' || !Number.isFinite(state.score)) fail('class/score','missing/invalid __visitorVerdict class or score');
   const initials = events.filter(e => e.traffic_phase === 'initial').length;
@@ -85,7 +86,8 @@ function evaluate(spec, script = detector) {
   const agentEvents = events.filter(e => e.traffic_phase === 'agent').length;
   if (initials !== 1 || finals > 1 || agentEvents > 1 || events[0]?.traffic_phase !== 'initial') fail('phase-uniqueness', `${initials} initial, ${agentEvents} agent, ${finals} final events`);
   // A watched marker escalates the latest snapshot whether it lands before or after final.
-  if (['late','after-final'].includes(spec.marker) && !(spec.old || []).includes('noMutationObserver') && state && !['declared_agent','automated'].includes(state.class) &&
+  // No observer without MutationObserver or without a pagehide listener (which needs add and remove).
+  if (['late','after-final'].includes(spec.marker) && !(spec.old || []).some(f => ['noMutationObserver','noWindowAdd','noWindowRemove'].includes(f)) && state && !['declared_agent','automated'].includes(state.class) &&
       !(spec.marker === 'after-final' && ['hide-first'].includes(spec.race))) fail('class/score', `watched marker ${spec.marker} left ${state.phase} ${state.class}`);
   if (spec.marker === 'decoy' && events.some(e => Object.hasOwn(e,'traffic_agent') && !/agent/.test(spec.storage))) fail('class/score', 'decoy marker reported an operator');
   // These schedules always force finalization, beyond the at-most-one contract.
@@ -107,7 +109,9 @@ function evaluate(spec, script = detector) {
     if (!Number.isInteger(record.tpPages) || record.tpPages < 0 || record.tpPages > 255) return 'tpPages outside integer 0..255';
     const last = record.lastClass;
     if (last !== '' && !classes.includes(last) && !(last && typeof last === 'object' && !Array.isArray(last) && last.direct === true && ['automated','declared_agent'].includes(last.value) &&
-        (Object.keys(last).length === 2 || (Object.keys(last).length === 3 && agents.includes(last.agent))))) return 'lastClass contains unapproved value/shape';
+        (Object.keys(last).length === 2 || (Object.keys(last).length === 3 && last.value === 'declared_agent' && agents.includes(last.agent))))) return 'lastClass contains unapproved value/shape';
+    // A declaration on a carried-automated document must not renew direct automated.
+    if (spec.noHardRenewal && last && last.value === 'automated') return 'carried automated renewed as direct provenance without hard evidence';
     return null;
   }
   for (const write of writes) {
@@ -190,6 +194,10 @@ function corpus() {
     list.push({...base(),marker,race,webdriver:true,expectedClass:'automated',label:`agent UI marker ${marker} with webdriver`});
   }
   list.push({...base(),marker:'late',old:['noMutationObserver'],expectedClass:'human',label:'agent UI marker without MutationObserver'});
+  for (const marker of ['start','late','after-final']) for (const race of ['timer-first','hide-first','visibility']) {
+    list.push({...base(),marker,race,storage:JSON.stringify({timestamps:[],lastClass:{value:'automated',direct:true},tpPages:0}),
+      expectedClass:'automated',noHardRenewal:true,label:`carried automated + marker ${marker} ${race}`});
+  }
   return list;
 }
 

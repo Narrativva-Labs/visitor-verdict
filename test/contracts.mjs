@@ -1414,30 +1414,47 @@ export async function runContracts(detectorSource) {
     }
   });
 
-  // Minimal DOM for agent UI markers: id lookup, two parents, a recording MutationObserver.
+  // Minimal DOM for agent UI markers: id lookup, parents, and a MutationObserver that
+  // delivers records only for observed targets (no subtree), as browsers do.
   function markerDOM(initial = [], options = {}) {
-    const root = {name: 'html'}, body = {name: 'body'}, nodes = new Map(), observers = [];
+    const root = {name: 'html', nodeType: 1, id: ''}, body = {name: 'body', nodeType: 1, id: ''}, nodes = new Map(), observers = [];
+    let current = options.noBody ? null : body;
     const parentFor = id => id.startsWith('claude-') ? body : root;
-    const api = {root, body, observers, lookups: 0,
-      insert(id, parent = parentFor(id)) {
-        if (!nodes.has(id)) nodes.set(id, {id, parentNode: parent});
-        for (const o of observers.filter(o => o.active)) o.fn([{type: 'childList'}], o);
+    const watching = (node, kind) => observers.filter(o => o.active && o.targets.some(t => t.target === node && t.opts[kind]));
+    const place = ([id, parent]) => nodes.set(id, {id, nodeType: 1, parentNode: parent === undefined ? parentFor(id) : parent});
+    const api = {root, body, observers, lookups: 0, calls: 0,
+      insertNode(node, parent) {
+        node.parentNode = parent;
+        for (const o of watching(parent, 'childList')) { api.calls++; o.fn([{type: 'childList', target: parent, addedNodes: [node]}], o); }
+        return node;
       },
-      mutate() { for (const o of observers.filter(o => o.active)) o.fn([{type: 'childList'}], o); },
+      insert(id, parent = parentFor(id)) {
+        if (!nodes.has(id)) nodes.set(id, {id, nodeType: 1, parentNode: parent});
+        return api.insertNode(nodes.get(id), parent);
+      },
+      setId(node, id) {
+        node.id = id; nodes.set(id, node);
+        for (const o of watching(node, 'attributes')) { api.calls++; o.fn([{type: 'attributes', target: node, addedNodes: []}], o); }
+      },
+      addBody() { current = body; api.insertNode(body, root); },
+      mutate() { api.insertNode({nodeType: 3}, root); },
       get active() { return observers.filter(o => o.active).length; },
       modify({window, document}) {
-        document.documentElement = root; document.body = body;
+        document.documentElement = root;
+        Object.defineProperty(document, 'body', {get: () => current, configurable: true});
         document.getElementById = id => { api.lookups++; if (options.throwLookup) throw Error('lookup'); return nodes.get(id) || null; };
         if (options.noObserver) return;
         window.MutationObserver = function (fn) {
           if (options.throwObserver) throw Error('observer');
-          this.fn = fn; this.active = false; observers.push(this);
+          this.fn = fn; this.active = false; this.targets = []; observers.push(this);
         };
-        window.MutationObserver.prototype.observe = function (target, opts) { this.target = target; this.opts = opts; this.active = true; };
-        window.MutationObserver.prototype.disconnect = function () { this.active = false; };
-        for (const [id, parent] of initial) nodes.set(id, {id, parentNode: parent || parentFor(id)});
+        window.MutationObserver.prototype.observe = function (target, opts) {
+          this.targets = this.targets.filter(t => t.target !== target).concat({target, opts}); this.active = true;
+        };
+        window.MutationObserver.prototype.disconnect = function () { this.active = false; this.targets = []; };
+        for (const entry of initial) place(entry);
       }};
-    if (options.noObserver) for (const [id, parent] of initial) nodes.set(id, {id, parentNode: parent || parentFor(id)});
+    if (options.noObserver) for (const entry of initial) place(entry);
     return api;
   }
   const operators = [['claude-agent-glow-border', 'anthropic'], ['claude-phantom-cursor', 'anthropic'], ['codex-agent-overlay-root', 'openai']];
@@ -1453,6 +1470,7 @@ export async function runContracts(detectorSource) {
       assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['agent', 'class', 'phase', 'score', 'version']);
       assert.equal(f.window.dataLayer[0].traffic_agent, operator); assert.ok(f.signals.includes('DM'));
       assert.equal(dom.observers.length, 0, 'Found at start: no MutationObserver');
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator}, 'Stored at initial');
       f.advance(8000);
       assert.deepEqual(phases(f), ['initial', 'final']);
       assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'declared_agent' && e.traffic_agent === operator));
@@ -1468,8 +1486,8 @@ export async function runContracts(detectorSource) {
       assert.equal(initial.class, 'human'); assert.ok(!('agent' in initial)); assert.ok(!('traffic_agent' in f.window.dataLayer[0]));
       assert.equal(dom.active, 1);
       const [observer] = dom.observers;
-      assert.equal(observer.target, dom.root);
-      assert.equal(JSON.stringify(observer.opts), JSON.stringify({childList: true, subtree: true, attributes: true, attributeFilter: ['id']}));
+      assert.deepEqual(observer.targets.map(t => [t.target.name, JSON.stringify(t.opts)]),
+        [['html', '{"childList":true}'], ['body', '{"childList":true}']], 'Child lists of root and body only, no subtree');
       f.advance(1000); dom.mutate(); assert.deepEqual(phases(f), ['initial'], 'Unrelated mutations publish nothing');
       f.advance(1000); dom.insert(id);
       assert.deepEqual(phases(f), ['initial', 'agent']);
@@ -1561,8 +1579,11 @@ export async function runContracts(detectorSource) {
     const store = new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic'}})]]);
     const same = markerDOM();
     const g = fixture({store, modify: same.modify});
+    assert.equal(JSON.parse(store.get('visitor_verdict')).lastClass, 'declared_agent', 'Carry consumed at load');
     g.advance(1000); same.insert('claude-phantom-cursor');
-    assert.deepEqual(phases(g), ['initial']); g.advance(7000);
+    assert.deepEqual(phases(g), ['initial']);
+    assert.deepEqual(JSON.parse(store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'anthropic'}, 'Renewed before final');
+    g.advance(7000);
     assert.deepEqual(JSON.parse(store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'anthropic'});
     const switched = markerDOM();
     const h = fixture({store: new Map([['visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent: 'anthropic'}})]]), modify: switched.modify});
@@ -1588,9 +1609,9 @@ export async function runContracts(detectorSource) {
       if (late) {f.advance(2000); dom.insert('claude-agent-glow-border');}
       f.advance(8000);
       assert.deepEqual(phases(f), ['initial', 'final']);
-      assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'automated'));
-      assert.equal(f.window.__visitorVerdict.agent, 'anthropic', 'Operator still reported');
-      assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass.value, 'automated');
+      assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'automated' && !('traffic_agent' in e)), 'No operator with automated');
+      assert.ok(!('agent' in f.window.__visitorVerdict), 'Operator only with declared_agent');
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'automated', direct: true});
     }
     const dom = markerDOM();
     const f = fixture({modify: dom.modify});
@@ -1599,6 +1620,99 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(phases(f), ['initial', 'agent', 'final']);
     assert.equal(f.window.dataLayer[1].traffic_class, 'declared_agent');
     assert.equal(f.window.dataLayer[2].traffic_class, 'automated', 'Later hard evidence still wins at final');
+  });
+
+  await test('DM: a declaration on a carried-automated page never renews automated (WD page, CA page + marker, next page)', () => {
+    const declare = {
+      'marker at load': dom => ({dom, modify: dom.modify}),
+      'marker late': dom => ({dom, modify: dom.modify, late: 'before'}),
+      'marker after final': dom => ({dom, modify: dom.modify, late: 'after'}),
+      'UA token': dom => ({dom, modify: m => {dom.modify(m); m.navigator.userAgent = 'ChatGPT-User';}, token: true})
+    };
+    for (const [label, make] of Object.entries(declare)) {
+      const first = fixture({modify: ({navigator}) => {navigator.webdriver = true;}});
+      first.advance(8000);
+      assert.deepEqual(JSON.parse(first.store.get('visitor_verdict')).lastClass, {value: 'automated', direct: true}, label);
+      const dom = markerDOM(label === 'marker at load' ? [['codex-agent-overlay-root']] : []);
+      const {modify, late, token} = make(dom);
+      const second = fixture({store: first.store, now: 11000, modify});
+      if (late === 'before') { second.advance(2000); dom.insert('codex-agent-overlay-root'); }
+      second.advance(8000);
+      if (late === 'after') { second.advance(5000); dom.insert('codex-agent-overlay-root'); }
+      second.emit('pagehide');
+      assert.ok(second.window.dataLayer.every(e => e.traffic_class === 'automated' && !('traffic_agent' in e)), label);
+      assert.ok(second.window.dataLayer[0].traffic_signals.includes('CA'), label);
+      assert.ok(!('agent' in second.window.__visitorVerdict), label);
+      const stored = JSON.parse(first.store.get('visitor_verdict')).lastClass;
+      assert.deepEqual(stored, token ? {value: 'declared_agent', direct: true} : {value: 'declared_agent', direct: true, agent: 'openai'}, label);
+      const third = fixture({store: first.store, now: 30000});
+      assert.equal(third.window.__visitorVerdict.class, 'declared_agent', label + ': next page must not be automated');
+      assert.ok(third.signals.includes('CD') && !third.signals.includes('CA'), label);
+      assert.equal(third.window.__visitorVerdict.agent, token ? undefined : 'openai', label);
+      third.advance(8000);
+      const fourth = fixture({store: first.store, now: 50000});
+      assert.equal(fourth.window.__visitorVerdict.class, 'human', label + ': carry lasts one document');
+    }
+    for (const agent of ['openai', 'anthropic']) {
+      const forged = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'automated', direct: true, agent}}))});
+      assert.equal(forged.window.__visitorVerdict.class, 'automated');
+      assert.ok(!('agent' in forged.window.__visitorVerdict) && !('traffic_agent' in forged.window.dataLayer[0]), 'automated record carries no operator');
+    }
+  });
+  await test('DM watcher: no subtree; body attached when it appears; late id on a new direct child; capped id watches', () => {
+    const dom = markerDOM();
+    const f = fixture({modify: dom.modify});
+    const nested = {name: 'div', nodeType: 1, id: ''};
+    const before = dom.calls;
+    for (let k = 0; k < 50; k++) dom.insertNode({nodeType: 1, id: 'app-' + k}, nested);
+    assert.equal(dom.calls, before, 'Mutations below body and root reach no callback');
+    const late = dom.insertNode({nodeType: 1, id: ''}, dom.body);
+    assert.deepEqual(phases(f), ['initial']);
+    dom.setId(late, 'claude-agent-glow-border');
+    assert.deepEqual(phases(f), ['initial', 'agent'], 'id set after insertion');
+    assert.equal(f.window.dataLayer[1].traffic_agent, 'anthropic');
+    const head = markerDOM([], {noBody: true});
+    const g = fixture({modify: head.modify});
+    assert.deepEqual(head.observers[0].targets.map(t => t.target.name), ['html'], 'Script in head: root only');
+    head.addBody();
+    assert.deepEqual(head.observers[0].targets.filter(t => t.opts.childList).map(t => t.target.name), ['html', 'body'], 'Body attached');
+    assert.ok(!head.observers[0].targets.some(t => t.target === head.body && t.opts.attributes), 'Body keeps its child-list watch');
+    head.insert('claude-phantom-cursor');
+    assert.deepEqual(phases(g), ['initial', 'agent']);
+    const many = markerDOM();
+    fixture({modify: many.modify});
+    for (let k = 0; k < 40; k++) many.insertNode({nodeType: 1, id: ''}, many.body);
+    many.insertNode({nodeType: 1, id: 'named'}, many.body); many.insertNode({nodeType: 3}, many.body);
+    assert.equal(many.observers[0].targets.filter(t => t.opts.attributes).length, 32, 'At most 32 id watches');
+    assert.ok(many.observers[0].targets.filter(t => t.opts.attributes).every(t => JSON.stringify(t.opts) === '{"attributes":true,"attributeFilter":["id"]}'));
+  });
+  await test('DM: a marker added by a consumer of the initial push is found; no body never matches a null parent', () => {
+    const dom = markerDOM();
+    const f = fixture({modify: m => {
+      dom.modify(m);
+      m.window.dataLayer = [];
+      m.window.dataLayer.push = function (event) {
+        Array.prototype.push.call(this, event);
+        // Inserted before the observer exists: no record reaches the detector.
+        if (event.traffic_phase === 'initial') dom.insert('codex-agent-overlay-root');
+      };
+    }});
+    assert.deepEqual(phases(f), ['initial', 'agent']);
+    assert.equal(f.window.__visitorVerdict.agent, 'openai');
+    const orphan = markerDOM([['claude-agent-glow-border', null], ['claude-phantom-cursor', null]], {noBody: true});
+    const g = fixture({modify: orphan.modify});
+    g.advance(8000);
+    assert.ok(g.window.dataLayer.every(e => e.traffic_class === 'human'), 'null parent with null body is not a marker');
+  });
+  await test('DM: no observer without a pagehide listener', () => {
+    const dom = markerDOM();
+    const f = fixture({modify: m => {dom.modify(m); m.window.addEventListener = undefined;}});
+    assert.equal(dom.observers.length, 0);
+    f.advance(8000);
+    assert.deepEqual(phases(f), ['initial', 'final']);
+    const present = markerDOM([['codex-agent-overlay-root']]);
+    const g = fixture({modify: m => {present.modify(m); m.window.addEventListener = undefined;}});
+    assert.equal(g.window.__visitorVerdict.agent, 'openai', 'Start check still works');
   });
   return results;
 }
