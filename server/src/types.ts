@@ -12,6 +12,10 @@ export interface AgentRequest {
   host: string;
   headers: HeadersInput;
   clientIp?: string;
+  /** External transport security from a trusted adapter; false skips header diagnostics. */
+  secure?: boolean;
+  /** Disable weak diagnostics behind stripping proxies or privacy/enterprise policies. */
+  headerDiagnostics?: boolean;
   /** Raw origin-form target or absolute HTTPS URI; never pre-normalize dot segments or escapes. */
   target?: string;
 }

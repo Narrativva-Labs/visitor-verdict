@@ -110,6 +110,13 @@ export async function evaluateSignature(
       operator.allowKidAlias === true,
     );
     checkActive(env.signal);
+    if (keys.has(keyid) && !activeKey(keys.get(keyid)!, env.now)) {
+      // Missing evidence: refresh asynchronously even while HTTP cache is fresh.
+      void env.cache
+        .load(operator.directoryUrl, 'directory', env.now, publicKeys, 'cached-forced')
+        .catch(() => {});
+      throw new Failure('unknown_keyid', true);
+    }
     if (!keys.has(keyid))
       keys = withKidAliases(
         await env.cache.load(

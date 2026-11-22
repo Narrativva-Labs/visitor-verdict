@@ -781,3 +781,70 @@ for (const { name, identity } of operators.filter((o) => o.purpose === 'intermed
     }
   });
 }
+
+test('Kernel nbf/exp and rotation stay indeterminate under fresh HTTP cache', async () => {
+  const identity = 'https://www.kernel.sh';
+  let now = clock,
+    current = keys.get(identity),
+    nbf = clock + 1,
+    exp = clock + 10,
+    calls = 0;
+  const fetcher = async () => {
+    calls++;
+    return Response.json(
+      { keys: [{ ...current.jwk, nbf, exp }] },
+      { headers: { 'cache-control': 'max-age=86400' } },
+    );
+  };
+  const v = verifierWith({ registry: [entry(identity)], now: () => now, fetcher });
+  const hit = () =>
+    v.verify(request(JSON.stringify(identity), labelled({ label: 's', identity, key: current })), {
+      cacheOnly: true,
+    });
+  const unavailable = (proof) => {
+    assert.equal(proof.verification, 'none');
+    assert.notEqual(visitorLabels({ verdict: proof }).vv_type, 'bot_spoofed');
+  };
+  await v.warm();
+  unavailable(await hit());
+  now = clock + 1;
+  assert.equal((await hit()).verification, 'signature_valid');
+  now = clock + 10;
+  unavailable(await hit());
+  assert.ok(calls >= 2);
+  current = keyPair();
+  nbf = clock;
+  exp = clock + 1000;
+  now = clock + 11;
+  unavailable(await hit());
+  now = clock + 72;
+  unavailable(await hit());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await hit()).verification, 'signature_valid');
+  v.close();
+});
+for (const { name, identity } of operators.filter((o) => o.purpose === 'intermediary')) {
+  test(`${name}: invalid/replayed direct signatures beat valid intermediary`, async () => {
+    const members = { agent: 'https://chatgpt.com', infra: identity };
+    const direct = labelled({ label: 'agent', identity: members.agent, members });
+    const invalid = labelled({
+      label: 'agent',
+      identity: members.agent,
+      members,
+      key: { ...stranger, keyid: keys.get(members.agent).keyid },
+    });
+    for (const reverse of [false, true]) {
+      const { fetcher } = network();
+      const v = verifierWith({ fetcher, nonceStore: new MemoryNonceStore(10000, () => clock) });
+      const infra = labelled({ label: 'infra', identity, members });
+      const mixed = (a) => request(dictionary(members), ...(reverse ? [infra, a] : [a, infra]));
+      assert.equal((await v.verify(mixed(invalid))).verification, 'signature_invalid');
+      assert.equal(
+        (await v.verify(request(dictionary(members), direct))).verification,
+        'signature_valid',
+      );
+      assert.equal((await v.verify(mixed(direct))).reason, 'replay');
+      v.close();
+    }
+  });
+}

@@ -4,6 +4,8 @@ import { verify } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { defaultRegistry } from '../dist/index.js';
 import { publicKeys } from '../dist/keys.js';
+import { serializeInnerList } from 'structured-headers';
+import { headers, field } from '../dist/headers.js';
 import { parsedDictionary } from '../dist/fields.js';
 
 for (const [name, stem, count] of [
@@ -24,11 +26,14 @@ for (const [name, stem, count] of [
     const raw = read('.headers.txt');
     assert.match(raw, /^HTTP\/2 200/);
     assert.doesNotMatch(raw, /set-cookie|x-request-id/i);
-    const h = Object.fromEntries(
+    const parsedHeaders = headers(
       raw
         .split('\n')
         .filter((l) => l.includes(': '))
-        .map((l) => [l.slice(0, l.indexOf(':')).toLowerCase(), l.slice(l.indexOf(':') + 2)]),
+        .flatMap((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2).trim()]),
+    );
+    const h = Object.fromEntries(
+      [...parsedHeaders.keys()].map((name) => [name, field(parsedHeaders, name)]),
     );
     assert.equal(h['content-type'], 'application/http-message-signatures-directory+json');
     const capturedAt = Date.parse(h.date) / 1000 + Number(h.age ?? 0);
@@ -40,10 +45,9 @@ for (const [name, stem, count] of [
     const inputs = parsedDictionary(h['signature-input'], 'signature-input').members;
     assert.equal(sigs.size, count);
     assert.equal(inputs.size, count);
-    const rawInputs = [...h['signature-input'].matchAll(/([\w]+)=(\([^)]*\)[^,]*)/g)];
-    assert.equal(rawInputs.length, count);
-    for (const [, label, params] of rawInputs) {
-      const [components, parameters] = inputs.get(label);
+    for (const [label, member] of inputs) {
+      const params = serializeInnerList(member);
+      const [components, parameters] = member;
       assert.equal(components.length, 1);
       assert.equal(components[0][0], '@authority');
       assert.deepEqual([...components[0][1]], [['req', true]]);

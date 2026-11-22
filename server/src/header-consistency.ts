@@ -4,7 +4,12 @@ import { field } from './headers.js';
 export function headerMismatch(h: Map<string, string[]>, method: string): boolean {
   const ua = field(h, 'user-agent');
   // iOS browsers use WebKit; WebViews and explicit privacy derivatives have different defaults.
-  if (/CriOS|EdgiOS|iPhone|iPad|; wv\)|Brave\/|OPR\/|SamsungBrowser\//i.test(ua)) return false;
+  if (
+    /CriOS|EdgiOS|iPhone|iPad|iPod|; wv\)|WebView|FBAN|FBAV|Instagram|Line\/|MicroMessenger|BytedanceWebview|GSA\/|Version\/4\.0 Chrome\/|Electron\/|QtWebEngine\/|Vivaldi\/|YaBrowser\/|DuckDuckGo\/|MiuiBrowser|Silk\/|UCBrowser\/|OPR\/|SamsungBrowser\/|bot|crawler|spider/i.test(
+      ua,
+    )
+  )
+    return false;
   const chrome = /(?:Chrome|HeadlessChrome)\/(\d+)\./.exec(ua);
   const edge = /Edg(?:A)?\/(\d+)\./.exec(ua);
   if (!chrome) return false;
@@ -33,7 +38,11 @@ export function headerMismatch(h: Map<string, string[]>, method: string): boolea
     'object',
   ].includes(dest);
   const htmlGet =
-    /^(GET|HEAD)$/.test(method) && /(?:^|[,;\s])text\/html(?:[,;\s]|$)/i.test(field(h, 'accept'));
+    method === 'GET' &&
+    !mode &&
+    !dest &&
+    (!site || site === 'none' || site === 'same-origin') &&
+    /(?:^|[,;\s])text\/html(?:[,;\s]|$)/i.test(field(h, 'accept'));
   const eligible = navigation || resource || htmlGet;
   if (!eligible) return false;
   const fetchVersion = edgeVersion === undefined ? version >= 76 : edgeVersion >= 79;
@@ -49,7 +58,13 @@ export function headerMismatch(h: Map<string, string[]>, method: string): boolea
     (resource && site === 'same-origin');
   if (
     hintsExpected &&
-    ['sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform'].some((name) => !has(name))
+    [
+      'sec-ch-ua',
+      'sec-ch-ua-mobile',
+      ...(version >= 93 && (edgeVersion === undefined || edgeVersion >= 93)
+        ? ['sec-ch-ua-platform']
+        : []),
+    ].some((name) => !has(name))
   )
     return true;
   const platform = field(h, 'sec-ch-ua-platform');
@@ -67,6 +82,7 @@ export function headerMismatch(h: Map<string, string[]>, method: string): boolea
   // Only compare recognized platforms; malformed/unknown values are not identity evidence.
   return (
     expected !== undefined &&
+    !(expected === 'Linux' && platform === '"Android"') &&
     /^"(?:Android|Chrome OS|Windows|macOS|Linux)"$/.test(platform) &&
     platform !== '"' + expected + '"'
   );

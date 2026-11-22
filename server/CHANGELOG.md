@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 — 2026-11-23
+
+- Refresh unknown/inactive signing keys with indeterminate rotation outcomes; add Kernel runtime validity/rotation coverage.
+- Correct Client Hints gates and navigation scope; skip embedded/crawler and Android desktop-site cases; add trusted transport diagnostic opt-outs.
+- Verify mixed intermediary/direct failure ordering and clarify directory trust and analytics segmentation.
+
 ## 0.5.0 — 2026-11-23
 
 - Add optional weak `AgentVerdict.evidence: [header_mismatch]` for scoped HTTPS Chromium header inconsistencies, with version and request-shape gates. No effect on identity, verification, purpose or analytics classification.

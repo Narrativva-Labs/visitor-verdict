@@ -344,7 +344,7 @@ test('nbf and exp honored on cached keys', async () => {
   assert.equal((await v.verify(signed())).verification, 'signature_valid');
   now += 2;
   assert.equal((await v.verify(signed())).reason, 'unknown_keyid');
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 test('atomic replay store is optional and called after crypto only', async () => {
   const keys = new Set();

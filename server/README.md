@@ -277,9 +277,9 @@ The default registry grew from five key directories in 0.3.5 to six in 0.4.0. Al
 
 Browserbase uses intermediary: true rather than a purpose mapping: purposePolicies.browserbase and its default-registry purposes field were removed in 0.4.0. PurposePolicy now excludes intermediary at compile time as it already did at runtime. The flag applies to signature evidence only; separate IP/rDNS evidence, if configured, follows its own documented product mappings. A simultaneous signature purpose mapping and intermediary flag is rejected. Meta crawler UA claims share the meta operator entry with Muse but have no IP/rDNS verification configured; future feeds must use separate per-feed/per-token purpose mappings, not Muse's signature purpose.
 
-## Operator coverage and sources (checked 2026-11-22)
+## Operator coverage and sources (checked 2026-11-23)
 
-**Signing operators (re-checked 2026-11-22; additions checked 2026-11-23).** Each directory below was fetched live over
+**Signing operators (re-checked 2026-11-23; additions checked 2026-11-23).** Each directory below was fetched live over
 HTTPS (status 200, no redirect, `application/http-message-signatures-directory+json`), parsed
 as a JWKS-style directory of public Ed25519 keys only, and its own directory signatures
 (draft-meunier-webbotauth-httpsig-directory, tag `http-message-signatures-directory`) were
@@ -297,7 +297,7 @@ checked as interop evidence; the verifier itself trusts only the configured URL.
 
 **Not supported yet.** Amazon Bedrock AgentCore Browser signs only when the customer creates a
 browser with `browserSigning` enabled, and its [documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-web-bot-auth.html)
-names no public key directory or Signature-Agent value (checked 2026-11-22; arcjet/well-known-bots
+names no public key directory or Signature-Agent value (checked 2026-11-23; arcjet/well-known-bots
 lists no verification method for it either). No AWS origin is guessed. The www.meta.com directory
 is still live, but no Meta document ties it to a product, so it is not trusted for Muse or any
 other Meta token. Kernel, Cloudflare Browser Run and Shopify Cloudsurf are admitted as intermediaries in 0.5.0 after primary-source and live directory checks (below).
@@ -423,10 +423,6 @@ Valid signatures take precedence; otherwise replay failures precede other invali
 candidates. Successful signature evidence includes `verified.expiresAt` (Unix
 seconds without skew), so callers can cap derived evidence.
 
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
-
 ## Header consistency (0.5.0)
 
 `AgentVerdict.evidence` optionally contains `header_mismatch`, a weak local
@@ -434,12 +430,19 @@ diagnostic independent of verification, reason, identity and purpose. It never
 changes `visitorLabels`, never creates `agent_verified` or `bot_suspicious`, and
 is not exported in `vv_detail`. No raw headers are returned, cached or retained.
 
+Set `AgentRequest.secure: false` for plain HTTP, and `headerDiagnostics: false`
+behind proxies/CDNs that strip Sec-\* headers or for privacy/enterprise policy
+deployments. The default assumes the API external HTTPS contract. Brave uses a
+Chrome UA and cannot reliably be excluded by UA; disabling diagnostics is the
+explicit escape hatch. Known embedded, iOS, wrapper and derivative tokens and
+crawlers are skipped. Linux UA with Android platform is allowed for desktop-site mode.
+
 Within the API's external HTTPS contract, checks apply only to Chrome/HeadlessChrome
 and Chromium Edge claims with recognizable navigation/resource context: Fetch Mode
-navigate, a known Fetch Dest, or GET/HEAD accepting text/html (a navigation-shaped
+navigate, a known Fetch Dest, or GET accepting text/html without non-navigation Fetch Metadata (a navigation-shaped
 claim, not proof of navigation). Arbitrary collector POSTs and ambiguous _/_
 requests are skipped. Site/Mode start at Chrome 76 / Edge 79; Dest at 80; default
-low-entropy hints conservatively at 89. No high-entropy hints or Sec-Fetch-User
+Sec-CH-UA and Sec-CH-UA-Mobile at 89, Sec-CH-UA-Platform at 93. No high-entropy hints or Sec-Fetch-User
 are required. Hints are expected only for top-level navigation-shaped requests
 or same-origin subresources, avoiding iframe and cross-origin Permissions Policy
 suppression. Recognized platforms are compared with Windows, Android, Chrome OS,
@@ -458,7 +461,7 @@ Sources: [Chromium low-entropy defaults](https://developer.chrome.com/docs/priva
 Fixtures are representative protocol examples, not browser captures; headless
 Chrome with complete headers intentionally has no mismatch.
 
-### Intermediary signers (0.5.0, checked 2026-11-23)
+## Intermediary signers (0.5.0, checked 2026-11-23)
 
 The owner supplied live curl HTTPS directory bodies and response headers for all
 three operators (HTTP 200, application/http-message-signatures-directory+json).
@@ -482,6 +485,11 @@ replace this purpose; valid direct signatures retain precedence. Kernel Search
 has a separate direct crawler identity and is outside this addition. No custom kid
 aliases are enabled. Kernel's published key has short nbf/exp validity; the verifier
 rechecks it per use and an expired cached key never verifies a request.
+Unknown or inactive keys request a bounded, cooldown-protected refresh, also in
+cacheOnly mode (asynchronously). During rotation, verification is `none` with
+`cache_miss`/`unknown_keyid`, not `signature_invalid`; analytics retains
+`agent_unverified` rather than `bot_spoofed`. There is no `unavailable` vv_type.
+This is missing verification evidence, never proof of spoofing.
 
 The default registry now has **nine directories** (six previously). Add outbound
 HTTPS access to all three origins above; a blocked directory can leave health at
@@ -489,3 +497,20 @@ HTTPS access to all three origins above; a blocked directory can leave health at
 are historical. Tests cover exact registry endpoints, generated valid, wrong-key,
 unknown-key, expired and replayed requests for each signer, direct-signature
 precedence, unsigned claims and all live directory proofs at capture time.
+
+Cloudflare's current workers.dev origin may be blocked by corporate egress policies.
+It is an exact preview hostname, not trust in all workers.dev tenants. Trust depends
+on HTTPS/domain control: directory proofs do not bind the body. A moved or released
+hostname needs an explicitly reviewed registry update; no redirects or automatic
+origin migration are trusted. No real signed visitor captures exist for these three
+operators; synthetic tests and directory proofs do not establish their wire format.
+
+GA4 reports must split `agent_verified` by the third `vv_detail` segment: exclude
+`intermediary` when measuring direct agents. Infrastructure signatures identify the
+browser service and may represent QA tools, scrapers or any customer workload.
+
+Platform-default release source: [Chrome 92 Enterprise release notes, upcoming Chrome 93](https://storage.googleapis.com/support-kms-prod/LrD0vGFF3FFxwwScrfThxc6dRMNG3bTBFJEF).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
