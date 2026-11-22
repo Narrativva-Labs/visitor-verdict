@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Versioned signal registry and JSON Schema for every detector code, default UA token and agent element ID, with sources, product/version evidence, review dates, lifecycle status and false-positive caveats; generated [signal catalogue](docs/signals.md) in the normal build.
+- CI registry contracts for schema validity, exact source inventories, weights and scoring families, retired output codes, generated documentation and non-failing 120-day review warnings.
+
+### Documentation
+
+- Contributor requirements for new signal evidence and lifecycle updates. Google-NotebookLM is retired as an operator token (support ended August 2026); its existing AG compatibility match is retained. Claude marker coverage explicitly excludes extension 1.0.107 closed shadow roots. Detector behavior and distribution bytes are unchanged.
+
 ## [1.1.0] - 2026-11-22
 
 ### Added

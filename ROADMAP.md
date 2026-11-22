@@ -14,7 +14,7 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [x] Class on the first `page_view` (Google tag fired on the detector's initial result, with a short timer fallback)
 - [x] v1.1.0: agent UI markers (OpenAI agent overlay, older Claude in Chrome) as `declared_agent` with `traffic_agent`, new `agent` phase
 - [ ] Detect current Claude in Chrome, whose UI sits in a closed shadow root (open question; no heuristic without a field check)
-- [ ] Versioned signal registry: for each marker or token its source, version range, date last checked and status (experimental / validated / retired), so signals that agents stop emitting are retired instead of silently missing
+- [x] Versioned signal registry: for each marker or token its source, version range, date last checked and status (experimental / validated / retired), so signals that agents stop emitting are retired instead of silently missing
 - [ ] More agent UI markers only with a public source and a version (candidate: Genspark `#genspark-float-bar`, reported by a third party), first as evidence without changing the class
 - [ ] WebMCP as two separate fields: the browser supports it (`document.modelContext`) and a tool was actually used (`toolactivated`); support alone never labels a visitor
 - [ ] Lightweight field validation, 2–4 weeks on a few live sites (in progress since 2026-11-19): share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices

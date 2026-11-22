@@ -4,13 +4,15 @@
   "description": "Privacy-minimising browser traffic classification for Google Tag Manager and GA4",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node test/contracts.mjs && node test/runner-contracts.mjs",
+    "test": "node test/contracts.mjs && node test/runner-contracts.mjs && node test/registry.mjs",
     "test:contracts": "node test/contracts.mjs",
     "serve": "node test/server.mjs",
     "test:extended": "node test/run-extended.mjs",
     "build:container": "node scripts/build-container.mjs",
     "test:fuzz": "node test/fuzz/run.mjs",
-    "test:browsers": "node test/run.mjs"
+    "test:browsers": "node test/run.mjs",
+    "build:signals": "node scripts/build-signals.mjs",
+    "test:registry": "node test/registry.mjs"
   },
   "keywords": [],
   "author": "František Bujnovský",
@@ -19,6 +21,7 @@
   "devDependencies": {
     "@fingerprintjs/botd": "^2.0.0",
     "acorn": "^8.15.0",
+    "ajv": "8.20.0",
     "playwright": "1.65.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

@@ -50,6 +50,7 @@ The integrity value comes from [dist/visitor-verdict.min.js.sri](dist/visitor-ve
 
 ## Documentation
 
+- [Versioned signal registry: sources, product versions, review dates and known false positives](docs/signals.md)
 - [How it works: signals, configuration, public interface and hardening](docs/how-it-works.md)
 - [Privacy, storage and consent](docs/privacy.md)
 - [GTM setup and GA4 reporting](docs/ga4-reporting.md)

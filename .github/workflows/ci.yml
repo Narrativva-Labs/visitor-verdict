@@ -25,4 +25,5 @@ jobs:
       - run: node scripts/build.mjs
       - run: node test/contracts.mjs
       - run: node test/runner-contracts.mjs
+      - run: node test/registry.mjs
       - run: node test/fuzz/run.mjs --runs 1000

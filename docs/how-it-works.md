@@ -23,6 +23,8 @@ Duplicate inclusion is ignored. BFCache restoration retains the document's state
 
 ### Signals
 
+The [versioned signal registry](signals.md) records every output code, default UA token and agent element ID, with sources, product/version scope, review dates, lifecycle status and known false positives. It is documentation and a CI contract, separate from the runtime.
+
 Weights below are the implemented defaults. Missing or blocked optional APIs are unknown rather than positive evidence; genuinely unavailable WebGL has the explicit weak WG weight.
 
 | Code | Evidence and safeguards | Weight / family |

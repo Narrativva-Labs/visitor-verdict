@@ -13,9 +13,17 @@ npm test
 npm run test:fuzz -- --runs 1000
 ```
 
-`npm test` runs detector contracts and runner contracts. For the longer default fuzz campaign run `npm run test:fuzz`; see [fuzz methodology](test/fuzz/README.md) for seed/replay options. CI runs both supported Node versions and fails on check errors.
+`npm test` runs detector, runner and signal-registry contracts. `npm run test:registry` runs the registry checks alone. For the longer default fuzz campaign run `npm run test:fuzz`; see [fuzz methodology](test/fuzz/README.md) for seed/replay options. CI runs both supported Node versions and fails on check errors.
+
+The build also regenerates [the signal catalogue](docs/signals.md) from `signals/registry.json`. The registry and its schema never enter detector bundles.
 
 The build validates ES5 source/output and regenerates `dist/visitor-verdict.min.js`, its SHA-384 `.sri` file, GTM Custom HTML and container JSON. Include generated artifacts with relevant source/config changes; `dist/` is versioned. Never hand-edit generated files. `npm run build:container` rebuilds only the container from current HTML.
+
+## Signal registry
+
+Every new output code, default `agentTokens` entry or agent element ID needs a record in `signals/registry.json`, conforming to `signals/registry.schema.json`. Include the exact condition, evidence family, weight/hardness and runtime scoring family where applicable, a public source URL or pinned code reference, the verified product version/range (explicitly unknown when not established), last review date, status and known false positives. Do not infer real-product coverage from a synthetic fixture. `validated` is scoped to the listed verification; field accuracy is a separate question.
+
+Increment `registryVersion` when evidence or entries change; it is independent of `detectorVersion`. Run `npm run build` and commit the generated `docs/signals.md`. Dates are reviewed manually; build must not refresh them. Reviews older than 120 days produce warnings without failing CI. Retired output codes must not remain emit-able. A historical UA token may be marked retired while its existing literal still emits active `AG`, with an explicit `retirementReason`; this records ended operator support without silently changing runtime compatibility. Element IDs retain their historical version scope until their matchers are deliberately removed.
 
 ## Browser suites and manual checks
 

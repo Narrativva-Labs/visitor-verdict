@@ -1,0 +1,1569 @@
+{
+  "$schema": "./registry.schema.json",
+  "registryVersion": "1.0.0",
+  "detectorVersion": "1.1.0",
+  "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit.",
+  "signals": [
+    {
+      "id": "WD",
+      "kind": "code",
+      "code": "WD",
+      "family": "environment",
+      "check": "navigator.webdriver === true.",
+      "weight": 100,
+      "hardness": "hard",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Human developers may drive or inspect an instrumented browser."
+      ]
+    },
+    {
+      "id": "HL",
+      "kind": "code",
+      "code": "HL",
+      "family": "environment",
+      "check": "Boundary-matched HeadlessChrome in main UA, /HeadlessChrome/i in synchronous UA-CH brand, or boundary-matched worker UA at final when worker: true.",
+      "weight": 100,
+      "hardness": "hard",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "A human can use a headless/instrumented browser or spoof the token."
+      ]
+    },
+    {
+      "id": "AU",
+      "kind": "code",
+      "code": "AU",
+      "family": "environment",
+      "check": "Boundary-matched PhantomJS, Chrome-Lighthouse, Lighthouse, GTmetrix or Google-PageRenderer; PTST requires / followed by a digit.",
+      "weight": 100,
+      "hardness": "hard",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "UA spoofing or human-requested audits; not evidence of AI or intent."
+      ]
+    },
+    {
+      "id": "GL",
+      "kind": "code",
+      "code": "GL",
+      "family": "environment",
+      "check": "Own callable data properties only: window callPhantom, _phantom, __nightmare, domAutomation, domAutomationController, or ^cdc_[A-Za-z0-9]+_(Array|Promise|Symbol|Object|Proxy|JSON|Window)$; document __{selenium,webdriver,driver,fxdriver}_{evaluate,unwrapped}, __webdriver_script_{fn,func,function}, __$webdriverAsyncExecutor, or $cdc_/$wdc_ prefixes. shapeValue excludes DOM/host/window values and getters.",
+      "weight": 100,
+      "hardness": "hard",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Page-authored functions can imitate these names; human test instrumentation can expose them."
+      ]
+    },
+    {
+      "id": "PW",
+      "kind": "code",
+      "code": "PW",
+      "family": "environment",
+      "check": "Own callable data properties at __playwright__binding__, __playwright__binding__controller__, __pwInitScripts, initial and final; same shape guard as GL. Arrays, plain data, getters and host objects do not count.",
+      "weight": 100,
+      "hardness": "hard",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Page functions may collide; feature/execution-world dependent, and a plain init-script array does not qualify."
+      ]
+    },
+    {
+      "id": "AG",
+      "kind": "code",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Case-insensitive literal configured agentTokens with boundaries excluding adjacent A-Z, a-z, digits, underscore and hyphen. Overrides replace defaults, capped at 64 tokens of 1..128 characters.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Any page/browser can spoof its UA; fetchers without JavaScript do not run the detector."
+      ]
+    },
+    {
+      "id": "DM",
+      "kind": "code",
+      "code": "DM",
+      "family": "declaration",
+      "check": "Exact registered element IDs at their registered direct parent in the light DOM, at start and through the bounded root/body MutationObserver until match or pagehide. No shadow roots or frames.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Page code can plant IDs; marker UI presence is an unverified declaration, not authenticated operator identity."
+      ]
+    },
+    {
+      "id": "CA",
+      "kind": "code",
+      "code": "CA",
+      "family": "carry-over",
+      "check": "Sanitised sessionStorage lastClass.value automated with direct === true, consumed at start; one following document only. No direct provenance from CA alone.",
+      "weight": 100,
+      "hardness": "inherited",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "A person taking over the next document can inherit automation; same-origin code can plant storage."
+      ]
+    },
+    {
+      "id": "CD",
+      "kind": "code",
+      "code": "CD",
+      "family": "carry-over",
+      "check": "Sanitised lastClass.value declared_agent with direct === true; carries one document and a whitelisted stored operator, never becomes automated.",
+      "weight": 100,
+      "hardness": "inherited",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Human manual takeover can inherit a declaration; same-origin storage is spoofable."
+      ]
+    },
+    {
+      "id": "G0",
+      "kind": "code",
+      "code": "G0",
+      "family": "environment",
+      "check": "Both dimensions zero in any of screen, inner viewport or outer window; top-level, not hidden and focused; initial and final.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Browser lifecycle, unusual windowing and privacy settings may expose zero dimensions."
+      ],
+      "scoringFamily": "geometry"
+    },
+    {
+      "id": "GS",
+      "kind": "code",
+      "code": "GS",
+      "family": "environment",
+      "check": "Screen 800x600, or screen 1280x720 equal to inner viewport on both axes.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Real displays, VMs and responsive/test windows can have these dimensions."
+      ],
+      "scoringFamily": "geometry"
+    },
+    {
+      "id": "HW",
+      "kind": "code",
+      "code": "HW",
+      "family": "environment",
+      "check": "Visible focused non-mobile non-embedded top-level window: positive inner size equals outer and screen on both axes; available screen equals screen; fullscreenElement === null; matchMedia fullscreen and standalone both false. Rechecked final.",
+      "weight": 2,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Kiosk/PWA/F11 or unusual window managers can still share geometry; benign evidence requiring corroboration."
+      ],
+      "scoringFamily": "geometry"
+    },
+    {
+      "id": "LA",
+      "kind": "code",
+      "code": "LA",
+      "family": "environment",
+      "check": "Missing or empty navigator.languages AND falsy language, userLanguage, browserLanguage and systemLanguage.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Privacy settings, old browsers and embedded environments may omit language information."
+      ],
+      "scoringFamily": "language"
+    },
+    {
+      "id": "PL",
+      "kind": "code",
+      "code": "PL",
+      "family": "environment",
+      "check": "Desktop Chrome/ UA excluding mobile/touch iPad and known embedded UAs; Chromium brands or window.chrome, existing empty plugins, pdfViewerEnabled !== false.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "PDF policies, privacy extensions and unrecognised embedded browsers may have empty plugins."
+      ],
+      "scoringFamily": "plugins"
+    },
+    {
+      "id": "WG",
+      "kind": "code",
+      "code": "WG",
+      "family": "environment",
+      "check": "webgl: true only: both webgl/experimental-webgl contexts unavailable, or debug renderer matches bounded SwiftShader/llvmpipe/softpipe or exact Mesa OffScreen. Missing debug extension and thrown/blocked APIs are unknown. Context released.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Software rendering, disabled acceleration, old devices, VMs and privacy settings are normal."
+      ],
+      "scoringFamily": "graphics"
+    },
+    {
+      "id": "CH",
+      "kind": "code",
+      "code": "CH",
+      "family": "environment",
+      "check": "Desktop Chrome/ UA excluding mobile/embedded and Chromium-compatible synchronous brands, but no window.chrome.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Privacy tools and browser variants can omit chrome; UA alone is insufficient."
+      ],
+      "scoringFamily": "chrome"
+    },
+    {
+      "id": "HC",
+      "kind": "code",
+      "code": "HC",
+      "family": "environment",
+      "check": "Falsy navigator.hardwareConcurrency; records debug code only, with no score.",
+      "weight": 0,
+      "hardness": "debug",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Old, embedded and privacy-focused browsers can omit the value; no positive score."
+      ]
+    },
+    {
+      "id": "NP",
+      "kind": "code",
+      "code": "NP",
+      "family": "environment",
+      "check": "Secure top-level Chromium, Notification.permission denied and successful notifications Permissions query returning prompt before final. No permission request; rejection/unsupported is unknown.",
+      "weight": 1,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "User/policy permissions, privacy tools or API differences may cause mismatches."
+      ],
+      "scoringFamily": "permissions"
+    },
+    {
+      "id": "NI",
+      "kind": "code",
+      "code": "NI",
+      "family": "behaviour",
+      "check": "Input can be observed; no accepted activity after full idleMs of visible exposure (default 8000ms). Trusted or missing-isTrusted input except pointercancel counts as activity. Final only.",
+      "weight": 2,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Quiet reading, media watching and assistive input can produce no accepted input."
+      ],
+      "scoringFamily": "interaction"
+    },
+    {
+      "id": "FN",
+      "kind": "code",
+      "code": "FN",
+      "family": "behaviour",
+      "check": "Bounded rounded session timestamps contain fastNavCount documents (default 3), connected by positive consecutive gaps below fastNavMs (default 2000ms); reload/back_forward excluded, writable storage required. Final only.",
+      "weight": 3,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "People can follow short links rapidly; timestamps do not establish distinct URLs."
+      ],
+      "scoringFamily": "navigation"
+    },
+    {
+      "id": "SY",
+      "kind": "code",
+      "code": "SY",
+      "family": "behaviour",
+      "check": "Untrusted mousemove, pointerdown or touchstart observed with no accepted trusted or missing-isTrusted activity. Final only; shares interaction cap 2 with NI.",
+      "weight": 2,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Ordinary application frameworks dispatch synthetic input."
+      ],
+      "scoringFamily": "interaction"
+    },
+    {
+      "id": "TP",
+      "kind": "code",
+      "code": "TP",
+      "family": "behaviour",
+      "check": "Trusted mousemove delta >200px or >200px from prior distinct position within 600ms; suppress a stream of >=3 positions with gaps <=120ms. Trusted mouse click detail >0 within 600ms of jump and trusted mouse pointerdown, within 2px of endpoint, >40px from previous click. Touch/pen/key/cancel clears pointer origin. Final only.",
+      "weight": 3,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Accessibility warp-on-click tools and rapid human cursor moves can match; no population validation."
+      ],
+      "scoringFamily": "pointer"
+    },
+    {
+      "id": "TR",
+      "kind": "code",
+      "code": "TR",
+      "family": "carry-over",
+      "check": "Final remaining sanitised tpPages >=2 after eligible decay on accepted activity without current TP. TP increments at most once per document; stale writes guarded, cap 255. Shares pointer cap 3 with TP. No initial class override.",
+      "weight": 2,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Repeated assistive cursor warps or human jumps can accumulate history; reloads can count again."
+      ],
+      "scoringFamily": "pointer"
+    },
+    {
+      "id": "WK",
+      "kind": "code",
+      "code": "WK",
+      "family": "environment",
+      "check": "worker: true: supported nonempty UA, boolean webdriver, nonempty languages joined with |, or positive hardwareConcurrency differs between main and dedicated worker; reply before final. Missing/blocked fields unknown.",
+      "weight": 2,
+      "hardness": "soft",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        },
+        {
+          "product": "ChatGPT remote browser",
+          "versions": "2026-11-19 field runs; browser build not recorded",
+          "result": "Main en-US versus worker en-US,en observed; not unique to this product.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#field-observations-v10-2026-11-19"
+        }
+      ],
+      "falsePositives": [
+        "Locale-switching extensions can reproduce the ChatGPT field language mismatch; differences are not identity."
+      ],
+      "scoringFamily": "worker"
+    },
+    {
+      "id": "UB",
+      "kind": "code",
+      "code": "UB",
+      "family": "environment",
+      "check": "worker: true: main has a nonempty UA-CH brand string, worker exposes userAgentData but null/undefined value or empty brands array. Absent API, malformed shapes, denied getter or failed worker unknown. Final directly suspicious without normal gate; never hard provenance.",
+      "weight": 6,
+      "hardness": "direct-suspicious",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.1.0",
+          "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        }
+      ],
+      "falsePositives": [
+        "Human Chrome DevTools device emulation and CDP UA overrides can produce this mismatch."
+      ],
+      "scoringFamily": "worker"
+    },
+    {
+      "id": "ua:ChatGPT-User",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token ChatGPT-User, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.openai.com/api/docs/bots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "ChatGPT-User",
+          "versions": "Public operator token documentation reviewed 2026-11-22; product release range not published or not established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.openai.com/api/docs/bots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "ChatGPT-User"
+    },
+    {
+      "id": "ua:OAI-SearchBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token OAI-SearchBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.openai.com/api/docs/bots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "OAI-SearchBot",
+          "versions": "Public operator token documentation reviewed 2026-11-22; product release range not published or not established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.openai.com/api/docs/bots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "OAI-SearchBot"
+    },
+    {
+      "id": "ua:OAI-AdsBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token OAI-AdsBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.openai.com/api/docs/bots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "OAI-AdsBot",
+          "versions": "Public operator token documentation reviewed 2026-11-22; product release range not published or not established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.openai.com/api/docs/bots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "OAI-AdsBot"
+    },
+    {
+      "id": "ua:GPTBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token GPTBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.openai.com/api/docs/bots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "GPTBot",
+          "versions": "Public operator token documentation reviewed 2026-11-22; product release range not published or not established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.openai.com/api/docs/bots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "GPTBot"
+    },
+    {
+      "id": "ua:Claude-Agent",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Claude-Agent, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://support.claude.com/en/articles/18234133-how-do-anthropic-hosted-browsers-identify-themselves-when-they-browse-the-web-on-a-user-s-behalf",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Claude-Agent",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://support.claude.com/en/articles/18234133-how-do-anthropic-hosted-browsers-identify-themselves-when-they-browse-the-web-on-a-user-s-behalf"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Claude-Agent"
+    },
+    {
+      "id": "ua:Claude-User",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Claude-User, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Claude-User",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Claude-User"
+    },
+    {
+      "id": "ua:Claude-SearchBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Claude-SearchBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Claude-SearchBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Claude-SearchBot"
+    },
+    {
+      "id": "ua:ClaudeBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token ClaudeBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "ClaudeBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "ClaudeBot"
+    },
+    {
+      "id": "ua:Perplexity-User",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Perplexity-User, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://docs.perplexity.ai/docs/resources/perplexity-crawlers",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Perplexity-User",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Perplexity-User"
+    },
+    {
+      "id": "ua:PerplexityBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token PerplexityBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://docs.perplexity.ai/docs/resources/perplexity-crawlers",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "PerplexityBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "PerplexityBot"
+    },
+    {
+      "id": "ua:Google-Agent",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Google-Agent, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Google-Agent",
+          "versions": "Public operator token documentation reviewed 2026-11-22; product release range not published or not established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Google-Agent"
+    },
+    {
+      "id": "ua:Google-CloudVertexBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Google-CloudVertexBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developers.cloudflare.com/ai-crawl-control/reference/bots/",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Google-CloudVertexBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.cloudflare.com/ai-crawl-control/reference/bots/"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Google-CloudVertexBot"
+    },
+    {
+      "id": "ua:Google-GeminiNotebook",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Google-GeminiNotebook, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Google-GeminiNotebook",
+          "versions": "Public operator token documentation reviewed 2026-11-22; product release range not published or not established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Google-GeminiNotebook"
+    },
+    {
+      "id": "ua:Google-NotebookLM",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Google-NotebookLM, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "retired",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Google-NotebookLM",
+          "versions": "Former token supported until August 2026; replaced by Google-GeminiNotebook.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Google-NotebookLM",
+      "retirementReason": "Operator ended support in August 2026. The historical literal remains in detector 1.1.0 for compatibility; it still emits active code AG. Registry retirement describes product evidence, not runtime removal."
+    },
+    {
+      "id": "ua:Gemini-Deep-Research",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Gemini-Deep-Research, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-19",
+      "sources": [
+        "https://darkvisitors.com/agents/gemini-deep-research",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Gemini-Deep-Research",
+          "versions": "Third-party directory observation 2026-11-19 only; no primary operator token contract or product release range established.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://darkvisitors.com/agents/gemini-deep-research"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Gemini-Deep-Research"
+    },
+    {
+      "id": "ua:MistralAI-User",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token MistralAI-User, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://docs.mistral.ai/robots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "MistralAI-User",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://docs.mistral.ai/robots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "MistralAI-User"
+    },
+    {
+      "id": "ua:MistralAI-Index",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token MistralAI-Index, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://docs.mistral.ai/robots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "MistralAI-Index",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://docs.mistral.ai/robots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "MistralAI-Index"
+    },
+    {
+      "id": "ua:MistralAI-Training",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token MistralAI-Training, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://docs.mistral.ai/robots",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "MistralAI-Training",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://docs.mistral.ai/robots"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "MistralAI-Training"
+    },
+    {
+      "id": "ua:DuckAssistBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token DuckAssistBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "DuckAssistBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "DuckAssistBot"
+    },
+    {
+      "id": "ua:Applebot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Applebot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://support.apple.com/en-us/119829",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Applebot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://support.apple.com/en-us/119829"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Applebot"
+    },
+    {
+      "id": "ua:Bytespider",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Bytespider, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developers.cloudflare.com/ai-crawl-control/reference/bots/",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Bytespider",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.cloudflare.com/ai-crawl-control/reference/bots/"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Bytespider"
+    },
+    {
+      "id": "ua:meta-externalagent",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token meta-externalagent, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developers.cloudflare.com/ai-crawl-control/reference/bots/",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "meta-externalagent",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.cloudflare.com/ai-crawl-control/reference/bots/"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "meta-externalagent"
+    },
+    {
+      "id": "ua:meta-externalfetcher",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token meta-externalfetcher, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developers.cloudflare.com/ai-crawl-control/reference/bots/",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "meta-externalfetcher",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.cloudflare.com/ai-crawl-control/reference/bots/"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "meta-externalfetcher"
+    },
+    {
+      "id": "ua:meta-webindexer",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token meta-webindexer, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "meta-webindexer",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "meta-webindexer"
+    },
+    {
+      "id": "ua:CCBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token CCBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://commoncrawl.org/ccbot",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "CCBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://commoncrawl.org/ccbot"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "CCBot"
+    },
+    {
+      "id": "ua:Amazonbot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Amazonbot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developer.amazon.com/docs/amazonbot/amazonbot.html",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Amazonbot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developer.amazon.com/docs/amazonbot/amazonbot.html"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Amazonbot"
+    },
+    {
+      "id": "ua:Amzn-SearchBot",
+      "kind": "ua-token",
+      "code": "AG",
+      "family": "declaration",
+      "check": "Literal boundary-matched UA token Amzn-SearchBot, case-insensitive; emits AG with the common AG safeguards.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-18",
+      "sources": [
+        "https://developer.amazon.com/docs/amazonbot/amazonbot.html",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#documented-identities-and-exact-examples"
+      ],
+      "verification": [
+        {
+          "product": "Amzn-SearchBot",
+          "versions": "Token documented in repository research accessed 2026-11-18; product release range and JavaScript execution not verified.",
+          "result": "Documentation evidence only; no live product run.",
+          "kind": "documentation",
+          "source": "https://developer.amazon.com/docs/amazonbot/amazonbot.html"
+        }
+      ],
+      "falsePositives": [
+        "UA claims can be spoofed; general crawlers are not necessarily interactive agents; no event without JavaScript."
+      ],
+      "token": "Amzn-SearchBot"
+    },
+    {
+      "id": "dom:claude-agent-glow-border",
+      "kind": "element-id",
+      "code": "DM",
+      "family": "declaration",
+      "check": "Exact getElementById(claude-agent-glow-border) with parentNode === document.body; light DOM only, emits DM. See DM for watcher limits.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/microsoft/clarity/pull/1142",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js"
+      ],
+      "verification": [
+        {
+          "product": "Claude in Chrome",
+          "versions": "Older light-DOM releases; exact positive release range not recorded",
+          "result": "Light-DOM marker at expected parent; release-wide coverage not established.",
+          "kind": "source-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110"
+        },
+        {
+          "product": "Claude in Chrome",
+          "versions": "1.0.107",
+          "result": "NOT detected: markers inside closed shadow root in assets/agent-visual-indicator.js. No exact 1.0.6x positive range established by recorded evidence.",
+          "kind": "source-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110"
+        }
+      ],
+      "falsePositives": [
+        "Page-authored matching IDs can spoof operator; persistent UI and manual takeover do not prove every action is automated."
+      ],
+      "elementId": "claude-agent-glow-border",
+      "parent": "body",
+      "operator": "anthropic"
+    },
+    {
+      "id": "dom:claude-phantom-cursor",
+      "kind": "element-id",
+      "code": "DM",
+      "family": "declaration",
+      "check": "Exact getElementById(claude-phantom-cursor) with parentNode === document.body; light DOM only, emits DM. See DM for watcher limits.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/microsoft/clarity/pull/1142",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js"
+      ],
+      "verification": [
+        {
+          "product": "Claude in Chrome",
+          "versions": "Older light-DOM releases; exact positive release range not recorded",
+          "result": "Light-DOM marker at expected parent; release-wide coverage not established.",
+          "kind": "source-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110"
+        },
+        {
+          "product": "Claude in Chrome",
+          "versions": "1.0.107",
+          "result": "NOT detected: markers inside closed shadow root in assets/agent-visual-indicator.js. No exact 1.0.6x positive range established by recorded evidence.",
+          "kind": "source-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110"
+        }
+      ],
+      "falsePositives": [
+        "Page-authored matching IDs can spoof operator; persistent UI and manual takeover do not prove every action is automated."
+      ],
+      "elementId": "claude-phantom-cursor",
+      "parent": "body",
+      "operator": "anthropic"
+    },
+    {
+      "id": "dom:codex-agent-overlay-root",
+      "kind": "element-id",
+      "code": "DM",
+      "family": "declaration",
+      "check": "Exact getElementById(codex-agent-overlay-root) with parentNode === document.documentElement; light DOM only, emits DM. See DM for watcher limits.",
+      "weight": 100,
+      "hardness": "declared",
+      "status": "validated",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://github.com/microsoft/clarity/pull/1142",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js"
+      ],
+      "verification": [
+        {
+          "product": "ChatGPT desktop app Chrome plugin",
+          "versions": "Inspected 2026-11-22; plugin/app version not recorded",
+          "result": "Light-DOM marker at expected parent; release-wide coverage not established.",
+          "kind": "source-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#agent-ui-markers-detector-110"
+        }
+      ],
+      "falsePositives": [
+        "Page-authored matching IDs can spoof operator; persistent UI and manual takeover do not prove every action is automated."
+      ],
+      "elementId": "codex-agent-overlay-root",
+      "parent": "documentElement",
+      "operator": "openai"
+    }
+  ]
+}

@@ -3,6 +3,8 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 const {minify} = createRequire(import.meta.url)('terser');
 import {parse} from 'acorn';
+import {buildSignals} from './build-signals.mjs';
+await buildSignals();
 const source = await readFile(new URL('../src/visitor-verdict.js', import.meta.url), 'utf8');
 parse(source, {ecmaVersion: 5});
 const {code} = await minify(source, {ecma: 5, compress: {passes: 3}, mangle: true});
