@@ -48,6 +48,15 @@ export function checkRegistry(data, detectorSource, {now = new Date(), warn = co
   assert.equal(new Set(data.signals.map(s => s.id)).size, data.signals.length, 'Duplicate registry ID');
   const detected = inventory(detectorSource);
   assert.equal(data.detectorVersion, detected.version, 'Detector version mismatch');
+  const information = data.signals.filter(s => s.kind === 'information');
+  assert.deepEqual(sorted(information.map(s => s.id)), ['MC', 'MU'], 'WebMCP informational inventory');
+  for (const entry of information) {
+    assert.equal(entry.code, entry.id); assert.equal(entry.weight, 0);
+    assert.equal(entry.hardness, 'informational'); assert.equal(entry.status, 'experimental');
+    assert.equal(entry.scoringFamily, undefined);
+    assert.equal(entry.family, entry.id === 'MC' ? 'environment' : 'declaration');
+    assert.ok(!detected.codes.has(entry.code), 'Informational fields must never enter scoring');
+  }
   const codes = data.signals.filter(s => s.kind === 'code');
   assert.equal(new Set(codes.map(s => s.code)).size, codes.length, 'Duplicate code');
   assert.deepEqual(sorted(codes.filter(s => s.status !== 'retired').map(s => s.code)), sorted(detected.codes.keys()), 'Active code inventory mismatch');
@@ -95,6 +104,11 @@ test('generated documentation is current', () => assert.equal(renderSignals(regi
 test('missing emitted code fails', () => rejects(changed(d => d.signals = d.signals.filter(s => s.id !== 'WD'))));
 test('unimplemented active code fails', () => rejects(changed(d => d.signals.push({...d.signals[0], id: 'ZZ', code: 'ZZ'}))));
 test('retired emitted code fails', () => rejects(changed(d => { d.signals[0].status = 'retired'; d.signals[0].retirementReason = 'No longer supported'; })));
+test('WebMCP informational fields cannot disappear or become classification evidence', () => {
+  rejects(changed(d => d.signals = d.signals.filter(s => s.id !== 'MU')));
+  rejects(changed(d => d.signals.find(s => s.id === 'MC').weight = 1));
+  rejects(changed(d => d.signals.find(s => s.id === 'MU').kind = 'code'));
+});
 test('duplicate record fails', () => rejects(changed(d => d.signals.push(d.signals[0]))));
 test('missing token and added source token fail', () => {
   rejects(changed(d => d.signals = d.signals.filter(s => s.token !== 'GPTBot')));

@@ -70,6 +70,9 @@ window.navigator = navigator;
 function Element() { this.nodeType = 1; this.ownerDocument = document; }
 var document = target({visibilityState: 'visible', hasFocus: function () { return true; }});
 window.document = document;
+if (spec.webmcp === 'document' || spec.webmcp === 'both') document.modelContext = target({});
+if (spec.webmcp === 'legacy' || spec.webmcp === 'both') navigator.modelContext = target({});
+if (spec.webmcp === 'throw') Object.defineProperty(document, 'modelContext', {get: function () { throw Error('blocked'); }});
 document.createEvent = function () { return {initEvent: function (type) { this.type = type; }}; };
 document.dispatchEvent = function (event) { dispatch(document, event.type, event); return true; };
 document.createElement = function () {
@@ -135,6 +138,10 @@ if (old.indexOf('noMutationObserver') !== -1) { delete window.MutationObserver; 
 export const lifecycle = String.raw`
 // Capture stale callbacks to model an already queued timeout racing pagehide.
 var stale = timers.slice();
+for (var m = 0; m < (spec.webmcpEvents || 0); m++) {
+  dispatch(spec.webmcp === 'document' || spec.webmcp === 'both' ? document.modelContext : window,
+    m % 2 ? 'toolcancel' : 'toolactivated', {isTrusted: spec.webmcpTrusted});
+}
 if (spec.interaction) {
   dispatch(document, 'mousemove', {clientX:10,clientY:10,isTrusted: spec.oldTrusted ? undefined : true});
   dispatch(document, 'scroll', {isTrusted: spec.oldTrusted ? undefined : true});
@@ -179,5 +186,5 @@ if (spec.poisonSnapshot) {
 export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
   beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
   readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
-  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.2.0',
+  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.3.0',
   previous:window.__visitorVerdictLast})`;

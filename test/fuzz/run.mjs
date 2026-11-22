@@ -24,7 +24,7 @@ const life = new vm.Script(lifecycle, {filename:'fuzz-lifecycle.js'});
 const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];
 const agents = ['openai', 'anthropic'];
-const checks = ['no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
+const checks = ['webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
 const base = () => ({storage:'{}', config:{}, race:'timer-first', double:true});
 function configExpression(spec) {
   return spec.configValue ?? '({' + Object.entries(spec.config || {}).map(([key,value]) => `${JSON.stringify(key)}:${value}`).join(',') + '})';
@@ -60,15 +60,23 @@ function evaluate(spec, script = detector) {
     return {errors};
   }
   const {events, writes, state} = result;
+  if (spec.webmcp || spec.webmcpEvents) {
+    const control = evaluate({...spec, webmcp: undefined, webmcpEvents: 0}, script);
+    const classification = rows => rows?.map(e => [e.traffic_class, e.traffic_score, e.traffic_phase, e.traffic_signals]);
+    if (JSON.stringify(classification(events)) !== JSON.stringify(classification(control.events))) fail('webmcp-class-invariance', 'WebMCP changed classification');
+  }
+  for (const value of [...events.map(e => ({webmcp: e.traffic_webmcp, webmcpCount: e.traffic_webmcp_count})), state]) {
+    if (!value || !['none','capable','used'].includes(value.webmcp) || !Number.isInteger(value.webmcpCount) || value.webmcpCount < 0 || value.webmcpCount > 255 || (value.webmcp === 'used') !== (value.webmcpCount > 0)) fail('payload-privacy', 'invalid WebMCP metadata');
+  }
   // Read the effective boolean in its own realm; string "true" must stay private.
   for (const event of events) {
-    const allowed = ['event','traffic_class','traffic_phase','traffic_score','traffic_version','traffic_agent', ...(debug ? ['traffic_signals'] : [])];
+    const allowed = ['event','traffic_class','traffic_phase','traffic_score','traffic_version','traffic_agent','traffic_webmcp','traffic_webmcp_count', ...(debug ? ['traffic_signals'] : [])];
     if (Object.keys(event).some(key => !allowed.includes(key)) || !['event','traffic_class','traffic_phase','traffic_score','traffic_version'].every(key => Object.hasOwn(event,key)) || event.event !== 'traffic_class') {
       fail('payload-privacy', `unexpected payload keys/value: ${JSON.stringify(event).slice(0,250)}`);
     }
     if (!classes.includes(event.traffic_class) || typeof event.traffic_score !== 'number' || !Number.isFinite(event.traffic_score)) fail('class/score', `invalid event: ${JSON.stringify(event).slice(0,250)}`);
     if (spec.expectedClass && event.traffic_class !== spec.expectedClass) fail('class/score', `expected ${spec.expectedClass}, got ${event.traffic_class}`);
-    if (event.traffic_version !== '1.2.0') fail('class/score', 'missing/invalid traffic_version');
+    if (event.traffic_version !== '1.3.0') fail('class/score', 'missing/invalid traffic_version');
     if (!['initial','agent','final'].includes(event.traffic_phase)) fail('phase-uniqueness', `invalid phase ${event.traffic_phase}`);
     if (Object.hasOwn(event,'traffic_agent') && !agents.includes(event.traffic_agent)) fail('payload-privacy', `invalid traffic_agent ${event.traffic_agent}`);
     if (event.traffic_phase === 'agent' && (event.traffic_class !== 'declared_agent' || !agents.includes(event.traffic_agent))) fail('class/score', `agent phase must escalate to declared_agent with an operator: ${JSON.stringify(event).slice(0,250)}`);
@@ -77,7 +85,7 @@ function evaluate(spec, script = detector) {
   }
   if (state && Object.hasOwn(state,'signals')) fail('payload-privacy','__visitorVerdict exposes debug signals');
   if (!result.beforeFrozen || !result.finalFrozen || !result.readOnly || !result.initialIntact) fail('snapshot-immutability', 'snapshots or public descriptor are writable/changed');
-  if (state && (state.version !== '1.2.0' || !['class,phase,score,version','agent,class,phase,score,version'].includes(Object.keys(state).sort().join(',')) ||
+  if (state && (state.version !== '1.3.0' || !['class,phase,score,version,webmcp,webmcpCount','agent,class,phase,score,version,webmcp,webmcpCount'].includes(Object.keys(state).sort().join(',')) ||
       (Object.hasOwn(state,'agent') && (!agents.includes(state.agent) || state.class !== 'declared_agent')))) fail('payload-privacy', 'invalid public snapshot fields/version');
   if (result.previous !== undefined && !classes.includes(result.previous)) fail('class/score', 'invalid previous class');
   if (!state || !classes.includes(state.class) || typeof state.score !== 'number' || !Number.isFinite(state.score)) fail('class/score','missing/invalid __visitorVerdict class or score');
@@ -164,6 +172,8 @@ function randomSpec() {
   else for (const key of configKeys) if (rand() < .6) {
     s.config[key] = key === 'agentTokens' && rand() < .7 ? pick(['["(a+)+$"]','Array(10000).fill("x")','["[",".*","a|b","(a+)+$","\\\\"]','["x".repeat(100000)]','[{},null,NaN,function(){}]']) : key === 'dataLayerName' && rand()<.7 ? JSON.stringify(pick(['dataLayer','customLayer','__proto__','constructor','prototype','','x'.repeat(129)])) : pick(values);
   }
+  if (rand()<.5) s.webmcp = pick(['document','legacy','both','throw']);
+  s.webmcpEvents = integer(300); s.webmcpTrusted = pick([true,false,null]);
   s.blockStorage = rand()<.05;
   s.noWebGL = rand()<.2; s.softwareGL = rand()<.2; s.workerMismatch = rand()<.1; s.workerHeadless = rand()<.05;
   s.permissionMismatch = rand()<.3; s.soft = rand()<.15;
@@ -179,6 +189,10 @@ function randomSpec() {
 
 function corpus() {
   const list = [{...base(),label:'baseline'}, {...base(),poisonSnapshot:true,label:'public snapshot poisoning'}];
+  for (const webmcp of ['document','legacy','both','throw']) {
+    for (const webmcpTrusted of [true,false,null]) list.push({...base(), webmcp, webmcpTrusted,
+      webmcpEvents: 300, label: `WebMCP ${webmcp} trusted=${webmcpTrusted}`});
+  }
   for (const [ua, webdriver] of [[undefined, false], ['ChatGPT-User', false], ['Claude-Agent/1.0', true]]) {
     list.push({...base(),storage:JSON.stringify({lastClass:{value:'declared_agent',direct:true}}),ua,webdriver,
       expectedClass:webdriver ? 'automated' : 'declared_agent',label:'declared carry preserves class unless current webdriver is true'});
@@ -256,7 +270,7 @@ if (args.includes('--self-test')) {
     ['payload-privacy','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0,raw:"oops"});'],
     ['class/score','window.dataLayer.push({event:"traffic_class",traffic_class:"alien",traffic_phase:"initial",traffic_score:Infinity});'],
     ['phase-uniqueness','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0});'],
-    ['snapshot-immutability','window.__visitorVerdict = {class:"human",score:0,phase:"initial",version:"1.2.0"};'],
+    ['snapshot-immutability','window.__visitorVerdict = {class:"human",score:0,phase:"initial",version:"1.3.0"};'],
     ['storage-bounds','window.sessionStorage.setItem("forbidden","{}");'],
     ['named-property-pollution','window.dataLayer.push({event:"traffic_class",traffic_class:window.__playwright__binding__ ? "automated" : "human",traffic_phase:"initial",traffic_score:100});']
   ];

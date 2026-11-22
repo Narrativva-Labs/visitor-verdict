@@ -15,10 +15,10 @@ export function renderSignals(registry) {
     '`experimental` means upstream evidence or release coverage remains incomplete. `validated` means only the listed code, documentation or observation was checked, not a population accuracy claim. Unknown product versions are recorded explicitly; synthetic fixtures do not validate a real product release.', '',
     'A retired **output code** must not be emitted. A retired **token** records an ended operator identity; its old literal may remain in the unchanged detector and emit the active AG code. Google-NotebookLM is this compatibility case. Claude light-DOM markers remain experimental with limited historical coverage; 1.0.107 is a recorded negative result, not a claim that historical matches stopped working.', '',
     'Build regenerates this page deterministically; `npm run test:registry` validates the schema, checks source inventories and weights, rejects retired output codes, and warns when any last check is more than 120 days old. Dates are evidence review dates, never automatically refreshed by build. Add a source and honest product/version scope for every new entry.', ''];
-  for (const [kind, title] of [['code', 'Detector codes'], ['ua-token', 'Default UA tokens'], ['element-id', 'Agent element IDs']]) {
+  for (const [kind, title] of [['code', 'Detector codes'], ['ua-token', 'Default UA tokens'], ['element-id', 'Agent element IDs'], ['information', 'Informational fields (no classification effect)']]) {
     lines.push(`## ${title}`, '', '| Code / identifier | Family; weight / hardness; scoring family | Exact check | Status; last checked | Product / version and verification | Sources | Known false positives |', '|---|---|---|---|---|---|---|');
     for (const s of registry.signals.filter(s => s.kind === kind)) {
-      const name = s.kind === 'code' ? `\`${s.code}\`` : `\`${s.token || s.elementId}\` → \`${s.code}\``;
+      const name = s.kind === 'code' || s.kind === 'information' ? `\`${s.code}\`` : `\`${s.token || s.elementId}\` → \`${s.code}\``;
       const checks = s.check + (s.parent ? ` Parent: ${s.parent}; operator: ${s.operator}.` : '');
       const versions = s.verification.map(v => `${v.product} — ${v.versions}: ${v.result} (${v.kind}; ${link(v.source, 'evidence')})`).join('<br>');
       lines.push('| ' + [name, `${s.family}; ${s.weight} / ${s.hardness}; ${s.scoringFamily || '—'}`, checks,

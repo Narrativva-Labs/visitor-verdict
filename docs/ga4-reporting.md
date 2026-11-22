@@ -9,7 +9,7 @@
 5. On every other **GA4 Event tag** (`gaawe`), add **traffic_class = `{{VV - current class}}`**, evaluated at that tag's firing time. Audit ecommerce, click and other tagged events. The dedicated publication event described below is the exception: it must use the publication's DLVs.
 6. Keep **VV - GA4 traffic_class** on **VV - initial hard OR VV - agent OR VV - final**, **Once per event**, with the mappings below. Preview initial, agent and final events (inject a synthetic `codex-agent-overlay-root` child of the root element to see the agent phase with `traffic_agent: 'openai'`), version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Neither a user property nor this setup backfills earlier events.
 
-All imported named objects use `VV - `. The import creates two tags, seven variables, five triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
+All imported named objects use `VV - `. The import creates two tags, eight variables, five triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
 
 | Object | Definition |
 |---|---|
@@ -19,7 +19,7 @@ All imported named objects use `VV - `. The import creates two tags, seven varia
 | VV - initial hard | Custom event `traffic_class`, phase equals `initial` AND class matches regex `^(automated|declared_agent)$` |
 | VV - OPTIONAL page_view readiness (OR, once per page) | Folder containing VV - initial and VV - timer fallback 1s; attach both manually as ordinary OR firing triggers |
 | VV - timer fallback 1s | Timer `gtm.timer`, 1000ms, limit 1, enabled on all pages |
-| VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version / traffic_agent | Five Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default (`traffic_agent` is absent on most events and then not sent) |
+| VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version / traffic_agent / traffic_webmcp | Six Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default (`traffic_agent` is absent on most events and then not sent) |
 | VV - current class | Validated live snapshot class, then startup previous class, then `undefined` |
 | VV - GA4 measurement ID | Constant holding your destination ID |
 
@@ -32,6 +32,14 @@ This can delay `page_view` by up to **1 s** after GTM starts; browser scheduling
 If the site uses an explicit GA4 `page_view` event tag, leave the Google tag's startup trigger in place, attach the two readiness triggers to the explicit event tag instead, set **Once per page**, and map `traffic_class={{VV - current class}}` on that event. Ensure the Google tag's automatic pageview is disabled so only one pageview is sent. Keep SPA/history pageviews in a **separate tag** with **Once per event**: Once per page on a shared tag would suppress later virtual pageviews.
 
 To roll back, remove the two readiness triggers from the tag you changed and restore its saved trigger list and firing option. Restore any pageview sending setting changed for the explicit-event variant. The dedicated classification event can remain on initial hard plus final.
+
+### WebMCP reporting and migration to 1.3.0
+
+Merge the current container import and review conflicts. Existing object IDs stay stable; **VV - DLV traffic_webmcp** is added as ID 16 (Data Layer Variable, Version 2, key `traffic_webmcp`, no default). The GA4 `traffic_class` tag adds event parameter `traffic_webmcp={{VV - DLV traffic_webmcp}}`. For a manual upgrade, update the detector HTML too. There are now six event mappings; no new firing trigger or user property is required.
+
+Optionally register event-scoped **Traffic WebMCP** for `traffic_webmcp` in GA4 custom definitions. Use `none`, `capable` and `used` as a separate reporting breakdown alongside `traffic_class`. `capable` is browser API exposure, never an agent classification. `used` means a site tool was invoked through the browser's agent integration, including cancellation observations; it does not identify an operator or prove completion. Neither value changes class, score or conversion handling. An absent field from an older detector means unknown, not `none`.
+
+The detector also exposes `traffic_webmcp_count` (trusted activation/cancellation events, capped at 255 per document); the supplied GA4 tag does not map this count. No tool names, arguments or outputs are collected. Standard publications carry the latest information at publication time. Usage after final can update `__visitorVerdict.webmcp` without another event, so this integration is not a complete invocation log. Console-dispatched events have `isTrusted: false` and must not produce `used`; synthetic trusted fixtures in the contracts only model browser delivery. Review Preview values and normal consent handling before publishing.
 
 ### Migrating an existing install to container 1.1.0
 

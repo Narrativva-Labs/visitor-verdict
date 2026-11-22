@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
-  "registryVersion": "1.1.0",
-  "detectorVersion": "1.2.0",
+  "registryVersion": "1.2.0",
+  "detectorVersion": "1.3.0",
   "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit.",
   "signals": [
     {
@@ -1591,6 +1591,64 @@
       "elementId": "codex-agent-overlay-root",
       "parent": "documentElement",
       "operator": "openai"
+    },
+    {
+      "id": "MC",
+      "kind": "information",
+      "code": "MC",
+      "family": "environment",
+      "check": "Truthy document.modelContext or legacy navigator.modelContext, sampled once at active document start; capability alone never means an agent.",
+      "weight": 0,
+      "hardness": "informational",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developer.chrome.com/docs/ai/webmcp",
+        "https://github.com/webmachinelearning/webmcp",
+        "https://github.com/microsoft/clarity/pull/1150",
+        "https://github.com/microsoft/clarity/pull/1166"
+      ],
+      "verification": [
+        {
+          "product": "WebMCP",
+          "versions": "Evolving proposal; browser release range not established. Legacy navigator/window and current document targets covered by synthetic contracts only.",
+          "result": "Documentation/source review and synthetic contracts; no live browser integration validation. No class, score, debug-code or storage effect.",
+          "kind": "code-review",
+          "source": "https://github.com/webmachinelearning/webmcp"
+        }
+      ],
+      "falsePositives": [
+        "API exposure is browser capability, not agent activity. Same-realm scripts can replace APIs; trusted lifecycle events do not establish identity or intent."
+      ]
+    },
+    {
+      "id": "MU",
+      "kind": "information",
+      "code": "MU",
+      "family": "declaration",
+      "check": "Explicitly trusted toolactivated/toolcancel on the start-time document.modelContext or legacy window target. Count lifecycle events per document, saturating at 255; used means a site tool was invoked through the browser agent integration, not successful completion or operator identity.",
+      "weight": 0,
+      "hardness": "informational",
+      "status": "experimental",
+      "lastChecked": "2026-11-22",
+      "sources": [
+        "https://developer.chrome.com/docs/ai/webmcp",
+        "https://github.com/webmachinelearning/webmcp",
+        "https://github.com/microsoft/clarity/pull/1150",
+        "https://github.com/microsoft/clarity/pull/1166"
+      ],
+      "verification": [
+        {
+          "product": "WebMCP",
+          "versions": "Evolving proposal; browser release range not established. Legacy navigator/window and current document targets covered by synthetic contracts only.",
+          "result": "Documentation/source review and synthetic contracts; no live browser integration validation. No class, score, debug-code or storage effect.",
+          "kind": "code-review",
+          "source": "https://github.com/webmachinelearning/webmcp"
+        }
+      ],
+      "falsePositives": [
+        "API exposure is browser capability, not agent activity. Same-realm scripts can replace APIs; trusted lifecycle events do not establish identity or intent."
+      ]
     }
   ]
 }

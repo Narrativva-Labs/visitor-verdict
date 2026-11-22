@@ -57,7 +57,7 @@ export async function runContracts(detectorSource) {
     // The deliberate DevTools scenario uses the original descriptor unchanged.
     assert.equal(device.userAgent, 'device UA');
   });
-  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.2.0', async () => {
+  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.3.0', async () => {
     const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
     for (const object of [c.container, ...c.tag, ...c.trigger, ...c.variable, ...c.folder]) assert.ok(object.name.startsWith('VV - '), object.name);
     assert.equal(c.tag.length, 2, 'Import creates detector and event tags only');
@@ -84,7 +84,7 @@ export async function runContracts(detectorSource) {
     const final = c.tag.find(t => t.name === 'VV - GA4 traffic_class');
     const mappings = key => final.parameter.find(p => p.key === key).list.map(row =>
       Object.fromEntries(row.map.map(p => [p.key, p.value])));
-    const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent'];
+    const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent', 'traffic_webmcp'];
     assert.deepEqual(mappings('eventSettingsTable'), fields.map(name => ({parameter: name, parameterValue: '{{VV - DLV ' + name + '}}'})));
     assert.deepEqual(mappings('userProperties'), [{name: 'traffic_class', value: '{{VV - DLV traffic_class}}'}]);
     for (const name of fields) {
@@ -120,7 +120,7 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(final.firingTriggerId, [c.trigger.find(t => t.name === 'VV - final').triggerId, hard.triggerId, agent.triggerId]);
     const ids = [...c.variable.map(v => v.variableId), ...c.trigger.map(t => t.triggerId), ...c.tag.map(t => t.tagId), ...c.folder.map(f => f.folderId)];
     assert.equal(new Set(ids).size, ids.length, 'Unique object IDs');
-    assert.deepEqual(['4', '5', '6', '7', '14'].map(id => c.variable.find(v => v.variableId === id).name),
+    assert.deepEqual(['4', '5', '6', '7', '14', '16'].map(id => c.variable.find(v => v.variableId === id).name),
       fields.map(name => 'VV - DLV ' + name), 'Earlier IDs stay stable; traffic_agent is appended');
     assert.equal(final.tagFiringOption, 'ONCE_PER_EVENT', 'Allow both initial hard and final publications');
     const optional = c.folder.find(f => f.name === 'VV - OPTIONAL page_view readiness (OR, once per page)');
@@ -191,8 +191,8 @@ export async function runContracts(detectorSource) {
   await test('v1 snapshots are frozen, replaced per publication, and immune to public/data-layer poisoning', () => {
     const f = fixture();
     const initial = f.window.__visitorVerdict;
-    assert.ok(Object.isFrozen(initial)); assert.equal(initial.version, '1.2.0');
-    assert.deepEqual(Object.keys(initial).sort(), ['class', 'phase', 'score', 'version']);
+    assert.ok(Object.isFrozen(initial)); assert.equal(initial.version, '1.3.0');
+    assert.deepEqual(Object.keys(initial).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     const descriptor = Object.getOwnPropertyDescriptor(f.window, '__visitorVerdict');
     assert.equal(descriptor.configurable, false); assert.equal(descriptor.set, undefined);
     assert.throws(() => {f.window.__visitorVerdict = {class: 'automated', score: Infinity};}, TypeError);
@@ -208,7 +208,7 @@ export async function runContracts(detectorSource) {
     assert.equal(initial.phase, 'initial'); assert.equal(final.phase, 'final');
     assert.equal(final.class, 'human'); assert.equal(final.score, 3);
     assert.ok(!f.signals.includes('WD'));
-    assert.equal(f.window.dataLayer[1].traffic_version, '1.2.0');
+    assert.equal(f.window.dataLayer[1].traffic_version, '1.3.0');
     vm.runInContext(source, f.context); f.emit('pagehide'); f.advance(8000);
     assert.equal(f.window.dataLayer.length, 2);
   });
@@ -216,7 +216,7 @@ export async function runContracts(detectorSource) {
     for (const value of [{__tcDetector: true, __vvDetector: true, class: 'alien', score: Infinity, phase: 'final'}, {class: 'automated', score: 100}]) {
       const f = fixture({modify: ({window}) => {window.__visitorVerdict = value;}});
       assert.equal(f.window.__visitorVerdict.class, 'human');
-      assert.equal(f.window.dataLayer[0].traffic_version, '1.2.0');
+      assert.equal(f.window.dataLayer[0].traffic_version, '1.3.0');
       vm.runInContext(source, f.context); f.advance(8000); assert.equal(f.window.dataLayer.length, 2);
     }
     for (const descriptor of [{value: {class: 'alien', score: Infinity}}, {get() {return true;}}]) {
@@ -279,11 +279,11 @@ export async function runContracts(detectorSource) {
     const {summarize, paths} = await import('./adversarial/report.mjs');
     const events = paths.flatMap(path => ['initial', 'final'].map(phase => ({path, event: {
       event: 'traffic_class', traffic_class: 'human', traffic_phase: phase, traffic_score: 0,
-      traffic_version: '1.2.0', traffic_signals: []
+      traffic_version: '1.3.0', traffic_signals: []
     }})));
     const report = summarize({events});
     assert.equal(report.status, 'COMPLETE');
-    assert.ok(report.pages.every(p => p.initial.traffic_version === '1.2.0' && p.final.traffic_version === '1.2.0'));
+    assert.ok(report.pages.every(p => p.initial.traffic_version === '1.3.0' && p.final.traffic_version === '1.3.0'));
     delete events[0].event.traffic_version;
     assert.equal(summarize({events}).status, 'ERROR');
   });
@@ -297,7 +297,7 @@ export async function runContracts(detectorSource) {
     }});
     f.emit('pagehide'); vm.runInContext(source, f.context); f.advance(8000);
     assert.deepEqual(events.map(e => e.traffic_phase), ['initial', 'final']);
-    assert.ok(events.every(e => e.traffic_class === 'human' && Number.isFinite(e.traffic_score) && e.traffic_version === '1.2.0'));
+    assert.ok(events.every(e => e.traffic_class === 'human' && Number.isFinite(e.traffic_score) && e.traffic_version === '1.3.0'));
     assert.equal(f.window.__visitorVerdict.phase, 'final');
   });
   await test('Initial synchronous; final once after 8000 visible ms; idle alone stays human', () => {
@@ -854,8 +854,8 @@ export async function runContracts(detectorSource) {
       f.emit('keydown', {isTrusted: true}); f.advance(8000);
       assert.equal(f.window.__visitorVerdict.class, kind === 'AG' ? 'declared_agent' : kind === 'production' ? 'suspicious' : 'automated');
       assert.equal(f.window.__visitorVerdict.score, kind === 'production' ? 6 : 100);
-      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version']);
-      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version']);
+      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
+      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     }
   });
   await test('WK is zero when main and worker navigator are consistent', () => {
@@ -922,8 +922,8 @@ export async function runContracts(detectorSource) {
     f.emit('pagehide'); late({data: {h: true, m: true, b: true}});
     assert.equal(f.window.dataLayer.length, 2);
     assert.equal(f.window.__visitorVerdict.class, 'human');
-    assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version']);
-    assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version']);
+    assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
+    assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
   });
   await test('TR: TP writes a bounded counter immediately, once per document, no exported counter', () => {
     const f = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({timestamps: [9000], lastClass: 'human', tpPages: 0}))});
@@ -1149,7 +1149,7 @@ export async function runContracts(detectorSource) {
       assert.equal(f.window.dataLayer.length, 1);
       vm.runInContext(source, f.context); f.advance(8000);
       assert.equal(f.window.dataLayer.length, 2);
-      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version']);
+      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     }
     const getter = {get __tcDetector() {throw Error('not our sentinel');}};
     const f = fixture({modify: ({window}) => {window.__visitorVerdict = getter;}});
@@ -1225,7 +1225,7 @@ export async function runContracts(detectorSource) {
       const f = fixture({modify: objects => {record = fakeWorker(objects); objects.window.dataLayer = layer;}});
       f.advance(8000);
       assert.equal(f.window.__visitorVerdict.phase, 'final');
-      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0); assert.equal(f.timers.size, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0); assert.equal(f.timers.size, 0);
       assert.equal(record.terminated, 1); assert.equal(record.revoked, 1);
       vm.runInContext(source, f.context); assert.equal(f.timers.size, 0);
     }
@@ -1241,7 +1241,7 @@ export async function runContracts(detectorSource) {
       window.addEventListener = (name, fn, opts) => {if (name === 'pagehide') fns = fn; add(name, fn, opts);};
       window.dataLayer = {length: 0, push() {fns();}};
     }});
-    assert.equal(workers, 0); assert.equal(f.timers.size, 0); assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+    assert.equal(workers, 0); assert.equal(f.timers.size, 0); assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
   });
   await test('F5 partial listener or timer setup failure removes every installed listener', () => {
     for (const mode of ['listener', 'timer']) {
@@ -1256,7 +1256,7 @@ export async function runContracts(detectorSource) {
         assert.equal(f.window.__visitorVerdict.phase, 'initial');
         f.advance(8000); assert.equal(f.window.__visitorVerdict.phase, 'final');
       }
-      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0); assert.equal(f.timers.size, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0); assert.equal(f.timers.size, 0);
     }
   });
   await test('F6 frames have no detector state, listeners, storage reads or probes', () => {
@@ -1266,7 +1266,7 @@ export async function runContracts(detectorSource) {
       document.createElement = () => {throw Error('frame probe');};
     }});
     assert.equal(reads, 0); assert.equal(f.window.__visitorVerdict, undefined); assert.equal(f.window.dataLayer, undefined);
-    assert.equal(f.timers.size, 0); assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+    assert.equal(f.timers.size, 0); assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
   });
   await test('F6 prerender defers probes, pageview and publication until activation, once', () => {
     let reads = 0;
@@ -1280,7 +1280,7 @@ export async function runContracts(detectorSource) {
     assert.equal(f.window.dataLayer.length, 1);
     assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).timestamps, [60000]);
     f.emit('prerenderingchange'); f.advance(8000); assert.equal(f.window.dataLayer.length, 2);
-    assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+    assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
   });
   await test('F7 debug strict true; invalid numeric and dataLayerName options use defaults', () => {
     for (const value of [true, false, 'true', 1, {}, null]) {
@@ -1361,7 +1361,8 @@ export async function runContracts(detectorSource) {
         if (mode === 'passive') assert.deepEqual({...entry.opts}, {capture: true, passive: true});
         else assert.equal(entry.opts, true);
       }
-      f.advance(8000); assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+      f.advance(8000); assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
+      f.emit('pagehide');
       for (const entry of input) assert.ok(f.removals.some(r => r.name === entry.name && r.fn === entry.fn && r.opts === entry.opts));
     }
   });
@@ -1502,7 +1503,7 @@ export async function runContracts(detectorSource) {
       f.advance(8000); f.emit('pagehide'); f.advance(8000);
       assert.equal(f.window.dataLayer.length, 2, String(bits));
       assert.equal(f.window.__visitorVerdict.phase, 'final'); assert.equal(f.window.__visitorVerdict.class, 'human');
-      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0); assert.equal(f.timers.size, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0); assert.equal(f.timers.size, 0);
       if (![f.window, f.document].some(target => methods.every(method => typeof target[method] === 'function'))) {
         assert.ok(!f.signals.includes('NI'), 'Unobservable input must remain unknown');
       }
@@ -1583,7 +1584,7 @@ export async function runContracts(detectorSource) {
       assert.equal(f.window.__visitorVerdict.agent, operator);
       assert.equal(f.window.__visitorVerdict.score, 100);
       assert.ok(Object.isFrozen(f.window.__visitorVerdict));
-      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['agent', 'class', 'phase', 'score', 'version']);
+      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['agent', 'class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
       assert.equal(f.window.dataLayer[0].traffic_agent, operator); assert.ok(f.signals.includes('DM'));
       assert.equal(dom.observers.length, 0, 'Found at start: no MutationObserver');
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator}, 'Stored at initial');
@@ -1591,7 +1592,7 @@ export async function runContracts(detectorSource) {
       assert.deepEqual(phases(f), ['initial', 'final']);
       assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'declared_agent' && e.traffic_agent === operator));
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator});
-      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     }
   });
   await test('DM: marker injected 2 s after load publishes one agent phase, replaces the snapshot, final keeps it', () => {
@@ -1609,11 +1610,11 @@ export async function runContracts(detectorSource) {
       assert.deepEqual(phases(f), ['initial', 'agent']);
       const event = f.window.dataLayer[1];
       assert.deepEqual({...event, traffic_signals: undefined}, {event: 'traffic_class', traffic_class: 'declared_agent', traffic_phase: 'agent',
-        traffic_score: 100, traffic_version: '1.2.0', traffic_agent: operator, traffic_signals: undefined});
+        traffic_score: 100, traffic_version: '1.3.0', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_signals: undefined});
       assert.ok(event.traffic_signals.includes('DM'));
       const snapshot = f.window.__visitorVerdict;
       assert.notEqual(snapshot, initial); assert.ok(Object.isFrozen(snapshot));
-      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.2.0', agent: operator});
+      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.3.0', webmcp: 'none', webmcpCount: 0, agent: operator});
       assert.equal(initial.class, 'human', 'Earlier snapshot keeps its values');
       assert.equal(dom.active, 0, 'Disconnected once found');
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator}, 'Persisted immediately');
@@ -1623,7 +1624,7 @@ export async function runContracts(detectorSource) {
       assert.equal(f.window.dataLayer[2].traffic_agent, operator);
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator});
       f.emit('pagehide'); assert.equal(f.window.dataLayer.length, 3);
-      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     }
   });
   await test('DM: watching continues after final; a later marker escalates once and pagehide disconnects', () => {
@@ -1635,21 +1636,21 @@ export async function runContracts(detectorSource) {
     assert.equal(f.timers.size, 0);
     f.advance(30000); dom.insert('codex-agent-overlay-root');
     assert.deepEqual(phases(f), ['initial', 'final', 'agent']);
-    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.2.0', agent: 'openai'});
+    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.3.0', webmcp: 'none', webmcpCount: 0, agent: 'openai'});
     assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'openai'});
     assert.equal(dom.active, 0);
-    assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+    assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     f.emit('pagehide'); assert.equal(f.window.dataLayer.length, 3);
     const quiet = markerDOM();
     const g = fixture({modify: quiet.modify});
     g.advance(8000); g.emit('pagehide');
     assert.equal(quiet.active, 0, 'pagehide disconnects');
-    assert.equal(Object.keys(g.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+    assert.equal(Object.keys(g.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     quiet.insert('claude-agent-glow-border'); assert.deepEqual(phases(g), ['initial', 'final']);
     const early = markerDOM();
     const h = fixture({modify: early.modify});
     h.emit('pagehide'); assert.equal(early.active, 0);
-    assert.equal(Object.keys(h.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+    assert.equal(Object.keys(h.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
   });
   await test('DM: exact IDs and parents only; similar, nested, misplaced and sidebar roots stay human', () => {
     const dom = markerDOM([['claude-agent-glow-border-inner'], ['claude-agent-stop-button'], ['codex-agent-overlay-root-copy'],
@@ -1663,7 +1664,7 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(phases(f), ['initial', 'final']);
     assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'human' && !('traffic_agent' in e)));
     assert.ok(!f.signals.includes('DM')); assert.equal(dom.active, 1, 'Still watching');
-    assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version']);
+    assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
   });
   await test('DM: no marker APIs, throwing lookups or observers keep the unchanged two-phase human result', () => {
     for (const options of [{noObserver: true}, {throwLookup: true}, {throwObserver: true}, null]) {
@@ -1672,9 +1673,9 @@ export async function runContracts(detectorSource) {
       f.advance(8000); f.emit('pagehide');
       assert.deepEqual(phases(f), ['initial', 'final']);
       assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'human' && !('traffic_agent' in e)));
-      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version']);
+      assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
       assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'human');
-      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
     }
     const present = markerDOM([['claude-agent-glow-border']], {noObserver: true});
     assert.equal(fixture({modify: present.modify}).window.__visitorVerdict.agent, 'anthropic', 'Start check needs no observer');
@@ -1840,6 +1841,99 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(phases(f), ['initial', 'final', 'agent']);
     assert.equal(f.window.__visitorVerdict.agent, 'openai');
     f.emit('pagehide'); assert.equal(dom.active, 0);
+  });
+  await test('WebMCP respects frame/prerender lifecycle and blocked listener APIs', () => {
+    let reads = 0;
+    const frame = fixture({modify: ({window, document}) => {
+      window.top = {};
+      Object.defineProperty(document, 'modelContext', {get() {reads++; return {};}});
+    }});
+    assert.equal(reads, 0); assert.equal(frame.window.__visitorVerdict, undefined);
+    const deferred = fixture({modify: ({document}) => {
+      document.prerendering = true;
+      Object.defineProperty(document, 'modelContext', {get() {reads++; return {};}});
+    }});
+    assert.equal(reads, 0); assert.equal(deferred.window.dataLayer, undefined);
+    deferred.document.prerendering = false; deferred.emit('prerenderingchange');
+    assert.equal(reads, 1); assert.equal(deferred.window.__visitorVerdict.webmcp, 'capable');
+    const blocked = fixture({modify: ({document, navigator}) => {
+      document.modelContext = {addEventListener() {throw Error('blocked');}, removeEventListener() {throw Error('blocked');},
+        registerTool() {throw Error('must not call tools');}};
+      Object.defineProperty(navigator, 'modelContext', {get() {throw Error('blocked');}});
+    }});
+    blocked.emit('pagehide'); assert.equal(blocked.window.__visitorVerdict.class, 'human');
+    assert.equal(blocked.window.__visitorVerdict.webmcp, 'capable');
+  });
+  await test('WebMCP capability is sampled once, independent of class and scoring', () => {
+    for (const location of ['document', 'navigator', 'both', 'none', 'throw']) {
+      let reads = 0;
+      const f = fixture({modify: ({document, navigator}) => {
+        if (location === 'document' || location === 'both') Object.defineProperty(document, 'modelContext', {get() {reads++; return {};}});
+        if (location === 'navigator' || location === 'both') navigator.modelContext = {};
+        if (location === 'throw') Object.defineProperty(document, 'modelContext', {get() {throw Error('blocked');}});
+      }});
+      const capable = ['document', 'navigator', 'both'].includes(location);
+      assert.equal(f.window.__visitorVerdict.webmcp, capable ? 'capable' : 'none');
+      assert.equal(f.window.__visitorVerdict.class, 'human');
+      f.navigator.modelContext = {};
+      f.advance(8000);
+      assert.equal(f.window.__visitorVerdict.webmcp, capable ? 'capable' : 'none');
+      assert.equal(reads, location === 'document' || location === 'both' ? 1 : 0);
+      assert.equal(f.window.__visitorVerdict.webmcpCount, 0);
+      f.emit('pagehide');
+    }
+  });
+  await test('WebMCP trusted lifecycle observations are bounded, frozen and page-local', () => {
+    for (const legacy of [false, true]) {
+      const handlers = {};
+      const context = {addEventListener(name, fn) {handlers[name] = fn;},
+        removeEventListener(name) {delete handlers[name];}};
+      const f = fixture({modify: ({document, navigator}) => {(legacy ? navigator : document).modelContext = context;}});
+      const send = (name, event) => legacy ? f.emit(name, event) : handlers[name]?.(event);
+      const initial = f.window.__visitorVerdict;
+      for (const isTrusted of [false, undefined, null, 1, 'true']) send('toolactivated', {isTrusted});
+      assert.equal(f.window.__visitorVerdict, initial);
+      send('toolactivated', {isTrusted: true});
+      send('toolcancel', {isTrusted: true});
+      assert.equal(f.window.__visitorVerdict.webmcp, 'used');
+      assert.equal(f.window.__visitorVerdict.webmcpCount, 2);
+      assert.equal(initial.webmcpCount, 0); assert.ok(Object.isFrozen(initial));
+      assert.ok(Object.isFrozen(f.window.__visitorVerdict));
+      assert.equal(f.window.dataLayer.length, 1, 'No extra classification publications');
+      f.advance(8000);
+      const event = f.window.dataLayer.at(-1);
+      assert.equal(event.traffic_webmcp, 'used'); assert.equal(event.traffic_webmcp_count, 2);
+      assert.equal(event.traffic_class, 'human'); assert.equal(event.traffic_score, 3);
+      for (let i = 0; i < 300; i++) send('toolactivated', {isTrusted: true});
+      assert.equal(f.window.__visitorVerdict.webmcpCount, 255);
+      assert.equal(f.window.__visitorVerdict.phase, 'final');
+      assert.equal(event.traffic_webmcp_count, 2, 'Published events remain historical');
+      vm.runInContext(source, f.context); assert.equal(f.window.dataLayer.length, 2);
+      f.emit('pagehide');
+      assert.equal(Object.keys(handlers).length, 0);
+      assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
+      const state = f.window.__visitorVerdict;
+      send('toolcancel', {isTrusted: true}); assert.equal(f.window.__visitorVerdict, state);
+      const next = fixture({store: f.store});
+      assert.equal(next.window.__visitorVerdict.webmcp, 'none');
+      assert.equal(next.window.__visitorVerdict.webmcpCount, 0);
+    }
+  });
+  await test('WebMCP window fallback ignores bubbled context events and preserves hard/declaration classes', () => {
+    for (const expected of ['human', 'automated', 'declared_agent']) {
+      const f = fixture({modify: ({navigator}) => {
+        if (expected === 'automated') navigator.webdriver = true;
+        if (expected === 'declared_agent') navigator.userAgent = 'GPTBot';
+      }});
+      const before = f.window.__visitorVerdict;
+      f.emit('toolactivated', {isTrusted: true, currentTarget: f.window, target: {}});
+      assert.equal(f.window.__visitorVerdict.webmcpCount, 0);
+      f.emit('toolcancel', {isTrusted: true, currentTarget: f.window, target: f.window});
+      assert.equal(f.window.__visitorVerdict.webmcp, 'used');
+      assert.equal(f.window.__visitorVerdict.class, expected);
+      assert.equal(f.window.__visitorVerdict.score, before.score);
+      f.emit('pagehide'); assert.equal(f.window.dataLayer.at(-1).traffic_class, expected);
+    }
   });
   return results;
 }

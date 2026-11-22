@@ -1,5 +1,23 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.3.0] - 2026-11-22
+
+### Added
+
+- Experimental WebMCP capability sampled once from document/legacy navigator, plus explicitly trusted tool activation/cancellation observation on document modelContext and legacy window. New informational `traffic_webmcp` / `traffic_webmcp_count` and public `webmcp` / `webmcpCount`; count capped at 255 per document. No class, score, carry or storage effect. Observation continues after final until pagehide; no extra publication.
+- GTM `VV - DLV traffic_webmcp` (ID 16) and GA4 event parameter, registry evidence, synthetic lifecycle contracts and paired fuzz classification invariants. Version 1.3.0 ES5 bundle, SRI and container regenerated.
+- Versioned signal registry and JSON Schema for every detector code, default UA token and agent element ID, with sources, product/version evidence, review dates, lifecycle status and false-positive caveats; generated [signal catalogue](docs/signals.md) in the normal build.
+- CI registry contracts for schema validity, exact source inventories, weights and scoring families, retired output codes, generated documentation and non-failing 120-day review warnings.
+
+### Documentation
+
+- Contributor requirements for new signal evidence and lifecycle updates. Google-NotebookLM is retired as an operator token (support ended August 2026); its existing AG compatibility match is retained. Claude marker coverage explicitly excludes extension 1.0.107 closed shadow roots. The registry itself is documentation-only; the WebMCP changes above update the runtime.
+
 ## 1.2.0 — 2026-11-22
 
 - Publish final on the first visibility change to hidden by default (`finalOnHidden: true`), still once per document, with pagehide fallback and the unchanged visible-time idle deadline. A brief tab switch ends behaviour collection early; the agent marker watcher can still escalate after final.
@@ -7,22 +25,6 @@
 - Require a real visible-to-hidden transition for hidden finalization. Document `finalOnHidden: false` for resumed behaviour and pending probes.
 - Carry suspicious results to one following document through zero-weight `CS`; consume at start, never promote or renew from CS alone, and retain the bounded storage schema.
 - Regenerate the 1.2.0 ES5 bundle, SRI, GTM container and signal catalogue; tag mappings remain unchanged. Extend lifecycle, carry-over and fuzz contracts.
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-
-- Versioned signal registry and JSON Schema for every detector code, default UA token and agent element ID, with sources, product/version evidence, review dates, lifecycle status and false-positive caveats; generated [signal catalogue](docs/signals.md) in the normal build.
-- CI registry contracts for schema validity, exact source inventories, weights and scoring families, retired output codes, generated documentation and non-failing 120-day review warnings.
-
-### Documentation
-
-- Contributor requirements for new signal evidence and lifecycle updates. Google-NotebookLM is retired as an operator token (support ended August 2026); its existing AG compatibility match is retained. Claude marker coverage explicitly excludes extension 1.0.107 closed shadow roots. Detector behavior and distribution bytes are unchanged.
 
 ## [1.1.0] - 2026-11-22
 

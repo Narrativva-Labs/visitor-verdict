@@ -20,6 +20,7 @@ const dlv = name => reference(`VV - DLV ${name}`);
 const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version'];
 // Added in 1.1.0 with its own IDs, so earlier object IDs stay stable on merge.
 const agentField = 'traffic_agent';
+const webmcpField = 'traffic_webmcp';
 const dlvVariable = (id, name) => ({...ids, variableId: id, name: `VV - DLV ${name}`, type: 'v',
   parameter: [parameter('name', name), parameter('dataLayerVersion', '2', 'INTEGER'),
     parameter('setDefaultValue', 'false', 'BOOLEAN')]});
@@ -64,7 +65,7 @@ const container = {
       {...ids, tagId: '2', name: 'VV - GA4 traffic_class', type: 'gaawe',
         parameter: [
           parameter('sendEcommerceData', 'false', 'BOOLEAN'),
-          table('eventSettingsTable', [...fields, agentField].map(name => [
+          table('eventSettingsTable', [...fields, agentField, webmcpField].map(name => [
             ['parameter', name], ['parameterValue', dlv(name)]
           ])),
           table('userProperties', [[['name', 'traffic_class'], ['value', dlv('traffic_class')]]]),
@@ -93,6 +94,7 @@ const container = {
         parameter: [parameter('javascript', currentClass)]},
       ...fields.map((name, index) => dlvVariable(String(index + 4), name)),
       dlvVariable('14', agentField),
+      dlvVariable('16', webmcpField),
       {...ids, variableId: '9', name: 'VV - GA4 measurement ID', type: 'c',
         parameter: [parameter('value', 'G-XXXXXXXXXX')]}
     ]

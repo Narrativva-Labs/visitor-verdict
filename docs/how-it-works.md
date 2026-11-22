@@ -90,6 +90,18 @@ Limits: markers inside shadow roots (open or closed) or frames are not inspected
 
 Activity listeners use window capture, falling back to document capture if window lacks a usable add/remove pair, with passive listeners where supported. If input listeners cannot be installed, inactivity is unknown rather than NI evidence. Accepted activity includes mousemove, pointermove, pointerdown, pointerup, touchstart, touchmove, touchend, touchcancel, scroll, keydown, keyup, wheel, click and focusin. Pointercancel clears pointer state but does not count as activity. `isTrusted === true` **or missing `isTrusted`** counts as activity for NI/SY and counter decay; TP requires explicitly trusted events. Accepted activity prevents NI/SY and, without TP, can decay history; it does not erase hard evidence. Trusted input can come from automation.
 
+### WebMCP information (1.3.0)
+
+WebMCP is recorded independently of classification. At active document start the detector samples `document.modelContext` and legacy `navigator.modelContext` once, tolerating blocked getters. A truthy API value yields `capable`; capability alone never means an agent. It does not enumerate or register tools, call their APIs, or read tool names, arguments, results or page content.
+
+Explicitly trusted (`isTrusted === true`) `toolactivated` and `toolcancel` events on the start-time `document.modelContext`, or directly on the legacy `window` target, yield `used`: a site tool was invoked through the browser's agent integration. Cancellation does not establish completion, operator identity or intent. Missing/false `isTrusted` is ignored. A modern event bubbling to window is counted only at its context target. No listener is attached to `navigator.modelContext`: older implementations used window events.
+
+`traffic_webmcp` is `none` | `capable` | `used`; `traffic_webmcp_count` is a per-document lifecycle-event count, saturating at 255. Activations and cancellations each count, so this is not a unique or successful invocation count. Public snapshots expose the same information as `webmcp` and `webmcpCount`. These fields are always present in 1.3.0, including `none` and zero; older detectors omit them.
+
+Observation starts before the initial publication, continues after final, and stops at `pagehide`. Without a usable pagehide listener observation is skipped. Each accepted event replaces the frozen snapshot while preserving class, score, phase and operator. WebMCP never adds a debug signal, scoring family, declaration, carry, or extra `traffic_class` publication. Existing initial/agent/final publications include the information known at that time; an invocation after the last publication updates the global only and will not reach GA4 through the supplied tag. Earlier snapshots and events keep their historical values. There is no cross-document storage or BFCache restart.
+
+Evidence is experimental: WebMCP targets/events are evolving and synthetic tests do not validate browser release coverage. Page-authored events cannot normally set `isTrusted`, but same-realm API replacement remains possible. Sources: [Chrome guide](https://developer.chrome.com/docs/ai/webmcp), [W3C community proposal](https://github.com/webmachinelearning/webmcp), Clarity [presence PR #1150](https://github.com/microsoft/clarity/pull/1150) and [usage PR #1166](https://github.com/microsoft/clarity/pull/1166).
+
 ### Configuration and output
 
 Load `src/visitor-verdict.js` after optionally setting:
@@ -122,7 +134,7 @@ Numeric overrides must be finite integers: `idleMs` 1–3,600,000; `fastNavMs` 1
 
 Set `window.visitorVerdictConfig` before loading the detector. v1 uses only the new names, with no runtime compatibility aliases or migration of the previous session-storage key. Session history uses only `sessionStorage['visitor_verdict']`; see the [storage schema](privacy.md).
 
-Both phases publish the same fields (a broken/throwing data-layer consumer can prevent delivery while local finalization still completes):
+All publication phases publish the same fields (a broken/throwing data-layer consumer can prevent delivery while local finalization still completes):
 
 ```js
 {
@@ -130,14 +142,16 @@ Both phases publish the same fields (a broken/throwing data-layer consumer can p
   traffic_class: 'human', // human | suspicious | automated | declared_agent
   traffic_phase: 'initial', // initial | agent | final
   traffic_score: 0,
-  traffic_version: '1.1.0',
+  traffic_version: '1.3.0',
+  traffic_webmcp: 'none', // none | capable | used; informational only
+  traffic_webmcp_count: 0, // trusted lifecycle events, capped at 255
   traffic_agent: 'openai' // openai | anthropic (older Claude in Chrome); only with declared_agent and an operator known from a marker
 }
 ```
 
 There is at most one initial, one agent and one final detector publication per document. Initial always comes first; agent (a `declared_agent` escalation from an agent UI marker) can come before or after final. `traffic_agent` is set only when the class is `declared_agent` and an agent UI marker in this document, or the carried result of the previous document, names the operator; a UA token alone never sets it, and `automated` never carries it. `traffic_version` is static release metadata, never a visitor identifier. With `debug: true`, events additionally contain `traffic_signals`, an array of short signal codes; keep debug disabled in production.
 
-The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with `{class, score, phase, version}` and, only with class `declared_agent` when the operator is known from a marker, `agent` (`'openai'` or `'anthropic'`). `phase` is `'initial'`, `'agent'` or `'final'`. Re-read the global when you need the latest phase; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
+The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with `{class, score, phase, version, webmcp, webmcpCount}` and, only with class `declared_agent` when the operator is known from a marker, `agent` (`'openai'` or `'anthropic'`). `phase` is `'initial'`, `'agent'` or `'final'`. Re-read the global when you need the latest phase or WebMCP information; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
 
 `window.__visitorVerdictLast` contains the validated previous stored class string captured at detector startup, or `undefined` when unavailable. Storage may reflect a final, an earlier marker publication, or a consumed carry when that document never finalized. Provenance objects are reduced to their validated class string. This is a read-only, non-configurable value; it does not refresh when storage changes. The GTM current-class variable reads the current snapshot first, then this startup fallback, and never reads storage itself or defaults to human.
 

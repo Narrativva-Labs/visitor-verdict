@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.2.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.3.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -111,6 +111,39 @@
     // Agent UI markers: operator from a marker (this or the previous document).
     var agent = '', marked = false, agentPublished = false, latest = '', observer = null, canHide = false;
     var watchedBody = null, idWatches = 0;
+    // Informational only: never add a scoring signal or carry WebMCP across pages.
+    var modelContext = null, legacyContext = null, webmcpCapable = false, webmcpCount = 0, webmcpWatching = false;
+    try { modelContext = d.modelContext; } catch (ignore) {}
+    try { legacyContext = n.modelContext; } catch (ignore) {}
+    webmcpCapable = !!(modelContext || legacyContext);
+    function webmcpState() { return webmcpCount ? 'used' : webmcpCapable ? 'capable' : 'none'; }
+    function webmcpEvent(event) {
+      if (!webmcpWatching || !event || event.isTrusted !== true ||
+          (event.currentTarget === w && event.target && event.target !== w)) { return; }
+      webmcpCount = Math.min(255, webmcpCount + 1);
+      if (snapshot) {
+        var state = {'class': snapshot['class'], score: snapshot.score, phase: snapshot.phase,
+          version: version, webmcp: webmcpState(), webmcpCount: webmcpCount};
+        if (snapshot.agent) { state.agent = snapshot.agent; }
+        snapshot = Object.freeze(state);
+      }
+    }
+    function stopWebmcp() {
+      webmcpWatching = false;
+      removeListener(modelContext, 'toolactivated', webmcpEvent, false);
+      removeListener(modelContext, 'toolcancel', webmcpEvent, false);
+      removeListener(w, 'toolactivated', webmcpEvent, false);
+      removeListener(w, 'toolcancel', webmcpEvent, false);
+    }
+    function watchWebmcp() {
+      if (!canHide) { return; }
+      webmcpWatching = true;
+      addListener(modelContext, 'toolactivated', webmcpEvent, false);
+      addListener(modelContext, 'toolcancel', webmcpEvent, false);
+      // Older implementations dispatch on window, including without an exposed API.
+      addListener(w, 'toolactivated', webmcpEvent, false);
+      addListener(w, 'toolcancel', webmcpEvent, false);
+    }
     var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
     var inputTarget = canListen(w) ? w : canListen(d) ? d : null, observesInput = true;
     var visibilityTarget = canListen(d) ? d : w;
@@ -353,9 +386,11 @@
       else if (phase === 'final') { finalPublished = true; }
       else { agentPublished = true; }
       latest = result;
-      var state = {'class': result, score: total, phase: phase, version: version};
+      var state = {'class': result, score: total, phase: phase, version: version,
+        webmcp: webmcpState(), webmcpCount: webmcpCount};
       var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase,
-        traffic_score: total, traffic_version: version};
+        traffic_score: total, traffic_version: version,
+        traffic_webmcp: webmcpState(), traffic_webmcp_count: webmcpCount};
       // The operator is exposed only together with declared_agent; automated wins without it.
       if (agent && result === 'declared_agent') { state.agent = event.traffic_agent = agent; }
       snapshot = Object.freeze(state);
@@ -444,7 +479,7 @@
         try { observer.disconnect(); } catch (ignore) {}
         observer = null;
       }
-      if (done) { removeListener(w, 'pagehide', hide, listenerOptions); }
+      if (done && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
     for (i = 0; i < config.agentTokens.length; i++) {
       var token = config.agentTokens[i];
@@ -552,10 +587,10 @@
       exposure(); stopWorker();
       for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
       removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
-      // A live marker watch keeps pagehide until it disconnects.
-      if (!observer) { removeListener(w, 'pagehide', hide, listenerOptions); }
+      // Live marker/WebMCP watches keep pagehide until they disconnect.
+      if (!observer && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
-    function hide() { unwatch(); finish(); }
+    function hide() { stopWebmcp(); unwatch(); finish(); }
     function finish() {
       if (done) { return; }
       done = true; cleanup();
@@ -601,12 +636,12 @@
         if (!addListener(inputTarget, events[i], interact, listenerOptions)) { observesInput = false; }
       }
       canHide = addListener(w, 'pagehide', hide, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
-      visibility();
+      watchWebmcp(); visibility();
       var operator = marker();
       if (operator) { mark(operator); }
       initial = publish('initial'); ua = ''; brands = null;
       // Check again once watching: a consumer of the initial push may have added a marker.
       startWorker(); watch(); check();
-    } catch (ignore) { done = true; unwatch(); cleanup(); }
+    } catch (ignore) { done = true; stopWebmcp(); unwatch(); cleanup(); }
   }
 }(window, document, navigator));

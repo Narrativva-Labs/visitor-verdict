@@ -71,7 +71,8 @@
             "enum": [
               "code",
               "ua-token",
-              "element-id"
+              "element-id",
+              "information"
             ]
           },
           "code": {
@@ -98,7 +99,8 @@
               "inherited",
               "soft",
               "debug",
-              "direct-suspicious"
+              "direct-suspicious",
+              "informational"
             ]
           },
           "status": {
