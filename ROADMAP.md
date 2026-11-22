@@ -14,6 +14,9 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [x] Class on the first `page_view` (Google tag fired on the detector's initial result, with a short timer fallback)
 - [x] v1.1.0: agent UI markers (OpenAI agent overlay, older Claude in Chrome) as `declared_agent` with `traffic_agent`, new `agent` phase
 - [ ] Detect current Claude in Chrome, whose UI sits in a closed shadow root (open question; no heuristic without a field check)
+- [ ] Versioned signal registry: for each marker or token its source, version range, date last checked and status (experimental / validated / retired), so signals that agents stop emitting are retired instead of silently missing
+- [ ] More agent UI markers only with a public source and a version (candidate: Genspark `#genspark-float-bar`, reported by a third party), first as evidence without changing the class
+- [ ] WebMCP as two separate fields: the browser supports it (`document.modelContext`) and a tool was actually used (`toolactivated`); support alone never labels a visitor
 - [ ] Lightweight field validation, 2–4 weeks on a few live sites (in progress since 2026-11-19): share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
 - [ ] Publish the results, including what is missed
 
@@ -27,6 +30,10 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 
 - [x] Server verifier library ([`server/`](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server), 0.3.3, unpublished): Web Bot Auth / HTTP Message Signatures (RFC 9421) against operators' key directories, operators' published IP ranges, replay protection; browser evidence, claimed identity and server verification kept as separate fields
 - [x] First integration: [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) labels GA4 hits with `vv_type` and `vv_detail`, nothing withheld; running on its live demo since 2026-11-20, where a signed ChatGPT agent session was verified
+- [ ] Keep evidence and identity apart in the output: a browser hint about the operator (UI marker, user-agent token) is never reported as a verified operator
+- [ ] More signing operators from public key directories (Meta Muse `muse.ai`, Browserbase, Manus, Google `agent.bot.goog`, Amazon Bedrock AgentCore when enabled), with intermediaries such as Browserbase reported as infrastructure, not as the agent
+- [ ] Personal Agent Protocol (Poppy 1.0) as an optional verifier: a verified session means an agent acting for a person; a manifest or `client_id` alone is only a claim
+- [ ] Agents that never load the page (commerce and agent protocols such as ACP, UCP, A2A, MCP): label those requests on the server, since a browser detector cannot see them
 - [ ] Longer field test on live sites
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing
 - [ ] Label conversions for Meta Conversions API and Google Ads Enhanced Conversions in server-side GTM; nothing withheld by default (see [conversion guidance](docs/conversion-guidance.md))
@@ -36,3 +43,6 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 
 - GTM Community Template Gallery template (separate repository, pinned CDN build)
 - Scheduled checks of official AI-agent user-agent documentation
+- Visits sent by AI answers (a person who clicked a link in ChatGPT, Perplexity, Gemini or Copilot) as a separate view next to agent and bot labels
+- Behaviour signals from published agent studies (cursor teleports, typing without key events, zero-duration scroll bursts), only after a lab check against autofill, paste, keyboard navigation and assistive technology
+- Transport fingerprints (JA4, HTTP/2, client hints versus user agent) where a site's own CDN or proxy already provides them
