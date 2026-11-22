@@ -25,6 +25,8 @@ If a correctness fix is necessary, log the change and start a new version interv
 
 No held-out split, manual traffic-labelling exercise, kappa, threshold tuning or accuracy target is required. Check operational health during the interval; produce one small final report per site. Do not change thresholds to fit a missed canary.
 
+Controlled runs with known ground truth (automation, stealth tools, agents, run labels `vvp`) follow the separate [validation protocol v2](validation-protocol.md); their pages are excluded from the ordinary-traffic measures here.
+
 ## Collection and windows
 
 Use the normal production integration, debug disabled. Keep conversion collection enabled; this study only annotates and reports. No access blocking or automatic conversion suppression. Detector output is class, phase, score, static version and, from 1.1.0, the optional operator enum `traffic_agent`; no raw signals, identifiers, input traces or extra visitor instrumentation. The study does not change consent settings or permit advertising use before consent.

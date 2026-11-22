@@ -7,3 +7,4 @@ research/prior-art.md
 test/results/
 test/adversarial/node_modules/
 test/adversarial/.venv/
+test/validation/.tools/

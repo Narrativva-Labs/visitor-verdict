@@ -58,6 +58,7 @@ The integrity value comes from [dist/visitor-verdict.min.js.sri](dist/visitor-ve
 - [Tests, adversarial benchmark and known limits](docs/benchmark.md)
 - Related: [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side), server-side GA4 collector and first integration of the server verifier (in development)
 - [Agent research and field observations](research/agents-and-tells.md)
+- [Validation protocol v2: controlled runs with known ground truth](docs/study/validation-protocol.md) — pilot round 1 on our own demo shop, 2026-11-22; no published accuracy figures yet
 - [Lightweight field-validation protocol](docs/study/protocol.md) — validation in progress since 2026-11-19, no study results yet; agent runs on our own test shop: [field observations](research/agents-and-tells.md#field-observations-v10-2026-11-19)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
