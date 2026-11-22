@@ -145,12 +145,12 @@ After a document's soft TTL (`max-age` minus `Age`, 300 seconds for no-store, bo
 
 ## Server-side GTM
 
-Use the canonical [Server-side GTM reference design](../docs/conversion-guidance.md#server-side-gtm-reference-design-optional-routing).
+Use the [Server-side GTM labelling reference](../docs/conversion-guidance.md#server-side-gtm-labelling-only).
 It places this Node library in a verifying proxy before sGTM; the library does not run
 inside the template sandbox. The reference specifies raw-header preservation, trusted
-X-VV-\* headers, Request Header variables, tag routing and transformations. It is not a
-shipped template or implemented conversion-routing feature. Authenticate the proxy-to-sGTM
-boundary and do not log the request envelope.
+X-VV-\* headers, Request Header variables and transformations that keep the labels out of
+advertising tags. It is not a shipped template, and advertising tags send as without
+Visitor Verdict. Authenticate the proxy-to-sGTM boundary and do not log the request envelope.
 
 IP evidence is only as trustworthy as the original source address. getRemoteAddress is best-effort and can use Forwarded/X-Forwarded-For; it is not proof of a peer IP. Sanitize forwarding metadata at a trusted proxy, or omit clientIp when that chain cannot be trusted. Propagate a service deadline/error as none, never as human. Monitor only aggregate reason counts locally. The library labels traffic and does not itself withhold anything; the integrator owns conversion policy.
 

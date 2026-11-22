@@ -66,8 +66,26 @@ const catalog = {
   TP: 'Positive one-event mouse jump over 200px, click within 600ms at that point, explicit mouse pointerdown (3, pointer)',
   WK: 'Opt-in Worker: supported main/worker navigator mismatch; unknown ignored (2, worker)',
   UB: 'Opt-in Worker: non-empty main UA-CH brands but exposed worker API has no value or empty brands (6, worker; direct suspicious, never hard)',
-  TR: 'Final-only repeat-TP weight 2 in pointer family, capped at 3 with TP; never a direct class override; decays on any trusted-input document without TP'
+  TR: 'Final-only repeat-TP weight 2 in pointer family, capped at 3 with TP; never a direct class override; decays on any trusted-input document without TP',
+  DM: 'Agent UI marker: exact element ID and parent injected by the OpenAI agent overlay or older Claude in Chrome versions (current 1.0.107 uses a closed shadow root and is not seen), at start or watched until found (100, declared; operator in traffic_agent, only with declared_agent)'
 };
+// Synthetic agent UI markers on the test site (site.js ?marker=…). Page 1 carries
+// the marker; page 2 has none and shows the carried class and operator.
+const markerScenarios = [
+  {name: 'M1 Claude marker (older Claude in Chrome) at load, carried to next page', marker: 'claude-agent-glow-border',
+    page1: [['initial', 'declared_agent', 'anthropic'], ['final', 'declared_agent', 'anthropic']], page2: ['declared_agent', 'anthropic']},
+  {name: 'M2 OpenAI agent overlay injected 2 s after load', marker: 'codex-agent-overlay-root', delay: 2000,
+    page1: [['initial', 'human', undefined], ['agent', 'declared_agent', 'openai'], ['final', 'declared_agent', 'openai']], page2: ['declared_agent', 'openai']},
+  {name: 'M2b Claude phantom cursor (older Claude in Chrome) injected 2 s after load', marker: 'claude-phantom-cursor', delay: 2000,
+    page1: [['initial', 'human', undefined], ['agent', 'declared_agent', 'anthropic'], ['final', 'declared_agent', 'anthropic']], page2: ['declared_agent', 'anthropic']},
+  {name: 'M3 Similar IDs and sidebar root are not markers', marker: 'claude-agent-glow-border-inner,codex-browser-sidebar-comments-root,codex-agent-overlay-root-copy',
+    page1: [['initial', 'human', undefined], ['final', 'human', undefined]], page2: ['human', undefined]},
+  {name: 'M4 Headless automation keeps precedence over a marker', marker: 'claude-agent-glow-border', delay: 2000, launch: {headless: true},
+    page1: [['initial', 'automated', undefined], ['final', 'automated', undefined]], page2: ['automated', undefined]},
+  {name: 'M5 Carried automated plus OpenAI overlay: next page declared_agent, not automated', marker: 'codex-agent-overlay-root',
+    seed: {timestamps: [], lastClass: {value: 'automated', direct: true}, tpPages: 0},
+    page1: [['initial', 'automated', undefined], ['final', 'automated', undefined]], page2: ['declared_agent', 'openai']}
+];
 const results = [];
 let server, origin, serverError;
 try { ({server, origin} = await startServer()); }
@@ -200,6 +218,51 @@ try {
     results.push(row);
     console.log(`${row.status}: ${row.name} — ${row.initial || '—'} → ${row.final || '—'} [${row.signals || ''}]${row.category === 'known limit' ? ' Known limit: ' + scenario.note : ''}`);
   }
+  for (let iteration = 1; iteration <= repeat; iteration++) for (const scenario of markerScenarios) {
+    const row = {iteration, category: 'agent UI marker', informational: false, name: scenario.name,
+      expected: scenario.page1.map(([phase, cls, agent]) => `${phase} ${cls}${agent ? '/' + agent : ''}`).join(', '), pages: [], notes: []};
+    let browser;
+    try {
+      if (dependencyError) throw dependencyError;
+      if (serverError) throw serverError;
+      browser = await chromium.launch({headless: false, args: quiet, ...scenario.launch});
+      row.browserVersion = browser.version();
+      const context = await browser.newContext({viewport: {width: 1440, height: 900}});
+      // Planted direct automated record from an earlier page, once per tab.
+      if (scenario.seed) await context.addInitScript(seed => {
+        if (!sessionStorage.getItem('vv_test_seeded')) {
+          sessionStorage.setItem('vv_test_seeded', '1'); sessionStorage.setItem('visitor_verdict', JSON.stringify(seed));
+        }
+      }, scenario.seed);
+      const page = await context.newPage();
+      page.on('pageerror', error => row.notes.push(`Page error: ${error.message}`));
+      await page.goto(`${origin}/index.html?marker=${scenario.marker}${scenario.delay ? '&markerDelay=' + scenario.delay : ''}`);
+      await sleep((scenario.delay || 0) + 1000);
+      const snapshot = await page.evaluate(() => ({...window.__visitorVerdict}));
+      await page.locator('a[href="/page2.html"]').click();
+      await page.waitForURL(`${origin}/page2.html`); await page.waitForLoadState('load'); await sleep(300);
+      const log = await page.evaluate(() => JSON.parse(sessionStorage.getItem('tc_test_events') || '[]'));
+      const second = await page.evaluate(() => ({...window.__visitorVerdict}));
+      const first = log.filter(e => e.path === '/index.html').map(e => e.event);
+      const next = log.filter(e => e.path === '/page2.html').map(e => e.event);
+      const observed = first.map(e => [e.traffic_phase, e.traffic_class, e.traffic_agent]);
+      row.pages.push({page: 1, initial: first[0], final: first.find(e => e.traffic_phase === 'final'), events: first, snapshot},
+        {page: 2, initial: next[0], snapshot: second});
+      row.initial = first[0]?.traffic_class; row.final = first.at(-1)?.traffic_class;
+      row.signals = [...new Set([...first, ...next].flatMap(e => e.traffic_signals || []))];
+      const ok = JSON.stringify(observed) === JSON.stringify(scenario.page1) &&
+        snapshot.class === scenario.page1.findLast(([phase]) => phase !== 'final')[1] &&
+        next[0]?.traffic_class === scenario.page2[0] && next[0]?.traffic_agent === scenario.page2[1] &&
+        second.class === scenario.page2[0] && second.agent === scenario.page2[1];
+      if (!ok) row.notes.push(`Observed page 1 ${JSON.stringify(observed)}; page 2 ${JSON.stringify([next[0]?.traffic_class, next[0]?.traffic_agent])}; snapshots ${JSON.stringify([snapshot, second])}`);
+      row.status = ok ? 'PASS' : 'FAIL';
+    } catch (error) {
+      row.status = browser ? 'ERROR' : 'SKIP';
+      row.notes.push(String(error.stack || error));
+    } finally { if (browser) await browser.close().catch(() => {}); }
+    results.push(row);
+    console.log(`${row.status}: ${row.name} — ${row.initial || '—'} → ${row.final || '—'} [${row.signals || ''}]`);
+  }
   const contracts = await runContracts();
   const fired = new Set(results.flatMap(r => r.signals || []));
   const never = Object.keys(catalog).filter(code => !fired.has(code));
@@ -212,7 +275,7 @@ try {
   await writeFile(new URL('results/report.json', import.meta.url), JSON.stringify(report, null, 2) + '\n');
   const cell = value => String(value ?? '—').replaceAll('|', '\\|').replaceAll('\n', ' ');
   const md = `# Traffic class scenario report\n\nGenerated ${report.generatedAt}; ${report.platform}; Playwright ${report.playwright}.\n\n` +
-    `Detector ${report.detectorBytes} bytes minified; <5000-byte target ${report.sizeTargetMet ? 'met' : '**missed (open issue)**'}.\n\n${report.completedScenarios}/${scenarios.length * repeat} scenario runs completed. ${contracts.filter(c => c.status === 'PASS').length}/${contracts.length} deterministic contract checks passed. ${report.completedScenarios === 0 ? '**Browser evidence unavailable; human controls have not been validated. All signals are unobserved, not proven absent.**' : ''}\n\n` +
+    `Detector ${report.detectorBytes} bytes minified; <5000-byte target ${report.sizeTargetMet ? 'met' : '**missed (open issue)**'}.\n\n${report.completedScenarios}/${(scenarios.length + markerScenarios.length) * repeat} scenario runs completed. ${contracts.filter(c => c.status === 'PASS').length}/${contracts.length} deterministic contract checks passed. ${report.completedScenarios === 0 ? '**Browser evidence unavailable; human controls have not been validated. All signals are unobserved, not proven absent.**' : ''}\n\n` +
     '| Scenario | Category | Fired signals (all pages) | Initial (page 3) | Final (page 3) | Expected | BotD bot / kind | Result |\n|---|---|---|---|---|---|---|---|\n' +
     results.map(r => `| ${[`${r.name} (run ${r.iteration})`, r.category, (r.signals || []).join(', '), r.initial, r.final, r.expected, botdCell(r.botd), r.status].map(cell).join(' | ')} |`).join('\n') +
     '\n\nFlaky scenarios: ' + (repeat < 2 ? 'not assessed (single run)' : report.flakiness.filter(r => r.flaky).map(r => r.name).join(', ') || 'none') + '\n\nHuman controls require initial and final human on **every** page. JSON contains all page events. Each last page stays 10 seconds.\n\n' +

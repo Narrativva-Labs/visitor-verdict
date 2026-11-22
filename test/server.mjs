@@ -18,6 +18,7 @@ export async function startServer(port = 0) {
         // Test-only sink: accept detector output, never browser properties or identifiers.
         const clean = {event: event.event, traffic_class: event.traffic_class,
           traffic_phase: event.traffic_phase, traffic_score: event.traffic_score, traffic_version: event.traffic_version,
+          traffic_agent: event.traffic_agent,
           traffic_signals: event.traffic_signals};
         await appendFile(path.join(root, 'test/results/log.jsonl'), JSON.stringify(clean) + '\n');
         res.writeHead(204).end(); return;

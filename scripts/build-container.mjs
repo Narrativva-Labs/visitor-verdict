@@ -18,6 +18,11 @@ const parameter = (key, value, type = 'TEMPLATE') => ({type, key, value});
 const reference = name => `{{${name}}}`;
 const dlv = name => reference(`VV - DLV ${name}`);
 const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version'];
+// Added in 1.1.0 with its own IDs, so earlier object IDs stay stable on merge.
+const agentField = 'traffic_agent';
+const dlvVariable = (id, name) => ({...ids, variableId: id, name: `VV - DLV ${name}`, type: 'v',
+  parameter: [parameter('name', name), parameter('dataLayerVersion', '2', 'INTEGER'),
+    parameter('setDefaultValue', 'false', 'BOOLEAN')]});
 const equals = (left, right) => ({type: 'EQUALS', parameter: [
   parameter('arg0', left), parameter('arg1', right)
 ]});
@@ -59,19 +64,21 @@ const container = {
       {...ids, tagId: '2', name: 'VV - GA4 traffic_class', type: 'gaawe',
         parameter: [
           parameter('sendEcommerceData', 'false', 'BOOLEAN'),
-          table('eventSettingsTable', fields.map(name => [
+          table('eventSettingsTable', [...fields, agentField].map(name => [
             ['parameter', name], ['parameterValue', dlv(name)]
           ])),
           table('userProperties', [[['name', 'traffic_class'], ['value', dlv('traffic_class')]]]),
           parameter('eventName', 'traffic_class'),
           parameter('measurementIdOverride', reference('VV - GA4 measurement ID'))
         ],
-        firingTriggerId: ['3', '12'], tagFiringOption: 'ONCE_PER_EVENT',
+        firingTriggerId: ['3', '12', '15'], tagFiringOption: 'ONCE_PER_EVENT',
         consentSettings: {consentStatus: 'NOT_SET'}}
     ],
     folder: [{...ids, folderId: '13', name: 'VV - OPTIONAL page_view readiness (OR, once per page)',
       notes: 'Optional trigger set: attach VV - initial and VV - timer fallback 1s as two ordinary OR firing triggers to the existing Google tag (or explicit page_view tag), replacing its early trigger. Set Once per page. Do not use a trigger group (AND). May delay page_view by up to 1 s; fallback may have no class. Roll back by restoring the original trigger and firing option. Importing does not change site tags. See docs/ga4-reporting.md.'}],
     trigger: [phaseTrigger('3', 'final'),
+      {...phaseTrigger('15', 'agent'),
+        notes: 'Agent UI marker seen after the initial publication (detector 1.1.0): one escalation to declared_agent, before or after final.'},
       {...phaseTrigger('12', 'initial'), name: 'VV - initial hard',
         filter: [equals(dlv('traffic_phase'), 'initial'), matchRegex(dlv('traffic_class'), '^(automated|declared_agent)$')]},
       {...phaseTrigger('10', 'initial'), parentFolderId: '13',
@@ -84,9 +91,8 @@ const container = {
     variable: [
       {...ids, variableId: '8', name: 'VV - current class', type: 'jsm',
         parameter: [parameter('javascript', currentClass)]},
-      ...fields.map((name, index) => ({...ids, variableId: String(index + 4), name: `VV - DLV ${name}`, type: 'v',
-        parameter: [parameter('name', name), parameter('dataLayerVersion', '2', 'INTEGER'),
-          parameter('setDefaultValue', 'false', 'BOOLEAN')]})),
+      ...fields.map((name, index) => dlvVariable(String(index + 4), name)),
+      dlvVariable('14', agentField),
       {...ids, variableId: '9', name: 'VV - GA4 measurement ID', type: 'c',
         parameter: [parameter('value', 'G-XXXXXXXXXX')]}
     ]

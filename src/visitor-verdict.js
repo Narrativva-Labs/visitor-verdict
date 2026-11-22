@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.0.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.1.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -104,8 +104,13 @@
         } else { config[key] = value === true; }
       }
     }
-    var signals = [], families = {}, score = 0, hard = false, declared = false, direct = false;
+    var signals = [], families = {}, score = 0, hard = false, declared = false;
+    // Direct provenance is split: a declaration (AG, DM) never renews carried automation (CA).
+    var directHard = false, directDeclared = false;
     var done = false, initial, initialPublished = false, finalPublished = false, elapsed = 0, started = null, timer;
+    // Agent UI markers: operator from a marker (this or the previous document).
+    var agent = '', marked = false, agentPublished = false, latest = '', observer = null, canHide = false;
+    var watchedBody = null, idWatches = 0;
     var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
     var inputTarget = canListen(w) ? w : canListen(d) ? d : null, observesInput = true;
     var visibilityTarget = canListen(d) ? d : w;
@@ -207,8 +212,8 @@
       if (signals.indexOf(code) !== -1) { return; }
       signals.push(code);
       if (weight === 100) {
-        if (code !== 'CA' && code !== 'CD') { direct = true; }
-        if (code === 'AG' || code === 'CD') { declared = true; } else { hard = true; }
+        if (code === 'AG' || code === 'CD' || code === 'DM') { declared = true; if (code !== 'CD') { directDeclared = true; } }
+        else { hard = true; if (code !== 'CA') { directHard = true; } }
       }
       else if (weight) {
         score += Math.max(0, weight - (families[family] || 0));
@@ -254,15 +259,24 @@
       return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 255 &&
         Math.floor(value) === value ? value : 0;
     }
+    function cleanAgent(value) {
+      return value === 'openai' || value === 'anthropic' ? value : '';
+    }
     function cleanClass(value) {
       if (value === 'human' || value === 'suspicious' || value === 'automated' || value === 'declared_agent') { return value; }
       if (value && tag.call(value) === '[object Object]' && value.direct === true && typeof value.value === 'string' &&
-          (value.value === 'automated' || value.value === 'declared_agent')) { return {value: value.value, direct: true}; }
+          (value.value === 'automated' || value.value === 'declared_agent')) {
+        var clean = {value: value.value, direct: true};
+        // The operator belongs to declared_agent only.
+        if (value.value === 'declared_agent' && cleanAgent(value.agent)) { clean.agent = value.agent; }
+        return clean;
+      }
       return '';
     }
     function classText(value) {
       value = cleanClass(value);
-      return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true}';
+      return typeof value === 'string' ? '"' + value + '"' : '{"value":"' + value.value + '","direct":true' +
+        (value.agent ? ',"agent":"' + value.agent + '"' : '') + '}';
     }
     function readStore() {
       // Our bounded schema fits comfortably below this cap. Ignore oversized
@@ -324,7 +338,9 @@
         (env >= 2 && (families.interaction || families.navigation)));
     }
     function publish(phase) {
-      if (phase === 'initial' ? initialPublished : phase !== 'final' || finalPublished || !initialPublished) { return initial; }
+      // One initial, at most one agent escalation and one final, in any order after initial.
+      if (phase === 'initial' ? initialPublished : !initialPublished ||
+          (phase === 'final' ? finalPublished : phase !== 'agent' || agentPublished)) { return initial; }
       var result = hard ? 'automated' : declared ? 'declared_agent' :
         suspicious() ? 'suspicious' : 'human';
       if (phase === 'final' && initial === 'automated') { result = initial; }
@@ -334,14 +350,20 @@
           typeof total !== 'number' || !isFinite(total)) { return initial; }
       // Mark before any consumer callback can reenter. Never read public state.
       if (phase === 'initial') { initialPublished = true; initial = result; }
-      else { finalPublished = true; }
-      snapshot = Object.freeze({'class': result, score: total, phase: phase, version: version});
+      else if (phase === 'final') { finalPublished = true; }
+      else { agentPublished = true; }
+      latest = result;
+      var state = {'class': result, score: total, phase: phase, version: version};
       var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase,
         traffic_score: total, traffic_version: version};
+      // The operator is exposed only together with declared_agent; automated wins without it.
+      if (agent && result === 'declared_agent') { state.agent = event.traffic_agent = agent; }
+      snapshot = Object.freeze(state);
       if (config.debug) { event.traffic_signals = signals.slice(0); }
       // Only direct evidence can seed one grace document. CA/CD alone store no
       // provenance, so a carried class cannot seed another grace document.
-      if (phase === 'final') { save(direct ? {value: result, direct: true} : result); }
+      // A marker seen at load is stored at once, as later phases are.
+      if (phase !== 'initial' || marked) { save(provenance(result)); }
       try {
         var layer = w[config.dataLayerName];
         if (layer === undefined || layer === null) { layer = w[config.dataLayerName] = []; }
@@ -349,6 +371,78 @@
             Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); }
       } catch (ignore) {}
       return result;
+    }
+    function provenance(result) {
+      // Only direct hard evidence stores automated. A direct declaration stores
+      // declared_agent even when carried CA made this document automated.
+      // Only a marker seen in this document renews the stored operator.
+      if (result === 'automated' && directHard) { return {value: result, direct: true}; }
+      if ((result === 'automated' || result === 'declared_agent') && directDeclared) {
+        return marked ? {value: 'declared_agent', direct: true, agent: agent} : {value: 'declared_agent', direct: true};
+      }
+      return result;
+    }
+    // Agent UI markers (DM): exact IDs and parents that browser agents inject
+    // while they control the tab. Presence only; content is never read.
+    var markers = ['claude-agent-glow-border', 'claude-phantom-cursor', 'codex-agent-overlay-root'];
+    function marker() {
+      try {
+        for (var j = 0; j < markers.length; j++) {
+          var node = d.getElementById(markers[j]), parent = j < 2 ? d.body : d.documentElement;
+          if (node && parent && node.parentNode === parent) { return j < 2 ? 'anthropic' : 'openai'; }
+        }
+      } catch (ignore) {}
+      return '';
+    }
+    function mark(operator) {
+      // Escalate only: automated keeps precedence; a repeated operator adds nothing.
+      var changed = !hard && (latest !== 'declared_agent' || agent !== operator);
+      marked = true; agent = operator; add('DM', 100); unwatch();
+      if (!initialPublished) { return; }
+      // Same class and operator (CD or automated): publish nothing, renew provenance now.
+      if (changed) { publish('agent'); }
+      else { save(provenance(latest)); }
+    }
+    function check() {
+      try {
+        var operator = marker();
+        if (operator && !marked) { mark(operator); }
+      } catch (ignore) {}
+    }
+    // Markers are direct children of body or the root element, so only those two
+    // child lists are observed (no subtree). Newly added direct children without
+    // an id get an id-only attribute watch (capped) for an id set after insertion.
+    function attach(records) {
+      try {
+        if (!observer) { return; }
+        if (d.body && d.body !== watchedBody) { watchedBody = d.body; observer.observe(watchedBody, {childList: true}); }
+        for (var k = 0; records && k < records.length; k++) {
+          var added = records[k].addedNodes;
+          for (var m = 0; added && m < added.length && idWatches < 32; m++) {
+            var node = added[m];
+            if (node && node.nodeType === 1 && !node.id && node !== d.body) {
+              idWatches++; observer.observe(node, {attributes: true, attributeFilter: ['id']});
+            }
+          }
+        }
+      } catch (ignore) {}
+    }
+    function mutated(records) { attach(records); check(); }
+    function watch() {
+      try {
+        // Without a pagehide listener the observer could never disconnect.
+        if (done || marked || !canHide || typeof w.MutationObserver !== 'function' || !d.documentElement) { return; }
+        observer = new w.MutationObserver(mutated);
+        observer.observe(d.documentElement, {childList: true});
+        attach();
+      } catch (ignore) { unwatch(); }
+    }
+    function unwatch() {
+      if (observer) {
+        try { observer.disconnect(); } catch (ignore) {}
+        observer = null;
+      }
+      if (done) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
     for (i = 0; i < config.agentTokens.length; i++) {
       var token = config.agentTokens[i];
@@ -420,6 +514,7 @@
       if (saved.lastClass && saved.lastClass.direct === true) {
         if (saved.lastClass.value === 'automated') { add('CA', 100); }
         else if (saved.lastClass.value === 'declared_agent') { add('CD', 100); }
+        if (saved.lastClass.value === 'declared_agent') { agent = cleanAgent(saved.lastClass.agent); }
       }
       timestamps = mergeTimes(saved.timestamps);
       var navigation = w.performance && w.performance.getEntriesByType && w.performance.getEntriesByType('navigation')[0];
@@ -452,8 +547,11 @@
     function cleanup() {
       exposure(); stopWorker();
       for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
-      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); removeListener(w, 'pagehide', finish, listenerOptions);
+      removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      // A live marker watch keeps pagehide until it disconnects.
+      if (!observer) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
+    function hide() { unwatch(); finish(); }
     function finish() {
       if (done) { return; }
       done = true; cleanup();
@@ -494,10 +592,13 @@
       for (i = 0; i < events.length; i++) {
         if (!addListener(inputTarget, events[i], interact, listenerOptions)) { observesInput = false; }
       }
-      addListener(w, 'pagehide', finish, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      canHide = addListener(w, 'pagehide', hide, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
       visibility();
+      var operator = marker();
+      if (operator) { mark(operator); }
       initial = publish('initial'); ua = ''; brands = null;
-      startWorker();
-    } catch (ignore) { done = true; cleanup(); }
+      // Check again once watching: a consumer of the initial push may have added a marker.
+      startWorker(); watch(); check();
+    } catch (ignore) { done = true; unwatch(); cleanup(); }
   }
 }(window, document, navigator));
