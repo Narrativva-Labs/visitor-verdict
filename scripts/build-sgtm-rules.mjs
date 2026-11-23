@@ -48,6 +48,8 @@ for (const [operator, o] of defaultRegistry.entries()) for (const list of o.ipLi
   } catch(e) { missing.push({operator:o.operator,list:list.name,url:list.url}); console.error(`${o.operator}/${list.name}: ${e.message}`); }
 }
 if (missing.length && !partial) throw Error('Missing public feeds; existing output unchanged. Use --source-dir for archived sources.');
-const rules = {schema:1,generated_at:new Date().toISOString(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing};
+const builtAt = new Date();
+// generated_at_ms: the sGTM sandbox has no Date, and its calendar arithmetic is not reliable.
+const rules = {schema:1,generated_at:builtAt.toISOString(),generated_at_ms:builtAt.getTime(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing};
 const body = JSON.stringify(rules)+'\n'; if (Buffer.byteLength(body)>200_000) throw Error('Rules exceed 200 KB');
 const out = args.includes('--output') ? args[args.indexOf('--output')+1] : fileURLToPath(new URL('../dist/sgtm-rules.json',import.meta.url)); await mkdir(new URL('../dist/',import.meta.url),{recursive:true}); await writeFile(out,body); console.log(`${out}: ${Buffer.byteLength(body)} bytes; ${groups.length} groups; complete=${rules.complete}`);
