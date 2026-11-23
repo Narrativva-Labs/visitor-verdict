@@ -85,14 +85,14 @@ A session is the existing `(user_pseudo_id, ga_session_id)` pair in that web str
 
 | Measure | Exact numerator / denominator or rule |
 |---|---|
-| Headline clear automation share | Sessions whose worst class is automated or declared_agent / all observed joinable ordinary sessions, including unknown |
-| Class shares | Each worst class count / same all-session denominator; show unknown and suspicious separately |
+| Headline clear automation share | Reported separately per group (`automated`, `automation_verified`, `agent_user`) / all observed joinable ordinary sessions, including unknown; do not merge customer `agent_user` traffic into an automation total |
+| Class shares | Each `class_group` and `worst_class` count / same all-session denominator; show `unknown` and `suspicious` separately |
 | Coverage | Sessions with any valid class event parameter / all observed joinable ordinary sessions; show count without a class |
-| Engaged clear flags | Clear-flagged engaged sessions / all engaged sessions, including unclassified; engaged = any exported `session_engaged=1` |
-| Converting clear flags | Clear-flagged purchasing sessions / all purchasing sessions, including unclassified; purchase = at least one exported `purchase`, not cart or lead |
-| Optional CR comparison (existing B) | Purchasing sessions / sessions in the same cohort: all; excluding clear automation; strict additionally excludes suspicious (secondary only) |
-| Excluded revenue (existing B) | Sum of exported USD purchase revenue in clear-flagged sessions, shown explicitly alongside retained revenue; no silent deletion |
-| Score histogram | Counts of detector events by class, phase, score, session engaged/purchasing status and version; unknown join status stays unknown |
+| Engaged clear flags | `automated` and `agent_user` engaged sessions (separately) / all engaged sessions, including unclassified; engaged = any exported `session_engaged=1` |
+| Converting clear flags | `automated` and `agent_user` purchasing sessions (separately) / all purchasing sessions, including unclassified; purchase = at least one exported `purchase` (deduplicated by `transaction_id`), kept separate from leads and carts |
+| Optional CR comparison (existing B) | Purchasing sessions / sessions in the same cohort: all; without `automation` & `automation_verified`; without `automation`, `automation_verified` & `agent_user`; strict additionally sets aside `suspicious` (secondary only) |
+| Labelled revenue (existing B) | Sum of exported USD `ecommerce.purchase_revenue_in_usd` (deduplicated by `transaction_id`, matching `campaign-dashboard.sql`) per separated cohort, shown explicitly alongside All sessions; no silent deletion |
+| Score histogram | Counts of detector events by class, `agent_claim`, phase, score, session engaged/purchasing status and version; unknown join status stays unknown |
 
 Give k/n, percentage and **two-sided 95% Wilson score CI** for headline share, coverage, engaged/converter flag rates and panel/canary proportions. With `p=k/n`, `z=1.95996398454`, limits are `(p+z²/(2n) ± z*sqrt(p(1-p)/n+z²/(4n²)))/(1+z²/n)`, clipped to [0,1]. For n=0 display not estimable, never 0%. These are descriptive binomial intervals, not guarantees; repeat sessions/devices and traffic bursts violate independence and can make them too narrow. Use participant/run units for panel/canary summaries, not repeated pages. No multiple-comparison significance claims.
 

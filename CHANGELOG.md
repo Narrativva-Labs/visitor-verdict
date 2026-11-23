@@ -1,5 +1,10 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## 1.4.1
 
 - Second review: reject hidden/tiny UC controls; accept hyphenated server operators and rdns_match verification; repair signal evidence, UC/BT regression coverage, paired-key fuzzing and payload/size documentation.
@@ -8,28 +13,17 @@
 - Require prior trusted page input and visible client rects for UC; pair BT input with trusted keydown timestamps to avoid compressed input creation times (synthetic regression; physical stall test pending).
 - Exclude language-only worker differences from WK and stop WK alone from opening the suspicious gate. DH remains unchanged. UB still directly labels suspicious but cannot seed CS without independent suspicious evidence; remove the GTM traffic_class User Property mapping.
 - Prefer verified B7 server agents over browser human/suspicious in the imported GTM current-class variable, with crawler/intermediary exclusions.
-- Update signal registry, generated catalogue, distribution, SRI and README v1.4.1 pin.
-
-### 1.3.0 review corrections (2026-11-23)
-
-- Guard WebMCP callbacks and register model contexts through EventTarget prototypes; require Event instances and strict trusted flags.
-- Observe document and navigator targets, deduplicate delivery, disconnect at saturation, and tighten lifecycle cleanup regressions.
-- Document page-forgeable informational evidence and GA4 undercount after final publication.
-
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- Update signal registry, generated catalogue, distribution, SRI and README v1.4.1 pin (21,168 bytes minified).
+- Reconcile reporting documentation with detector 1.4.1 and server library 0.6.1; use USD revenue throughout SQL, preserve infrastructure priority for current/legacy labels, separate verified unknown-purpose agents, and deduplicate transaction metrics consistently.
 
 ## 1.4.0 — 2026-11-23
 
-- Add experimental observed Claude in Chrome 1.0.107 host declaration (DH), with anthropic operator and dom_host claim; preserve precedence, late agent phase and one-document carry.
+- Add experimental observed Claude in Chrome 1.0.107 host declaration (DH), with `anthropic` operator and `dom_host` claim; preserve precedence, late agent phase and one-document carry.
 - Add desktop Chromium, closed/absent shadow, 250 ms settling and page-CSS guards for DH; carry evidence claim with CD and map it to GA4 (DLV 17).
 - Add final-only burst typing (BT, 2) and untrusted form interaction (UC, 2), sharing the interaction cap of 2. Suppress UC within 2000 ms of trusted input; neither bypasses corroboration.
-- Document the owner-run evidence (4/4 hosts, 0/2 controls), privacy and false-positive limits; extend contracts/fuzz and rebuild artifacts.
+- Document the owner-run evidence (4/4 hosts, 0/2 controls), privacy and false-positive limits; extend contracts/fuzz and rebuild artifacts (20,841 bytes minified).
 
-## [1.3.0] - 2026-11-22
+## 1.3.0 — 2026-11-22
 
 ### Added
 
@@ -37,6 +31,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - GTM `VV - DLV traffic_webmcp` (ID 16) and GA4 event parameter, registry evidence, synthetic lifecycle contracts and paired fuzz classification invariants. Version 1.3.0 ES5 bundle, SRI and container regenerated.
 - Versioned signal registry and JSON Schema for every detector code, default UA token and agent element ID, with sources, product/version evidence, review dates, lifecycle status and false-positive caveats; generated [signal catalogue](docs/signals.md) in the normal build.
 - CI registry contracts for schema validity, exact source inventories, weights and scoring families, retired output codes, generated documentation and non-failing 120-day review warnings.
+
+### Fixed (2026-11-23 review corrections)
+
+- Guard WebMCP callbacks and register model contexts through EventTarget prototypes; require Event instances and strict trusted flags.
+- Observe document and navigator targets, deduplicate delivery, disconnect at saturation, and tighten lifecycle cleanup regressions.
+- Document page-forgeable informational evidence and GA4 undercount after final publication.
 
 ### Documentation
 

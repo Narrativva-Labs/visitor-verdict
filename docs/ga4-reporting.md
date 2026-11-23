@@ -11,9 +11,9 @@ Merge DLV `VV - DLV traffic_agent_claim` (ID 17, Version 2, key `traffic_agent_c
 3. **Optional first `page_view` recipe:** open the site's **existing Google tag**. The import folder **VV - OPTIONAL page_view readiness (OR, once per page)** groups the two triggers for this manual step. Replace its early All Pages/Initialization firing trigger with **VV - initial OR VV - timer fallback 1s** as two ordinary firing triggers, not a trigger group. Set its advanced firing option to **Once per page**, so whichever trigger fires first starts it once. The timer interval is 1000ms, limit 1, enabled on all pages; it covers an unavailable or delayed detector.
 4. In the existing Google tag's **Shared event settings** (using an event settings variable where appropriate), set event parameter **traffic_class = `{{VV - current class}}`**. Preserve existing consent handling. With a timely initial result, the first `page_view` can carry the current page's initial class rather than waiting for a later page. This setup requires changing the existing tag; importing alone does not wire it.
 5. On every other **GA4 Event tag** (`gaawe`), add **traffic_class = `{{VV - current class}}`**, evaluated at that tag's firing time. Audit ecommerce, click and other tagged events. The dedicated publication event described below is the exception: it must use the publication's DLVs.
-6. Keep **VV - GA4 traffic_class** on **VV - initial hard OR VV - agent OR VV - final**, **Once per event**, with the mappings below. Preview initial, agent and final events (inject a synthetic `codex-agent-overlay-root` child of the root element to see the agent phase with `traffic_agent: 'openai'`), version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Neither a user property nor this setup backfills earlier events.
+6. Keep **VV - GA4 traffic_class** on **VV - initial hard OR VV - agent OR VV - final**, **Once per event**, with the mappings below. Preview initial, agent and final events (inject a synthetic `codex-agent-overlay-root` child of the root element to see the agent phase with `traffic_agent: 'openai'`), version, first page_view, final DLV values, Google-tag firing count, navigation, delayed/denied consent and timer fallback before publishing. Event-scoped parameters do not backfill earlier events.
 
-All imported named objects use `VV - `. The import creates two tags, eight variables, five triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
+All imported named objects use `VV - `. The import creates two tags, nine variables, five triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
 
 | Object | Definition |
 |---|---|
@@ -39,7 +39,7 @@ To roll back, remove the two readiness triggers from the tag you changed and res
 
 ### WebMCP reporting and migration to 1.3.0
 
-Merge the current container import and review conflicts. Existing object IDs stay stable; **VV - DLV traffic_webmcp** is added as ID 16 (Data Layer Variable, Version 2, key `traffic_webmcp`, no default). The GA4 `traffic_class` tag adds event parameter `traffic_webmcp={{VV - DLV traffic_webmcp}}`. For a manual upgrade, update the detector HTML too. Version 1.3.0 introduced six event mappings; 1.4.0 adds a seventh for the evidence claim; no new firing trigger or user property is required.
+Merge the current container import and review conflicts. Existing object IDs stay stable; **VV - DLV traffic_webmcp** is added as ID 16 (Data Layer Variable, Version 2, key `traffic_webmcp`, no default). The GA4 `traffic_class` tag adds event parameter `traffic_webmcp={{VV - DLV traffic_webmcp}}`. For a manual upgrade, update the detector HTML too. Version 1.3.0 introduced six event mappings; 1.4.0 adds a seventh for the evidence claim; no new firing trigger is required.
 
 Optionally register event-scoped **Traffic WebMCP** for `traffic_webmcp` in GA4 custom definitions. Use `none`, `capable` and `used` as a separate reporting breakdown alongside `traffic_class`. `capable` is browser API exposure, never an agent classification. `used` means a site tool was invoked through the browser's agent integration, including cancellation observations; it does not identify an operator or prove completion. Neither value changes class, score or conversion handling. An absent field from an older detector means unknown, not `none`.
 
@@ -69,7 +69,7 @@ Initial and final hits for the same hard class are expected. Use **session-level
 
 ### Publication-event mappings
 
-The dedicated event describes one data-layer publication. Use these exact mappings; do not substitute the live current-class variable:
+The dedicated event describes one data-layer publication. Use these exact seven event-parameter mappings; do not substitute the live current-class variable:
 
 | GA4 field | Variable |
 |---|---|
@@ -81,7 +81,9 @@ The dedicated event describes one data-layer publication. Use these exact mappin
 | Event parameter `traffic_webmcp` | `{{VV - DLV traffic_webmcp}}` |
 | Event parameter `traffic_agent_claim` | `{{VV - DLV traffic_agent_claim}}` |
 
-All current detector phases contain `traffic_version: '1.4.1'`. `traffic_agent` is `openai` or `anthropic` when known from DOM evidence or its one-document CD carry, with class `declared_agent`. `traffic_agent_claim` distinguishes `dom_marker`, observed `dom_host`, and `ua_token`; older stored records may lack a claim. Claude in Chrome 1.0.107 is detected by the guarded host pattern, based on limited observed evidence. Debug codes are not mapped to GA4.
+**No `traffic_class` user property:** the user property previously mapped on this tag was removed in GTM 1.4.1; remove legacy mappings from existing tags. A legacy last-observed user property can overwrite earlier agent/automation evidence when a later `human` event fires and leaks across handoff and subsequent sessions. Use event-scoped parameters with session-level classification in SQL ([bigquery.sql](analysis/bigquery.sql) / [campaign-dashboard.sql](analysis/campaign-dashboard.sql)) or GA4 Exploration session segments instead.
+
+All current detector phases contain `traffic_version: '1.4.1'`. `traffic_agent` is `openai` or `anthropic` when known from DOM evidence or its one-document CD carry, with class `declared_agent` (or any server-registry operator when server echo is present). `traffic_agent_claim` distinguishes `dom_marker`, observed `dom_host`, `ua_token`, and server claims such as `server_signature`, `server_ip` and `server_intermediary`; older stored records may lack a claim. Claude in Chrome 1.0.107 is detected by the guarded host pattern, based on limited observed evidence. Debug codes are not mapped to GA4.
 
 ### Manual installation
 
@@ -141,13 +143,14 @@ Keep the dedicated event on initial hard, agent and final even if no later inter
 
 ## Reporting
 
-In **Admin → Data display → Custom definitions**, create:
+In **Admin → Data display → Custom definitions**, create **event-scoped** dimensions only:
 
 | Display name | Scope | Field |
 |---|---|---|
 | Traffic class (event) | Event | Event parameter `traffic_class` |
 | Traffic agent (event) | Event | Event parameter `traffic_agent` |
 | Traffic agent claim (event) | Event | Event parameter `traffic_agent_claim` |
+| Traffic WebMCP (event), optional | Event | Event parameter `traffic_webmcp` |
 | Traffic phase (event), optional | Event | Event parameter `traffic_phase` |
 
 Optionally register event-scoped `traffic_version` to distinguish release/configuration intervals. This is static release metadata.
@@ -159,26 +162,28 @@ Register `traffic_score` as a custom metric only if needed. Score is a heuristic
 | `human` | **No automation detected**; not proof of a person |
 | `suspicious` | Uncertain evidence; show separately for review |
 | `automated` | Automation evidence; does not establish intent or abuse |
-| `declared_agent` | Unverified agent claim (UA token or agent UI marker); can be spoofed. With `traffic_agent`, an agent UI of that operator was in the page: usually a real person's agent-assisted visit |
+| `declared_agent` | Unverified agent claim (UA token, agent UI marker, or server echo); can be spoofed in browser-only setups. With `traffic_agent` (and `traffic_agent_claim != 'server_intermediary'`), usually a real person's agent-assisted visit (`agent_user`); with `traffic_agent_claim = 'server_intermediary'`, a verified automation platform (`automation_verified`) |
 | Missing | Unknown; never silently treat as human |
 
-**Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are optional comparisons that leave the data intact. Agent-assisted sessions are real visits: a browser agent such as OpenAI's in-browser agent runs in the person's own browser and pays with their card, so its purchases are revenue. Coverage remains limited: the Claude 1.0.107 host pattern is observed evidence and may also match unrelated closed-shadow widgets or portals. Report them as their own segment, not as removed traffic.
+**Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are breakdowns or optional comparisons that leave the data intact. Agent-assisted sessions (`agent_user`) are real visits: a browser agent such as OpenAI's in-browser agent runs in the person's own browser and pays with their card, so its purchases are revenue. Coverage remains limited: the Claude 1.0.107 host pattern (`dom_host`) is observed evidence and may also match unrelated closed-shadow widgets or portals, and ChatGPT's cloud agent ends `human` in the browser (recognised only on the server via HTTP Message Signatures). Report each group separately, never merged into an "excluded" total.
 
 Use these session views, scoped to the web stream and the same date range:
 
 - **All sessions** (headline): every session including unknown coverage.
-- **Agent-assisted sessions**: any event carries `traffic_agent` (or `declared_agent` with the operator known). Show sessions, purchases and revenue; this is customer activity through an agent. The carried label lasts one page: if the person stops the agent and clicks on, the next page can still carry `declared_agent` and `traffic_agent`, so a session's last pageview may be human activity. BigQuery flag: `has_agent_operator`.
-- **Sessions without detected automation** (optional comparison): leave out sessions where any event carries `automated` or `declared_agent`. Keep unknown sessions; show suspicious sessions separately within this view. Use it to see how much the labelled traffic moves rates, not as the reported total.
-- **Stricter sensitivity view** (optional): additionally leave out sessions containing `suspicious`.
-- **Observed human-only cohort**, diagnostic only: at least one `human` observation and no automated, declared or suspicious observations. It selects measurable, labelled visits and misses unknown traffic.
+- **Labelled: `agent_user`**: `declared_agent` sessions excluding `server_intermediary` (and without `automated`). Show sessions, purchases, deduplicated USD revenue and leads separately; this is customer activity through an agent. The carried label lasts one page: if the person stops the agent and clicks on, the next page can still carry `declared_agent` and `traffic_agent`, so a session's last pageview may be human activity. Monitor `dom_host` separately via `traffic_agent_claim`. BigQuery flags: `any_agent_user`, `has_agent_operator`, `agent_operator`, `agent_claim`.
+- **Labelled: `automation_verified`**: verified automation platforms with unknown purpose (Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf — `traffic_agent_claim = 'server_intermediary'` in browser echo, or `vv_type = 'automation_verified'` / legacy `purpose = 'intermediary'` in server collector). Kept separate from both `agent_user` and `crawler`.
+- **Labelled: `agent_verified_unknown_purpose`** (server collector Query B/B2): verified agent identity without an explicit `user_directed` purpose. Keep its revenue separate from user-directed agents; this includes verified Poppy identities and missing purpose in older data.
+- **Labelled: `automation`**: sessions with `automated` browser evidence (or `bot_automation`/`bot_spoofed` on the server).
+- **Labelled: `suspicious`**: sessions with uncertain evidence only (`suspicious` / `bot_suspicious`).
+- **Optional comparison views**: sessions without `automation` & `automation_verified` (keeping `agent_user` revenue in), sessions without `automation`, `automation_verified` & `agent_user`, stricter view additionally without `suspicious`, and diagnostic **Observed human-only cohort** (at least one `human` observation and no other class; selects measurable, labelled visits and misses unknown traffic).
 
-The comparison views keep unlabelled sessions and their earlier pageviews/purchases and set aside sessions with observed evidence; they never remove anything from GA4. “Only human” would bias the headline toward visits with successful classification and delivery. Always show coverage: sessions with any valid class versus sessions without, plus missing-ID pings separately. A later human label never cancels earlier automation evidence in that session.
+The comparison views keep unlabelled sessions and their earlier pageviews/purchases and set aside sessions with observed evidence; they never remove anything from GA4. "Only human" would bias the headline toward visits with successful classification and delivery. Always show coverage: sessions with any valid class versus sessions without, plus missing-ID pings separately. A later human label never cancels earlier automation evidence in that session.
 
-Headline purchase conversion rate = **purchasing sessions / sessions in the same cohort**. Do not mix filtered purchasers with all-session denominators; do not count `add_to_cart` as headline conversion. Always report revenue from all sessions; show revenue in labelled sessions (agent-assisted, automated) as a breakdown, not a deduction. Leaving low-converting bot sessions out of a comparison view can raise CR by arithmetic; it does not demonstrate marketing improvement.
+Headline purchase conversion rate = **purchasing sessions / sessions in the same cohort**. Keep **purchases** and **leads** strictly separate; never sum `purchases + leads` or count `add_to_cart` as headline conversion. Do not mix filtered purchasers with all-session denominators. Always report USD `purchase_revenue` (deduplicated by `transaction_id`) from all sessions; show revenue across `agent_user`, `automation_verified`, `automation` and `suspicious` as a breakdown, not a deduction. Setting aside low-converting bot sessions in a comparison view can raise CR by arithmetic; it does not demonstrate marketing improvement.
 
-For GA4 UI steps use [Explorations and comparisons](analysis/ga4-explorations.md): create a **Session segment** including all web-stream sessions; for the optional comparison view, exclude sessions where a `traffic_class` event has class `automated|declared_agent` **OR any event has that event parameter**. Keep name and class conditions on the same event; event name alone must not exclude all classified sessions. Standard-report comparisons on the event-scoped dimension are scoped label comparisons, not reliable whole-session exclusions; never use the user property as a shortcut. [BigQuery SQL](analysis/bigquery.sql) supplies session flags, first/last evidence, class at first purchase and consistent cohorts; [Looker Studio](analysis/looker-studio.md) uses those session aggregates.
+For GA4 UI steps use [Explorations and comparisons](analysis/ga4-explorations.md): create **Session segments** scoped to the web stream for each separated group. Standard-report comparisons on the event-scoped dimension are scoped label comparisons, not reliable whole-session classifications; never use a user property as a shortcut. [BigQuery SQL](analysis/bigquery.sql) and [Campaign dashboard SQL](analysis/campaign-dashboard.sql) supply session flags, `class_group`, `agent_claim`, first/last evidence, class at first purchase and consistent cohorts; [Looker Studio](analysis/looker-studio.md) uses those session aggregates.
 
-**Do not use the class to block access, deny service or make decisions about individuals.** Assistive technology can resemble some input patterns. Keep conversion collection running and send conversions as usual; the project recommends no conversion exceptions or holds by default (see [conversion guidance](conversion-guidance.md)). Pre-consent classification must never feed advertising platforms.
+**Do not use the class to block access, deny service or make decisions about individuals.** Assistive technology can resemble some input patterns. Keep conversion collection running and send conversions as usual; the project recommends no conversion exceptions or holds by default, and any label forwarded to ad platforms (e.g. via sGTM) must be a passive reporting parameter only (see [conversion guidance](conversion-guidance.md)). Pre-consent classification must never feed advertising platforms.
 
 
 ## Detector 1.2.0 timing and carry-over
@@ -199,3 +204,5 @@ same event is deduplicated. At 255 observations listeners disconnect.
 tool events update only the local snapshot, with no extra analytics publication.
 Agents that read longer before calling tools therefore systematically appear as
 `capable`/`none` in GA4 even when the local snapshot later says `used`.
+
+Browser/GTM `agent_user` is a declaration group, not proof of a user-directed purpose: `server_signature`/`server_ip` echo claims do not encode that purpose. For verified-purpose reporting, use campaign-dashboard.sql Query B/B2: only `agent_verified` with `purpose=user_directed` enters `agent_user`; unknown or missing purpose enters `agent_verified_unknown_purpose`. Unverified declarations remain unverified, including UA tokens that may identify crawlers.

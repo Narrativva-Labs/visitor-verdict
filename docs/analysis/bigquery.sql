@@ -31,12 +31,18 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
   OR end_ts IS NULL OR start_ts >= end_ts OR label IS NULL OR label = '') AS 'Invalid test window';
 
 -- Semantics:
+-- * Labels only: Visitor Verdict never excludes traffic. Headline is All sessions.
+--   Breakdowns separate user-directed agents (agent_user), verified automation
+--   platforms (automation_verified via server_intermediary), unverified browser
+--   automation (automation) and uncertain traffic (suspicious).
 -- * Session = the existing (user_pseudo_id, ga_session_id) pair; never coalesce
 --   missing IDs to a shared value, invent an ID or join pre-consent pings later.
--- * Flags use valid event parameters on ANY event, including initial hard and final detector
---   events. User properties are last observed class, never exclusion evidence.
--- * first_class/last_class follow export order, not class precedence. Exclusion
---   uses ANY evidence across the session, so later human cannot erase automation.
+-- * Flags use valid event parameters on ANY event, including initial hard, agent
+--   and final detector events. User properties are never used here (the
+--   traffic_class user property was removed in GTM 1.4.1).
+-- * first_class/last_class follow export order, not class precedence. Session
+--   class_group uses ANY evidence across the session, so a later human event
+--   cannot erase earlier automation or agent evidence.
 -- * class_at_first_conversion means first purchase (not add_to_cart): its own
 --   event parameter, otherwise latest preceding parameter in the same session.
 --   No future label is backfilled. Exact export-order ties are ambiguous.
@@ -45,14 +51,28 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
 --   Optional initial OR 1 s fallback readiness can label the first page_view;
 --   the timer can still start it without a class. Later final evidence does not
 --   refresh that startup value. Timing fields describe observed exported labels.
---   The dedicated detector tag sends initial automated/declared_agent and all
---   final classes; a short visit may deliver only initial. User properties are
---   never used here as a session-exclusion fallback.
--- * Container 1.1.0 may send up to three traffic_class hits per page (initial,
---   agent, final); traffic_agent is extracted as has_agent_operator / agent_operator. Session flags
---   below use ANY hit (COUNTIF > 0), so those duplicates do not inflate cohorts.
---   A/F2/H/evaluation event counts are delivery diagnostics, NOT visits or recall;
---   never sum initial and final event counts to estimate automated sessions.
+--   The dedicated detector tag sends initial automated/declared_agent, agent
+--   escalations, and all final classes; a short visit may deliver only initial.
+-- * Container 1.4.1 may send up to three traffic_class hits per page (initial,
+--   agent, final) and maps traffic_agent + traffic_agent_claim (7 DLVs total).
+--   valid_agent() accepts any valid operator slug from browser markers or server
+--   echo (not only openai/anthropic). traffic_agent_claim='server_intermediary'
+--   is separated into automation_verified rather than agent_user; dom_host is
+--   exposed in any_dom_host / agent_claim for false-positive monitoring.
+--   Note: browser-only ua_token declarations include some crawlers (e.g. GPTBot,
+--   CCBot, Applebot); use agent_claim or server-side verification (campaign-dashboard.sql
+--   Query B) to separate crawlers from interactive user agents.
+--   Server echo signature/IP claims do not encode purpose; browser agent_user
+--   is a declaration group, not verified user intent. Query B/B2 in
+--   campaign-dashboard.sql separates agent_verified_unknown_purpose.
+-- * Session flags below use ANY hit (COUNTIF > 0), so initial/agent/final hits
+--   do not inflate session cohorts. A/F2/H/evaluation event counts are delivery
+--   diagnostics, NOT visits or recall.
+-- * Revenue and purchases: ecommerce.purchase_revenue_in_usd (USD, matching
+--   campaign-dashboard.sql; USD is used even within a single property), deduplicated by non-empty ecommerce.transaction_id
+--   within the scanned stream (un-ID'd purchases are kept).
+--   The purchase_revenue output alias always means USD. Not refund-adjusted.
+--   Purchases and leads are always reported separately, never summed together.
 -- * A counts event parameters only; missing remains unknown.
 -- * B--F1 use the local date of ga_session_id (epoch seconds). Cohorts overlap;
 --   each session contributes once within each applicable cohort.
@@ -71,8 +91,19 @@ ASSERT NOT EXISTS (SELECT 1 FROM UNNEST(labelled_windows) WHERE start_ts IS NULL
 
 CREATE TEMP FUNCTION valid_class(v STRING) AS
   (IF(v IN ('human', 'suspicious', 'automated', 'declared_agent'), v, NULL));
--- Detector 1.1.0: operator from an agent UI marker, sent only with declared_agent.
-CREATE TEMP FUNCTION valid_agent(v STRING) AS (IF(v IN ('openai', 'anthropic'), v, NULL));
+
+-- Accept any valid operator slug (browser markers + all server-registry operators).
+CREATE TEMP FUNCTION valid_agent(v STRING) AS (
+  IF(REGEXP_CONTAINS(LOWER(TRIM(v)), r'^[a-z0-9][a-z0-9_-]{0,63}$')
+     AND LOWER(TRIM(v)) NOT IN ('none', 'unknown', 'null', 'undefined'),
+    LOWER(TRIM(v)), NULL));
+
+-- Evidence claim (browser: dom_marker, dom_host, ua_token; server echo:
+-- server_signature, server_ip, server_intermediary, poppy_session, etc.).
+CREATE TEMP FUNCTION valid_agent_claim(v STRING) AS (
+  IF(REGEXP_CONTAINS(LOWER(TRIM(v)), r'^[a-z][a-z0-9_]{0,63}$')
+     AND LOWER(TRIM(v)) NOT IN ('none', 'unknown', 'null', 'undefined'),
+    LOWER(TRIM(v)), NULL));
 
 -- Two-sided 95% Wilson score interval. Undefined for n=0; never use
 -- weighted pseudo-counts here. Reference: NIST prc241 (linked in protocol).
@@ -97,7 +128,8 @@ SELECT
   PARSE_DATE('%%Y%%m%%d', event_date) AS day,
   event_timestamp, event_name, user_pseudo_id,
   batch_page_id, batch_ordering_id, batch_event_index,
-  COALESCE(ecommerce.purchase_revenue_in_usd, 0) AS purchase_revenue_usd,
+  COALESCE(ecommerce.purchase_revenue_in_usd, 0) AS purchase_revenue,
+  NULLIF(TRIM(ecommerce.transaction_id), '') AS transaction_id,
   (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
    FROM UNNEST(event_params) WHERE key = 'ga_session_id' LIMIT 1) AS ga_session_id,
   (SELECT value.string_value FROM UNNEST(event_params)
@@ -106,6 +138,8 @@ SELECT
    WHERE key = 'traffic_phase' LIMIT 1) AS phase,
   (SELECT value.string_value FROM UNNEST(event_params)
    WHERE key = 'traffic_agent' LIMIT 1) AS param_agent_raw,
+  (SELECT value.string_value FROM UNNEST(event_params)
+   WHERE key = 'traffic_agent_claim' LIMIT 1) AS param_agent_claim_raw,
   (SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
    FROM UNNEST(event_params) WHERE key = 'traffic_score' LIMIT 1) AS traffic_score,
   COALESCE((SELECT COALESCE(value.int_value, SAFE_CAST(value.string_value AS INT64))
@@ -120,6 +154,7 @@ SELECT
     AS default_channel,
   session_traffic_source_last_click.manual_campaign.source AS manual_source,
   session_traffic_source_last_click.manual_campaign.medium AS manual_medium,
+  session_traffic_source_last_click.google_ads_campaign.campaign_name AS google_ads_campaign,
   collected_traffic_source.manual_source AS collected_source,
   collected_traffic_source.manual_medium AS collected_medium,
   -- Keep only hostname, not the referrer URL, for an optional referral annotation.
@@ -138,7 +173,10 @@ USING FORMAT_DATE('%Y%m%d', DATE_SUB(start_date, INTERVAL padding_days DAY)) AS 
       web_stream_id AS web_stream_id, site_name AS site;
 
 CREATE TEMP TABLE normalized AS
-SELECT *, valid_class(param_class_raw) AS param_class, valid_agent(param_agent_raw) AS param_agent,
+SELECT *,
+  valid_class(param_class_raw) AS param_class,
+  valid_agent(param_agent_raw) AS param_agent,
+  valid_agent_claim(param_agent_claim_raw) AS param_agent_claim,
   EXISTS (SELECT 1 FROM UNNEST(labelled_windows) w
     WHERE TIMESTAMP_MICROS(event_timestamp) >= w.start_ts
       AND TIMESTAMP_MICROS(event_timestamp) < w.end_ts) AS in_test_window,
@@ -165,11 +203,19 @@ WHERE CASE WHEN n.user_pseudo_id IS NOT NULL AND n.ga_session_id IS NOT NULL
 
 -- Forward fill only within an identifiable session. The purchase's own valid
 -- parameter takes precedence because CURRENT ROW is included. No user property.
+-- tx_rn deduplicates repeat purchase events sharing a non-empty transaction_id
+-- across the scanned stream (e.g. thank-you page reloads).
 CREATE TEMP TABLE ordered_events AS
-SELECT *, LAST_VALUE(param_class IGNORE NULLS) OVER (
-  PARTITION BY user_pseudo_id, ga_session_id
-  ORDER BY event_timestamp, batch_page_id, batch_ordering_id, batch_event_index
-  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS class_as_of_event
+SELECT *,
+  LAST_VALUE(param_class IGNORE NULLS) OVER (
+    PARTITION BY user_pseudo_id, ga_session_id
+    ORDER BY event_timestamp, batch_page_id, batch_ordering_id, batch_event_index
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS class_as_of_event,
+  ROW_NUMBER() OVER (
+    PARTITION BY site, stream_id, IF(event_name = 'purchase', transaction_id, NULL)
+    ORDER BY event_timestamp, COALESCE(batch_page_id, 0),
+      COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0)
+  ) AS tx_rn
 FROM events
 WHERE user_pseudo_id IS NOT NULL AND ga_session_id IS NOT NULL;
 
@@ -180,22 +226,43 @@ SELECT user_pseudo_id, ga_session_id,
        ELSE COALESCE(MAX(traffic_version), 'unknown') END AS traffic_version,
   COUNTIF(traffic_version IS NULL) > 0 AS has_unversioned_events,
   COUNT(DISTINCT param_class) > 1 AS class_transition,
-  -- Same precedence as the detector: automated outranks declared_agent
-  -- (initial declared_agent can become final automated, never the reverse).
+  -- Detector precedence: automated outranks declared_agent.
   CASE MAX(CASE param_class WHEN 'automated' THEN 4 WHEN 'declared_agent' THEN 3
     WHEN 'suspicious' THEN 2 WHEN 'human' THEN 1 ELSE 0 END)
     WHEN 4 THEN 'automated' WHEN 3 THEN 'declared_agent'
     WHEN 2 THEN 'suspicious' WHEN 1 THEN 'human' ELSE 'unknown' END AS worst_class,
+  -- Separate automation_verified (server_intermediary) from user-directed agents.
+  CASE
+    WHEN COUNTIF(param_class = 'automated') > 0 THEN 'automation'
+    WHEN COUNTIF(param_agent_claim = 'server_intermediary') > 0 THEN 'automation_verified'
+    WHEN COUNTIF(param_class = 'declared_agent'
+           AND COALESCE(param_agent_claim, '') != 'server_intermediary') > 0 THEN 'agent_user'
+    WHEN COUNTIF(param_class = 'suspicious') > 0 THEN 'suspicious'
+    WHEN COUNTIF(param_class = 'human') > 0 THEN 'no automation detected'
+    ELSE 'unknown' END AS class_group,
   DATE(TIMESTAMP_SECONDS(ga_session_id), property_timezone) AS session_day,
   COUNTIF(param_class = 'automated') > 0 AS any_automated,
+  COUNTIF(param_agent_claim = 'server_intermediary') > 0 AS any_automation_verified,
+  COUNTIF(param_class = 'declared_agent'
+    AND COALESCE(param_agent_claim, '') != 'server_intermediary') > 0 AS any_agent_user,
   COUNTIF(param_class = 'declared_agent') > 0 AS any_declared,
   COUNTIF(param_class = 'suspicious') > 0 AS any_suspicious,
+  COUNTIF(param_agent_claim = 'dom_host') > 0 AS any_dom_host,
   COUNTIF(param_class IS NOT NULL) > 0 AS has_class,
-  -- Agent-assisted: any event with an operator. The carried label lasts one page,
-  -- so a page after the person takes over can still carry it.
-  COUNTIF(param_agent IS NOT NULL) > 0 AS has_agent_operator,
-  CASE WHEN COUNT(DISTINCT param_agent) > 1 THEN 'mixed'
-       ELSE MAX(param_agent) END AS agent_operator,
+  -- User-directed agent operator (excludes server_intermediary). Carried labels
+  -- last one page, so a page after the person takes over can still carry them.
+  COUNTIF(param_agent IS NOT NULL
+    AND COALESCE(param_agent_claim, '') != 'server_intermediary') > 0 AS has_agent_operator,
+  CASE WHEN COUNT(DISTINCT IF(COALESCE(param_agent_claim, '') != 'server_intermediary',
+         param_agent, NULL)) > 1 THEN 'mixed'
+       ELSE MAX(IF(COALESCE(param_agent_claim, '') != 'server_intermediary',
+         param_agent, NULL)) END AS agent_operator,
+  CASE WHEN COUNT(DISTINCT IF(param_agent_claim = 'server_intermediary',
+         param_agent, NULL)) > 1 THEN 'mixed'
+       ELSE MAX(IF(param_agent_claim = 'server_intermediary',
+         param_agent, NULL)) END AS automation_verified_operator,
+  CASE WHEN COUNT(DISTINCT param_agent_claim) > 1 THEN 'mixed'
+       ELSE MAX(param_agent_claim) END AS agent_claim,
   ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp, batch_page_id,
     batch_ordering_id, batch_event_index LIMIT 1)[SAFE_OFFSET(0)] AS first_class,
   ARRAY_AGG(param_class IGNORE NULLS ORDER BY event_timestamp DESC, batch_page_id DESC,
@@ -203,19 +270,24 @@ SELECT user_pseudo_id, ga_session_id,
   ARRAY_AGG(IF(event_name = 'purchase', STRUCT(class_as_of_event AS class), NULL)
     IGNORE NULLS ORDER BY event_timestamp, batch_page_id, batch_ordering_id,
     batch_event_index LIMIT 1)[SAFE_OFFSET(0)].class AS class_at_first_conversion,
-  SUM(IF(event_name = 'purchase', purchase_revenue_usd, 0)) AS purchase_revenue_usd,
+  -- Deduplicated purchases and USD revenue by transaction_id.
+  SUM(IF(event_name = 'purchase' AND (transaction_id IS NULL OR tx_rn = 1),
+    purchase_revenue, 0)) AS purchase_revenue,
+  COUNTIF(event_name = 'purchase' AND (transaction_id IS NULL OR tx_rn = 1)) AS purchases,
+  COUNTIF(event_name = 'purchase') AS purchase_events,
+  COUNT(DISTINCT IF(event_name = 'purchase' AND tx_rn = 1, transaction_id, NULL)) AS unique_transactions,
   COUNTIF(event_name = 'traffic_class') > 0 AS has_detector_event,
   COUNTIF(event_name = 'traffic_class' AND phase = 'final') > 0 AS has_final_event,
   LOGICAL_OR(is_engaged) AS engaged,
   SUM(engagement_ms) AS engagement_ms,
   COUNT(*) AS events, COUNTIF(event_name = 'page_view') AS pageviews,
-  COUNTIF(event_name = 'purchase') AS purchases,
   COUNTIF(event_name = 'generate_lead') AS leads,
   COUNTIF(event_name = 'add_to_cart') AS carts,
   -- Keep session attribution and simple observed fallback separate.
-  ARRAY_AGG(IF(attributed_source IS NOT NULL OR manual_source IS NOT NULL,
-    STRUCT(COALESCE(attributed_source, manual_source) AS source,
-      COALESCE(attributed_medium, manual_medium) AS medium), NULL)
+  ARRAY_AGG(IF(attributed_source IS NOT NULL OR manual_source IS NOT NULL OR google_ads_campaign IS NOT NULL,
+    STRUCT(
+      COALESCE(attributed_source, manual_source, IF(google_ads_campaign IS NOT NULL, 'google', NULL)) AS source,
+      COALESCE(attributed_medium, manual_medium, IF(google_ads_campaign IS NOT NULL, 'cpc', NULL)) AS medium), NULL)
     IGNORE NULLS ORDER BY event_timestamp DESC LIMIT 1)[SAFE_OFFSET(0)] AS attributed,
   ARRAY_AGG(IF(collected_source IS NOT NULL,
     STRUCT(collected_source AS source, collected_medium AS medium), NULL)
@@ -250,51 +322,67 @@ WHERE session_day BETWEEN start_date AND end_date;
 -- One row per session already contains metrics BEFORE any cohort expansion or
 -- reporting joins. Never join raw event rows to sessions and re-sum these metrics.
 -- Cohorts overlap intentionally: do not sum them into an all-traffic total.
+-- User agents (agent_user), verified automation platforms (automation_verified),
+-- browser automation (automation) and uncertain traffic (suspicious) are kept separate.
 CREATE TEMP TABLE cohort_sessions AS
 SELECT s.*, cohort
 FROM sessions s CROSS JOIN UNNEST([
   'All sessions',
-  IF(NOT any_automated AND NOT any_declared,
-     'Sessions excluding detected automation', NULL),
-  IF(NOT any_automated AND NOT any_declared AND NOT any_suspicious,
-     'Stricter sensitivity view', NULL),
-  IF(has_class AND NOT any_automated AND NOT any_declared AND NOT any_suspicious,
-     'Observed human-only cohort (diagnostic)', NULL),
-  IF(NOT any_automated AND NOT any_declared AND any_suspicious,
-     'Suspicious within retained sessions', NULL),
-  IF(any_automated OR any_declared, 'Excluded detected automation', NULL)
+  IF(class_group = 'agent_user', 'Labelled: agent_user', NULL),
+  IF(class_group = 'automation_verified', 'Labelled: automation_verified', NULL),
+  IF(class_group = 'automation', 'Labelled: automation', NULL),
+  IF(class_group = 'suspicious', 'Labelled: suspicious', NULL),
+  IF(class_group = 'unknown', 'Unclassified (unknown)', NULL),
+  IF(NOT any_automated AND NOT any_automation_verified,
+     'Comparison: without automation & automation_verified', NULL),
+  IF(NOT any_automated AND NOT any_automation_verified AND NOT any_agent_user,
+     'Comparison: without automation, automation_verified & agent_user', NULL),
+  IF(NOT any_automated AND NOT any_automation_verified AND NOT any_agent_user AND NOT any_suspicious,
+     'Comparison: stricter (also without suspicious)', NULL),
+  IF(has_class AND NOT any_automated AND NOT any_automation_verified AND NOT any_agent_user AND NOT any_suspicious,
+     'Observed human-only cohort (diagnostic)', NULL)
 ]) AS cohort WHERE cohort IS NOT NULL;
 
--- A. Event-label coverage; user property is deliberately not a fallback.
+-- A. Event-label coverage; user property is deliberately not used.
 SELECT site, stream_id, traffic_version, day, COALESCE(param_class, 'unclassified') AS event_class,
+  param_agent_claim AS agent_claim,
   COUNT(*) AS events,
   COUNTIF(user_pseudo_id IS NULL OR ga_session_id IS NULL) AS unjoinable_events
 FROM events WHERE day BETWEEN start_date AND end_date
-GROUP BY site, stream_id, traffic_version, day, event_class ORDER BY day, event_class;
+GROUP BY site, stream_id, traffic_version, day, event_class, agent_claim
+ORDER BY day, event_class, agent_claim;
 
--- B. Headline sessions excluding detected automation, alongside baseline,
--- sensitivity and diagnostics. Purchase conversion uses the SAME cohort.
--- Revenue is exported USD purchase revenue, not transaction-deduplicated or
--- refund-adjusted. Excluded revenue is its own cohort, not silently discarded.
+-- B. Headline All sessions alongside separated label breakdowns and optional
+-- comparisons. Purchase conversion uses the SAME cohort in numerator and
+-- denominator; purchases and leads stay separate. Revenue is USD
+-- purchase_revenue deduplicated by transaction_id (not refund-adjusted).
 SELECT site, stream_id, traffic_version, session_day, cohort, COUNT(*) AS sessions,
   COUNTIF(purchases > 0) AS purchasing_sessions,
+  SUM(purchases) AS purchases,
+  SUM(unique_transactions) AS unique_transactions,
   SAFE_DIVIDE(COUNTIF(purchases > 0), COUNT(*)) AS purchase_conversion_rate,
-  SUM(purchase_revenue_usd) AS purchase_revenue_usd,
+  SUM(purchase_revenue) AS purchase_revenue,
+  COUNTIF(leads > 0) AS lead_sessions,
+  SUM(leads) AS leads,
+  SAFE_DIVIDE(COUNTIF(leads > 0), COUNT(*)) AS lead_conversion_rate,
   COUNTIF(has_class) AS sessions_with_class,
   COUNTIF(NOT has_class) AS sessions_without_class,
   SAFE_DIVIDE(COUNTIF(has_class), COUNT(*)) AS class_coverage,
   COUNTIF(any_suspicious) AS suspicious_sessions,
   COUNTIF(engaged) AS engaged_sessions,
   SUM(engagement_ms) AS engagement_time_msec, SUM(pageviews) AS pageviews,
-  COUNTIF(leads > 0) AS lead_sessions, COUNTIF(carts > 0) AS cart_sessions
+  COUNTIF(carts > 0) AS cart_sessions
 FROM cohort_sessions GROUP BY site, stream_id, traffic_version, session_day, cohort ORDER BY session_day, cohort;
 
 -- C. Acquisition at session grain; referrals annotate attribution, not identity.
 SELECT site, stream_id, traffic_version, session_day, cohort, source, medium, session_default_channel,
   source_basis, ai_referral_annotation, COUNT(*) AS sessions,
   COUNTIF(purchases > 0) AS purchasing_sessions,
+  SUM(purchases) AS purchases,
   SAFE_DIVIDE(COUNTIF(purchases > 0), COUNT(*)) AS purchase_conversion_rate,
-  SUM(purchase_revenue_usd) AS purchase_revenue_usd
+  SUM(purchase_revenue) AS purchase_revenue,
+  COUNTIF(leads > 0) AS lead_sessions,
+  SUM(leads) AS leads
 FROM cohort_sessions GROUP BY site, stream_id, traffic_version, session_day, cohort, source, medium,
   session_default_channel, source_basis, ai_referral_annotation;
 
@@ -303,29 +391,51 @@ SELECT site, stream_id, traffic_version, session_day, cohort, first_observed.dev
   first_observed.browser AS browser, first_observed.operating_system AS operating_system,
   first_observed.country AS country, first_observed.city AS city,
   COUNT(*) AS sessions, COUNTIF(purchases > 0) AS purchasing_sessions,
-  SUM(purchase_revenue_usd) AS purchase_revenue_usd
+  SUM(purchases) AS purchases, SUM(purchase_revenue) AS purchase_revenue,
+  COUNTIF(leads > 0) AS lead_sessions, SUM(leads) AS leads
 FROM cohort_sessions GROUP BY site, stream_id, traffic_version, session_day, cohort, device_category, browser,
   operating_system, country, city;
 
--- E. Evidence and conversion timing diagnostics, not proof of false positives.
--- Exports no session identifiers. NULL first-purchase class stays unknown;
--- sessions without a purchase can also have NULL, so keep purchasing_sessions.
-SELECT site, stream_id, traffic_version, session_day, any_automated, any_declared, any_suspicious, has_class,
-  agent_operator, first_class, last_class, class_at_first_conversion, COUNT(*) AS sessions,
+-- E. Evidence, claim (including dom_host monitoring) and conversion timing
+-- diagnostics, not proof of false positives. Exports no session identifiers.
+-- NULL first-purchase class stays unknown; sessions without a purchase can also
+-- have NULL, so keep purchasing_sessions.
+SELECT site, stream_id, traffic_version, session_day, class_group,
+  any_automated, any_automation_verified, any_agent_user, any_suspicious, any_dom_host, has_class,
+  agent_operator, automation_verified_operator, agent_claim,
+  first_class, last_class, class_at_first_conversion, COUNT(*) AS sessions,
   COUNTIF(purchases > 0) AS purchasing_sessions,
+  SUM(purchases) AS purchases,
+  COUNTIF(leads > 0) AS lead_sessions,
+  SUM(leads) AS leads,
   COUNTIF(engagement_ms >= long_engagement_ms) AS long_engagement_sessions,
-  SUM(purchase_revenue_usd) AS purchase_revenue_usd
-FROM sessions GROUP BY site, stream_id, traffic_version, session_day, any_automated, any_declared, any_suspicious,
-  has_class, agent_operator, first_class, last_class, class_at_first_conversion;
+  SUM(purchase_revenue) AS purchase_revenue
+FROM sessions GROUP BY site, stream_id, traffic_version, session_day, class_group,
+  any_automated, any_automation_verified, any_agent_user, any_suspicious, any_dom_host, has_class,
+  agent_operator, automation_verified_operator, agent_claim,
+  first_class, last_class, class_at_first_conversion;
 
 -- F1. Coverage = ANY valid class parameter, not merely detector-event presence.
 SELECT site, stream_id, traffic_version, session_day, has_class, has_detector_event, has_final_event,
-  COUNT(*) AS sessions, COUNTIF(purchases > 0) AS purchasing_sessions
+  COUNT(*) AS sessions, COUNTIF(purchases > 0) AS purchasing_sessions,
+  COUNTIF(leads > 0) AS lead_sessions
 FROM sessions GROUP BY site, stream_id, traffic_version, session_day, has_class, has_detector_event, has_final_event;
 
 -- F2. Missing-ID / cookieless pings separately, at event grain only. Missing IDs
 -- do not prove consent denial. NEVER join via IP/UA, invent IDs, or merge into
--- session denominators. Revenue here is separate from joinable-session revenue.
+-- session denominators. Revenue here is separate from joinable-session revenue
+-- and deduplicated by transaction_id within F2.
+WITH f2_events AS (
+  SELECT *,
+    ROW_NUMBER() OVER (
+      PARTITION BY site, stream_id, IF(event_name = 'purchase', transaction_id, NULL)
+      ORDER BY event_timestamp, COALESCE(batch_page_id, 0),
+        COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0)
+    ) AS tx_rn
+  FROM events
+  WHERE day BETWEEN start_date AND end_date
+    AND (user_pseudo_id IS NULL OR ga_session_id IS NULL)
+)
 SELECT site, stream_id, traffic_version, day, analytics_storage, user_pseudo_id IS NULL AS missing_user_id,
   ga_session_id IS NULL AS missing_session_id, COUNT(*) AS events,
   COUNTIF(event_name = 'traffic_class') AS detector_events,
@@ -333,49 +443,59 @@ SELECT site, stream_id, traffic_version, day, analytics_storage, user_pseudo_id 
   COUNTIF(event_name = 'traffic_class' AND phase = 'agent') AS agent_events,
   COUNTIF(event_name = 'traffic_class' AND phase = 'final') AS final_events,
   COUNTIF(param_class IS NOT NULL) AS events_with_class_parameter,
+  COUNTIF(event_name = 'purchase' AND (transaction_id IS NULL OR tx_rn = 1)) AS purchases,
   COUNTIF(event_name = 'purchase') AS purchase_events,
-  SUM(IF(event_name = 'purchase', purchase_revenue_usd, 0)) AS purchase_revenue_usd
-FROM events
-WHERE day BETWEEN start_date AND end_date
-  AND (user_pseudo_id IS NULL OR ga_session_id IS NULL)
+  SUM(IF(event_name = 'purchase' AND (transaction_id IS NULL OR tx_rn = 1),
+    purchase_revenue, 0)) AS purchase_revenue,
+  COUNTIF(event_name = 'generate_lead') AS leads
+FROM f2_events
 GROUP BY site, stream_id, traffic_version, day, analytics_storage, missing_user_id, missing_session_id;
 
 -- JS-less fetches usually send no GA4 event at all. Blocked tags, deployment gaps
 -- and pagehide loss also limit coverage. Scan padding is finite; first/last and
 -- flags are provisional for open/boundary sessions. Increase padding if needed.
 -- Rebuild recent dates for late arrivals; daily export is observed, not modeled.
--- A rise in CR after exclusions is arithmetic, not evidence of marketing lift.
+-- A rise in CR after setting aside low-converting sessions is arithmetic, not
+-- evidence of marketing lift.
 
 -- Study headline: one invocation per site/stream and date interval. Worst class
 -- is precedence, not last label. Unknown sessions remain in every denominator.
 -- Missing-version events are reported, never silently filtered from coverage.
-SELECT site, stream_id, traffic_version, worst_class, class_transition,
+SELECT site, stream_id, traffic_version, class_group, worst_class, class_transition,
   COUNT(*) AS sessions
 FROM sessions
-GROUP BY site, stream_id, traffic_version, worst_class, class_transition;
+GROUP BY site, stream_id, traffic_version, class_group, worst_class, class_transition;
 
 WITH counts AS (
   SELECT s.site, s.stream_id,
     IF(GROUPING(s.traffic_version) = 1, '(all versions)', s.traffic_version) AS traffic_version,
     COUNT(*) AS n,
-    COUNTIF(any_automated OR any_declared) AS clear_k,
+    COUNTIF(any_automated) AS automated_k,
+    COUNTIF(NOT any_automated AND any_automation_verified) AS automation_verified_k,
+    COUNTIF(class_group = 'agent_user') AS agent_user_k,
+    COUNTIF(any_suspicious AND NOT any_automated AND NOT any_automation_verified AND NOT any_agent_user)
+      AS suspicious_only_k,
     COUNTIF(has_class) AS coverage_k,
     COUNTIF(has_unversioned_events) AS sessions_with_unversioned_events,
     COUNTIF(engaged) AS engaged_n,
-    COUNTIF(engaged AND (any_automated OR any_declared)) AS engaged_clear_k,
+    COUNTIF(engaged AND any_automated) AS engaged_automated_k,
+    COUNTIF(engaged AND class_group = 'agent_user') AS engaged_agent_user_k,
     COUNTIF(purchases > 0) AS converting_n,
-    COUNTIF(purchases > 0 AND (any_automated OR any_declared)) AS converting_clear_k,
-    COUNTIF(any_suspicious AND NOT any_automated AND NOT any_declared) AS suspicious_only_k
+    COUNTIF(purchases > 0 AND any_automated) AS converting_automated_k,
+    COUNTIF(purchases > 0 AND class_group = 'agent_user') AS converting_agent_user_k
   FROM sessions s GROUP BY GROUPING SETS ((s.site, s.stream_id),
     (s.site, s.stream_id, s.traffic_version))
 )
 SELECT *, n - coverage_k AS without_class,
-  SAFE_DIVIDE(clear_k, n) AS clear_share, wilson(clear_k, n) AS clear_ci95,
+  SAFE_DIVIDE(automated_k, n) AS automated_share, wilson(automated_k, n) AS automated_ci95,
+  SAFE_DIVIDE(automation_verified_k, n) AS automation_verified_share,
+  wilson(automation_verified_k, n) AS automation_verified_ci95,
+  SAFE_DIVIDE(agent_user_k, n) AS agent_user_share, wilson(agent_user_k, n) AS agent_user_ci95,
   SAFE_DIVIDE(coverage_k, n) AS coverage, wilson(coverage_k, n) AS coverage_ci95,
-  SAFE_DIVIDE(engaged_clear_k, engaged_n) AS engaged_clear_rate,
-  wilson(engaged_clear_k, engaged_n) AS engaged_clear_ci95,
-  SAFE_DIVIDE(converting_clear_k, converting_n) AS converting_clear_rate,
-  wilson(converting_clear_k, converting_n) AS converting_clear_ci95
+  SAFE_DIVIDE(engaged_automated_k, engaged_n) AS engaged_automated_rate,
+  wilson(engaged_automated_k, engaged_n) AS engaged_automated_ci95,
+  SAFE_DIVIDE(converting_automated_k, converting_n) AS converting_automated_rate,
+  wilson(converting_automated_k, converting_n) AS converting_automated_ci95
 FROM counts;
 
 -- G. Page-level coverage diagnostic. Existing GA4 batch_page_id is used ONLY
@@ -413,21 +533,25 @@ GROUP BY site, stream_id, day;
 -- 100 is hard/declared/inherited evidence, NOT a calibrated probability.
 -- Session engagement/purchase are associations, never ground truth.
 SELECT e.site, e.stream_id, COALESCE(e.traffic_version, 'unknown') AS traffic_version,
-  e.phase, COALESCE(e.param_class, 'unknown') AS traffic_class, e.traffic_score,
-  s.engaged, s.purchases > 0 AS purchasing, COUNT(*) AS detector_events
+  e.phase, COALESCE(e.param_class, 'unknown') AS traffic_class, e.param_agent_claim AS agent_claim,
+  e.traffic_score, s.engaged, s.purchases > 0 AS purchasing, COUNT(*) AS detector_events
 FROM events e LEFT JOIN sessions s USING (user_pseudo_id, ga_session_id)
 WHERE e.day BETWEEN start_date AND end_date AND e.event_name = 'traffic_class'
 GROUP BY e.site, e.stream_id, COALESCE(e.traffic_version, 'unknown'), e.phase,
-  COALESCE(e.param_class, 'unknown'),
+  COALESCE(e.param_class, 'unknown'), e.param_agent_claim,
   e.traffic_score, s.engaged, purchasing;
 -- No threshold counterfactual: class depends on families and direct rules too.
 -- Aggregate scores cannot reconstruct the result at another threshold.
 
 -- I. Engagement strata: review flags, never declare engaged traffic human.
 SELECT site, stream_id, traffic_version, engaged, purchases > 0 AS purchasing,
-  COUNT(*) AS n, COUNTIF(any_automated OR any_declared) AS clear_k,
-  wilson(COUNTIF(any_automated OR any_declared), COUNT(*)) AS clear_ci95,
-  COUNTIF(any_suspicious AND NOT any_automated AND NOT any_declared) AS suspicious_only_k,
+  COUNT(*) AS n,
+  COUNTIF(any_automated) AS automated_k,
+  wilson(COUNTIF(any_automated), COUNT(*)) AS automated_ci95,
+  COUNTIF(NOT any_automated AND any_automation_verified) AS automation_verified_k,
+  COUNTIF(class_group = 'agent_user') AS agent_user_k,
+  COUNTIF(any_suspicious AND NOT any_automated AND NOT any_automation_verified AND NOT any_agent_user)
+    AS suspicious_only_k,
   COUNTIF(NOT has_class) AS unknown_k
 FROM sessions GROUP BY site, stream_id, traffic_version, engaged, purchasing;
 
@@ -439,8 +563,8 @@ SELECT site_name AS site, web_stream_id AS stream_id, w.start_ts, w.end_ts, w.la
   COUNT(n.event_timestamp) AS observed_events,
   COUNTIF(n.event_name = 'traffic_class') AS detector_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.param_class IS NOT NULL) AS classified_events,
-  COUNTIF(n.event_name = 'traffic_class' AND n.param_class IN
-    ('automated', 'declared_agent')) AS clear_events,
+  COUNTIF(n.event_name = 'traffic_class' AND n.param_class = 'automated') AS automated_events,
+  COUNTIF(n.event_name = 'traffic_class' AND n.param_class = 'declared_agent') AS declared_agent_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.param_class = 'suspicious') AS suspicious_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.param_class = 'human') AS human_events,
   COUNTIF(n.event_name = 'traffic_class' AND n.phase = 'initial') AS initial_events,

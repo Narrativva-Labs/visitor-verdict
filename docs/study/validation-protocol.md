@@ -6,7 +6,7 @@ This protocol complements the [field-validation protocol](protocol.md). The fiel
 
 ## Scope and sites
 
-- Runs happen only on sites the project operates. The reference target is the Vanilla demo shop (`demoshop.frantisekbujnovsky.com`, GTM container with Visitor Verdict 1.1.0, Vanilla collector with server-side agent verification). Never run test traffic on client or third-party sites.
+- Runs happen only on sites the project operates. The reference target is the Vanilla demo shop (`demoshop.frantisekbujnovsky.com`, Vanilla collector with server-side agent verification; the 2026-11-22 pilot ran on Visitor Verdict 1.1.0, and round 2 uses the current frozen release). Never run test traffic on client or third-party sites.
 - Automated runs come from one operator machine, strictly one browser at a time (the runner is sequential; the hard limit for any manual parallel work is 3 concurrent sessions per IP). A full round of 36 runs loads about 100 pages.
 - No purchases, no form submissions, no account creation. The only page interaction in automated runs is the cookie-banner choice, made with the tool's native click.
 - Each automated run uses a fresh browser profile/context. CDP-based tools start their own temporary profile; nothing attaches to a logged-in browser.
@@ -36,7 +36,7 @@ Every run gets one synthetic run id, for example `vval-20261122-pw-headless-1-3f
 - Manual runs use the landing URL with `vvp`; later pages reached by clicking lose it. They are matched through the session that landed with `vvp` and through the logged time window.
 - `vvdebug` is added only where debug codes are needed (automated pilot runs; manual runs only on request). It enables `traffic_signals` in data-layer events and a small debug badge, for 24 hours in that browser profile. Human panel runs do not use it.
 - Pages with `vvp` are excluded from ordinary-traffic reports in the field protocol. This is the only exception to the field rule of not adding query markers: it applies to operator-run test traffic only.
-- **Vanilla strips the query string** from `page_location` before forwarding, so `vvp` is not visible in events forwarded through the Vanilla collector. Those events are matched by time window only, or excluded.
+- **Vanilla strips the query string** from `page_location` before forwarding, so `vvp` is not visible in events forwarded through the Vanilla collector. Match Vanilla test runs by time window or tag them via `utm_campaign=test_...` (which [campaign-dashboard.sql](../analysis/campaign-dashboard.sql) Query B flags in `traffic_scope='test'`).
 
 Manual runs are logged in the same CSV schema as the runner (see [captured data](#what-is-captured)); fields the operator cannot observe stay empty, never guessed.
 
