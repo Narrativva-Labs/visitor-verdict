@@ -104,7 +104,7 @@
         } else if (typeof value === 'boolean') { config[key] = value; }
       }
     }
-    var signals = [], families = {}, score = 0, hard = false, declared = false;
+    var signals = [], families = {}, score = 0, hard = false, declared = false, strongAW = false;
     // Direct provenance is split: a declaration (AG, DM) never renews carried automation (CA).
     var directHard = false, directDeclared = false, carriedSuspicious = false;
     var done = false, initial, initialPublished = false, finalPublished = false, elapsed = 0, started = null, timer;
@@ -328,6 +328,40 @@
             w.matchMedia('(display-mode: standalone)').matches === false) { add('HW', 2, 'geometry'); }
       } catch (ignore) {}
     }
+    // Experimental environment evidence only; no identity or high-entropy request.
+    function automationEnvironment(missingGL, swiftShader) {
+      try {
+        var hints = n.userAgentData;
+        if (!desktop || !chromium || tag.call(brands) !== '[object Array]' || mobile || embedded || /Electron|Kiosk|Tablet|Silk|Firefox|FxiOS|CriOS/i.test(ua) ||
+            !/\bLinux\b/.test(ua) || !hints || hints.mobile === true || n.maxTouchPoints > 1 ||
+            (hints.platform && hints.platform !== 'Linux') ||
+            d.visibilityState !== 'visible' || !d.hasFocus() || d.fullscreenElement !== null ||
+            typeof w.matchMedia !== 'function') { return; }
+        var modes = ['fullscreen', 'standalone', 'window-controls-overlay'];
+        for (var j = 0; j < modes.length; j++) {
+          if (w.matchMedia('(display-mode: ' + modes[j] + ')').matches !== false) { return; }
+        }
+        var sizes = [w.innerWidth, w.innerHeight, w.outerWidth, w.outerHeight, w.screen.width, w.screen.height];
+        for (j = 0; j < sizes.length; j++) {
+          if (typeof sizes[j] !== 'number' || !isFinite(sizes[j]) || sizes[j] <= 0) { return; }
+        }
+        var barless = Math.abs(w.outerWidth - w.innerWidth) <= 2 && Math.abs(w.outerHeight - w.innerHeight) <= 2;
+        var fits = w.outerWidth <= w.screen.width + 2 && w.outerHeight <= w.screen.height + 2;
+        var smaller = w.screen.width - w.outerWidth > 2 || w.screen.height - w.outerHeight > 2;
+        // Screen-sized barless windows include fullscreen/kiosk without Fullscreen API.
+        if (barless && fits && !smaller) { return; }
+        var denied = false, chromeBrand = false;
+        try { denied = !!w.Notification && w.Notification.permission === 'denied'; } catch (ignore) {}
+        for (j = 0; j < brands.length; j++) {
+          if (brands[j] && brands[j].brand === 'Google Chrome') { chromeBrand = true; }
+        }
+        var corroborators = (missingGL ? 1 : 0) + (denied ? 1 : 0) + (hasBrands && !chromeBrand ? 1 : 0);
+        var windowProfile = hints.platform === 'Linux' && barless && fits && smaller && corroborators > 0;
+        strongAW = windowProfile && corroborators >= 2;
+        // Architecture is used only when already exposed. Never request high entropy.
+        if (windowProfile || hints.architecture === 'arm' && swiftShader) { add('AW', 3, 'automationEnvironment'); }
+      } catch (ignore) {}
+    }
     function boundedTP(value) {
       return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 255 &&
         Math.floor(value) === value ? value : 0;
@@ -405,20 +439,25 @@
       // Called once per document, in click capture, before navigation/pagehide.
       if (!save(null, 'tp')) { tpPages = 1; }
     }
-    function suspicious(withoutUB) {
+    function suspicious(withoutDirect) {
       var env = 0, family, total = score, count = Object.keys(families).length;
-      if (withoutUB && workerBrands) {
+      if (withoutDirect && workerBrands) {
         // Test independent evidence, including the worker-family cap, not UB's
         // six points. WK may remain as ordinary corroboration.
         var remainingWorker = signals.indexOf('WK') !== -1 ? 2 : 0;
         total -= (families.worker || 0) - remainingWorker;
         if (!remainingWorker) { count--; }
       }
-      for (family in families) {
-        if (/^(geometry|language|plugins|graphics|chrome|permissions)$/.test(family)) { env++; }
+      // Strong AW cannot contribute its weight or environment family to CS proof.
+      if (withoutDirect && strongAW && families.automationEnvironment) {
+        total -= families.automationEnvironment; count--;
       }
-      // UB is a direct suspicious rule, never hard proof or carry provenance.
-      return !withoutUB && workerBrands || total >= config.suspiciousThreshold && count >= 3 &&
+      for (family in families) {
+        if (withoutDirect && strongAW && family === 'automationEnvironment') { continue; }
+        if (/^(geometry|language|plugins|graphics|chrome|permissions|automationEnvironment)$/.test(family)) { env++; }
+      }
+      // UB and strong AW are direct suspicious rules, never carry proof by themselves.
+      return !withoutDirect && (workerBrands || strongAW) || total >= config.suspiciousThreshold && count >= 3 &&
         (families.pointer || signals.indexOf('SY') !== -1 ||
         (env >= 2 && (families.interaction || families.navigation)));
     }
@@ -697,20 +736,24 @@
         (screen.width === 1280 && screen.height === 720 && w.innerWidth === 1280 && w.innerHeight === 720)) { add('GS', 1, 'geometry'); }
     if ((!n.languages || !n.languages.length) && !(n.language || n.userLanguage || n.browserLanguage || n.systemLanguage)) { add('LA', 1, 'language'); }
     if (desktop && (chromium || w.chrome) && n.plugins && !n.plugins.length && n.pdfViewerEnabled !== false) { add('PL', 1, 'plugins'); }
+    var missingGL = false, swiftShader = false;
     if (config.webgl) {
       var canvas, gl, extension;
       try {
         canvas = d.createElement('canvas'); gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-        if (!gl) { add('WG', 1, 'graphics'); }
+        if (!gl) { missingGL = true; add('WG', 1, 'graphics'); }
         else {
           extension = gl.getExtension('WEBGL_debug_renderer_info');
-          if (extension && /(?:^|[ (])(?:SwiftShader|llvmpipe|softpipe)(?:$|[ )])|^Mesa OffScreen$/i.test(gl.getParameter(extension.UNMASKED_RENDERER_WEBGL))) { add('WG', 1, 'graphics'); }
+          var renderer = extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : '';
+          swiftShader = /(?:^|[ (])SwiftShader(?:$|[ )])/i.test(renderer);
+          if (extension && /(?:^|[ (])(?:SwiftShader|llvmpipe|softpipe)(?:$|[ )])|^Mesa OffScreen$/i.test(renderer)) { add('WG', 1, 'graphics'); }
         }
       } catch (ignore) {} finally {
         try { extension = gl && gl.getExtension('WEBGL_lose_context'); if (extension) { extension.loseContext(); } } catch (ignore) {}
-        gl = canvas = extension = null;
+        gl = canvas = extension = renderer = null;
       }
     }
+    automationEnvironment(missingGL, swiftShader);
     if (desktop && chromium && !w.chrome) { add('CH', 1, 'chrome'); }
     if (!n.hardwareConcurrency) { add('HC', 0); }
     try {

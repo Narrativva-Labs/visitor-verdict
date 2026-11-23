@@ -85,6 +85,28 @@ document.createElement = function () {
   };
   return el;
 };
+// Synthetic headed CDP/Playwright viewport and matching human controls.
+if (spec.awProfile) {
+  navigator.userAgent = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/180.0.0.0 Safari/537.36';
+  navigator.userAgentData.platform = 'Linux'; navigator.userAgentData.mobile = false;
+  navigator.userAgentData.getHighEntropyValues = function () { throw Error('new high entropy query'); };
+  window.innerWidth = window.outerWidth = 1363; window.innerHeight = window.outerHeight = 936;
+  window.screen = {width:1364, height:1024};
+  document.fullscreenElement = null;
+  window.matchMedia = function (query) { return {matches:query === '(display-mode: ' + spec.awProfile + ')'}; };
+  if (spec.awMask !== undefined) {
+    spec.noWebGL = !!(spec.awMask & 1);
+    window.Notification.permission = spec.awMask & 2 ? 'denied' : 'default';
+    if (!(spec.awMask & 4)) navigator.userAgentData.brands.push({brand:'Google Chrome'});
+  }
+  if (spec.awProfile === 'toolbar') window.outerHeight += 80;
+  if (spec.awProfile === 'electron') navigator.userAgent += ' Electron/50.0';
+  if (spec.awProfile === 'mobile') navigator.userAgentData.mobile = true;
+  if (spec.awProfile === 'windows') navigator.userAgentData.platform = 'Windows';
+  if (spec.awProfile === 'muse') { navigator.userAgentData.architecture = 'arm'; window.outerHeight += 80; }
+  if (typeof spec.awDelta === 'number') window.outerHeight += spec.awDelta;
+  if (spec.awProfile === 'screen-kiosk') window.screen = {width:1364, height:window.outerHeight + 1};
+}
 // Agent UI marker DOM: id lookup with fixed parents and a recording MutationObserver.
 var rootNode = {}, bodyNode = {children: []}, markerNodes = Object.create(null), observers = [];
 document.documentElement = rootNode; document.body = bodyNode;
@@ -151,6 +173,7 @@ for (var m = 0; m < (spec.webmcpEvents || 0); m++) {
 }
 if (spec.interaction) {
   dispatch(document, 'mousemove', {clientX:10,clientY:10,isTrusted: spec.oldTrusted ? undefined : true});
+  dispatch(document, 'click', {isTrusted: spec.oldTrusted ? undefined : true});
   dispatch(document, 'scroll', {isTrusted: spec.oldTrusted ? undefined : true});
 }
 if (spec.synthetic) {

@@ -725,6 +725,170 @@ export async function runContracts(detectorSource) {
     document.fullscreenElement = null;
     window.matchMedia = () => ({matches: false});
   }
+  function automationProfile({window, document, navigator}, renderer = null) {
+    navigator.userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/156.0.0.0 Safari/537.36';
+    navigator.userAgentData = {platform: 'Linux', mobile: false,
+      brands: [{brand: 'Chromium', version: '156'}, {brand: 'Not:A-Brand', version: '99'}],
+      getHighEntropyValues() { throw Error('Must not request architecture'); }};
+    navigator.hardwareConcurrency = 9;
+    window.innerWidth = window.outerWidth = 1363;
+    window.innerHeight = window.outerHeight = 936;
+    window.screen = {width: 1364, height: 1024};
+    window.Notification = {permission: 'denied'};
+    document.fullscreenElement = null;
+    window.matchMedia = () => ({matches: false});
+    document.createElement = () => ({getContext: () => renderer === null ? null : {
+      getExtension: name => name === 'WEBGL_debug_renderer_info' ? {UNMASKED_RENDERER_WEBGL: 1} : {loseContext() {}},
+      getParameter: () => renderer
+    }});
+  }
+  await test('B8b AW: multi-corroborator profile is directly suspicious; single stays gated, never identity', () => {
+    for (const version of ['156', '180']) {
+      const f = fixture({modify: objects => {
+        automationProfile(objects);
+        objects.navigator.userAgent = objects.navigator.userAgent.replace('156', version);
+        objects.navigator.hardwareConcurrency = version === '156' ? 9 : 4;
+      }});
+      assert.ok(f.signals.includes('AW')); assert.ok(f.signals.includes('WG'));
+      assert.equal(f.window.__visitorVerdict.class, 'suspicious', 'Multiple corroborators bypass the ordinary gate');
+      f.advance(8000);
+      assert.equal(f.window.__visitorVerdict.class, 'suspicious');
+      assert.equal(f.window.__visitorVerdict.score, 6);
+      assert.ok(f.window.dataLayer.every(e => e.traffic_agent === undefined && e.traffic_agent_claim === undefined));
+    }
+    // Headed Playwright can expose this same viewport shape; no operator inference.
+    const headed = fixture({modify: objects => {
+      automationProfile(objects, 'GPU'); objects.window.Notification.permission = 'default';
+      objects.navigator.webdriver = false;
+    }});
+    assert.ok(headed.signals.includes('AW'));
+    headed.advance(8000); assert.equal(headed.window.__visitorVerdict.class, 'human', 'AW+NI = 5, below threshold');
+    const explicit = fixture({modify: objects => {automationProfile(objects); objects.navigator.webdriver = true;}});
+    explicit.advance(8000); assert.ok(explicit.signals.includes('AW'));
+    assert.equal(explicit.window.__visitorVerdict.class, 'automated', 'Existing hard evidence keeps precedence');
+  });
+  await test('B8b-2: active observed profile and every corroborator pair are suspicious without NI or CS', () => {
+    for (const mask of [3, 5, 6, 7]) {
+      const f = fixture({config: {debug: true, webgl: true, suspiciousThreshold: 1000}, modify: objects => {
+        automationProfile(objects, mask & 1 ? null : 'GPU');
+        objects.window.Notification.permission = mask & 2 ? 'denied' : 'default';
+        if (!(mask & 4)) objects.navigator.userAgentData.brands.push({brand: 'Google Chrome'});
+      }});
+      f.emit('click', {isTrusted: true}); f.emit('scroll', {isTrusted: true}); f.advance(8000);
+      assert.ok(f.signals.includes('AW')); assert.ok(!f.signals.includes('NI'));
+      assert.equal(f.window.__visitorVerdict.class, 'suspicious', 'mask ' + mask);
+      assert.equal(f.window.__visitorVerdict.score, mask & 1 ? 4 : 3, 'Score remains weak, no sentinel');
+      assert.ok(f.window.dataLayer.every(e => e.traffic_agent === undefined && e.traffic_agent_claim === undefined));
+      assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'suspicious');
+      const next = fixture({store: f.store}); next.advance(8000);
+      assert.equal(next.window.__visitorVerdict.class, 'human'); assert.ok(!next.signals.includes('CS'));
+    }
+  });
+  await test('B8b-2: strong AW is excluded from CS proof; independent ordinary evidence and single AW retain carry', () => {
+    for (const independent of [false, true]) {
+      const f = fixture({modify: objects => {
+        automationProfile(objects);
+        if (independent) {
+          objects.window.screen = {width: 800, height: 600};
+          objects.window.innerWidth = objects.window.outerWidth = 700;
+          objects.window.innerHeight = objects.window.outerHeight = 500;
+          objects.store.set('visitor_verdict', JSON.stringify({timestamps: [9000, 9500]}));
+        }
+      }});
+      f.advance(8000);
+      assert.equal(f.window.__visitorVerdict.class, 'suspicious');
+      assert.ok(f.signals.includes('NI'));
+      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass,
+        independent ? {value: 'suspicious', direct: true} : 'suspicious');
+      const next = fixture({store: f.store}); next.advance(8000);
+      assert.equal(next.signals.includes('CS'), independent);
+    }
+    const single = fixture({modify: objects => {
+      automationProfile(objects); objects.window.Notification.permission = 'default';
+      objects.navigator.userAgentData.brands.push({brand: 'Google Chrome'});
+    }});
+    single.advance(8000);
+    assert.deepEqual(JSON.parse(single.store.get('visitor_verdict')).lastClass, {value:'suspicious', direct:true});
+    const declared = fixture({modify: objects => {
+      automationProfile(objects); objects.window.visitorVerdictConfig.agentTokens = ['Chrome'];
+    }});
+    declared.advance(8000); assert.equal(declared.window.__visitorVerdict.class, 'declared_agent');
+    assert.equal(declared.window.__visitorVerdict.agent, undefined, 'Strong AW cannot assign an operator');
+  });
+  await test('B8b AW: each window corroborator suffices, AW alone and two families never bypass the gate', () => {
+    for (const evidence of ['missing-gl', 'denied', 'brands', 'none']) {
+      const f = fixture({modify: objects => {
+        automationProfile(objects, evidence === 'missing-gl' ? null : 'GPU');
+        objects.window.Notification.permission = evidence === 'denied' ? 'denied' : 'default';
+        if (evidence !== 'brands') objects.navigator.userAgentData.brands.push({brand: 'Google Chrome'});
+      }});
+      assert.equal(f.signals.includes('AW'), evidence !== 'none', evidence);
+      f.emit('click', {isTrusted: true}); f.emit('scroll', {isTrusted: true}); f.advance(8000);
+      assert.ok(!f.signals.includes('NI'));
+      assert.equal(f.window.__visitorVerdict.class, 'human', 'One corroborator with interaction stays human');
+    }
+  });
+  await test('B8b AW: toolbar, fullscreen/kiosk, PWA, mobile, OS and unsupported API guards', () => {
+    const guards = [
+      ({window}) => {window.outerHeight += 80;},
+      ({window}) => {window.outerWidth += 3;},
+      ({window}) => {window.outerHeight -= 3;},
+      ({window}) => {window.screen = {width: 1364, height: 937};},
+      ({window}) => {window.screen = {width: 1360, height: 932};},
+      ({document}) => {document.fullscreenElement = {};},
+      ...['fullscreen', 'standalone', 'window-controls-overlay'].map(mode => ({window}) => {
+        window.matchMedia = query => ({matches: query === '(display-mode: ' + mode + ')'});
+      }),
+      ...['Windows NT 10.0', 'Macintosh', 'Android', 'Linux Tablet', 'Linux Electron/30.0', 'Linux Kiosk'].map(os => ({navigator}) => {
+        navigator.userAgent = navigator.userAgent.replace('X11; Linux x86_64', os);
+      }),
+      ...['Windows', 'macOS', undefined].map(platform => ({navigator}) => {navigator.userAgentData.platform = platform;}),
+      ({navigator}) => {navigator.userAgentData.mobile = true;},
+      ({navigator}) => {navigator.maxTouchPoints = 5;},
+      ({navigator}) => {navigator.userAgent = 'Mozilla/5.0 (X11; Linux) Firefox/150.0';},
+      ({navigator}) => {navigator.userAgent = 'Mozilla/5.0 (Macintosh) Version/20.0 Safari/605.1';},
+      ({navigator}) => {delete navigator.userAgentData;},
+      ({window}) => {delete window.matchMedia;},
+      ({window}) => {window.matchMedia = () => {throw Error('denied');};},
+      ({document}) => {document.visibilityState = 'hidden';},
+      ({document}) => {document.hasFocus = () => false;},
+      ({window}) => {window.innerWidth = NaN;},
+      ({window}) => {window.outerHeight = '936';}
+    ];
+    for (const [index, guard] of guards.entries()) {
+      const f = fixture({modify: objects => {automationProfile(objects); guard(objects);}});
+      f.emit('click', {isTrusted: true}); f.emit('scroll', {isTrusted: true}); f.advance(8000); f.emit('pagehide');
+      assert.ok(!f.window.dataLayer.some(e => e.traffic_signals.includes('AW')), 'guard ' + index);
+      assert.equal(f.window.__visitorVerdict.class, 'human', 'guard ' + index);
+    }
+    for (const delta of [-2, 0, 2]) {
+      const f = fixture({modify: objects => {automationProfile(objects); objects.window.outerHeight += delta;}});
+      assert.ok(f.signals.includes('AW'), 'Tolerance ' + delta);
+    }
+  });
+  await test('B8b AW: Muse-shaped Linux ARM plus SwiftShader shares weight; no high-entropy calls or renderer persistence', () => {
+    for (const renderer of ['ANGLE (Google, Vulkan SwiftShader Device (Subzero))', 'llvmpipe', 'GPU', null]) {
+      for (const architecture of ['arm', 'x86', undefined]) {
+        let queries = 0;
+        const f = fixture({modify: objects => {
+          automationProfile(objects, renderer); objects.window.outerHeight += 80;
+          objects.navigator.userAgentData.architecture = architecture;
+          objects.navigator.userAgentData.getHighEntropyValues = () => {queries++; return Promise.resolve({architecture:'arm'});};
+        }});
+        const expected = architecture === 'arm' && renderer?.includes('SwiftShader');
+        assert.equal(f.signals.includes('AW'), !!expected);
+        f.advance(8000);
+        assert.equal(f.window.__visitorVerdict.class, expected ? 'suspicious' : 'human');
+        assert.equal(queries, 0);
+        assert.ok(!JSON.stringify([...f.store]).includes('SwiftShader'));
+      }
+    }
+    const both = fixture({modify: objects => {
+      automationProfile(objects, 'SwiftShader'); objects.navigator.userAgentData.architecture = 'arm';
+    }});
+    both.advance(8000); assert.equal(both.window.__visitorVerdict.score, 6, 'Both variants add AW only once');
+    assert.equal(both.signals.filter(s => s === 'AW').length, 1);
+  });
   await test('HW is benign geometry weight 2, shares the family cap, and needs corroboration', () => {
     const alone = fixture({config: {debug: true}, modify: headlessGeometry});
     assert.ok(alone.signals.includes('HW'));

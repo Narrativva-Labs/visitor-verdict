@@ -1,0 +1,23 @@
+# Automation window / emulated desktop viewport (AW)
+
+AW is an experimental environment heuristic, not a ChatGPT identifier. A barless desktop window can be a trace of browser automation through Playwright/CDP and an emulated viewport. That explanation is an inference; the observation below does not establish the implementation used by the agent.
+
+## Owner observation, 23 November 2026
+
+Source supplied by František: `profil-agentu.md`, from `lab/agent-env.html?vvp=m-chatgpt-3-env`, one ChatGPT agent-mode run. Detector 1.4.1 ended `human / final` with WG only. The browser reported Chrome/Chromium 156, Linux, outer and inner dimensions 1363×936 on a 1364×1024 screen, no WebGL, notification permission denied, and Chromium plus a grease brand without Google Chrome. This is one positive observation, with no population validation. UA-CH Linux is required by the implementation; the supplied summary does not include a raw UA-CH platform field, so the synthetic contract explicitly assumes that value and it should be checked in a future capture.
+
+No version, CPU count, language, time zone or fixed screen dimensions are detection predicates. The shape may change when the agent browser or Playwright changes. The synthetic headed Playwright/CDP fixture is expected to match this same environment shape, even without an exposed WebDriver flag. It is a regression fixture, not a new live browser experiment. Existing WebDriver evidence still takes precedence and yields automated independently of AW.
+
+## Muse-shaped alternative
+
+[Arcjet's own analysis](https://arcjet.com/learn/how-to-detect-metas-muse-ai-agent) (updated 16 November 2026, read 23 November 2026) reports an unsigned Chrome-on-Linux profile combining an ARM client hint and SwiftShader rendering. This alternative is source-based, with no owner-run Muse verification. It contributes to the same AW code and cap, without naming an operator.
+
+Visitor Verdict does not request high-entropy UA-CH values. The alternative runs only if `navigator.userAgentData.architecture` is already exposed as `arm`, and the existing opt-in WebGL probe observes SwiftShader. Standard low-entropy UA-CH normally lacks architecture: on those browsers this alternative remains inactive. The detector does not consume unrelated application globals or send a new high-entropy request.
+
+## Guards and limitations
+
+The window variant requires desktop Chrome-compatible Linux UA and Linux UA-CH, outer/inner dimensions within 2 px, a window fitting inside the screen within 2 px and smaller in at least one dimension by more than 2 px, plus unavailable WebGL, denied notifications at startup, or an explicit nonempty Chromium brand list without Google Chrome. Missing/throwing probes are unknown; a thrown WebGL probe is not proof of unavailable WebGL. Software rendering alone is not the missing-WebGL condition.
+
+Both variants exclude mobile/known embedded browsers, tablet/touch contexts, Electron/kiosk UA tokens, conflicting UA-CH platforms, hidden/unfocused documents, Fullscreen API state and fullscreen/standalone/window-controls-overlay display modes. Missing display-mode support prevents matching. Screen-sized barless windows are excluded too, covering ordinary fullscreen kiosks without Fullscreen API state. There is no reliable API for an unlabelled kiosk in a smaller window: such kiosks, unusual Chromium shells and ordinary Linux ARM devices using SwiftShader remain false positives. Browser Firefox/Safari contexts do not qualify.
+
+AW adds 3 points once to the `automationEnvironment` family, included among environment families. This separates the composite viewport/architecture context from ordinary geometry; the existing graphics evidence keeps its own cap of 1. The variants share one code and cap, since they describe related environments. Evidence is correlated, not statistically independent. With exactly one window corroborator (or the Muse-only variant), AW+WG+NI reaches 6 across three families, while AW+NI reaches only 5 and AW+WG has only two families. B8b-2 changes a qualifying window profile with at least two of the three corroborators to a direct suspicious rule: real agents click and scroll, so NI cannot be required. This is an implementation decision, not a new field-validation result. The score remains weak and no declaration/operator is inferred. For CS checks, strong AW weight and environment family are excluded: only independently sufficient ordinary evidence can seed carry, while a single corroborator retains ordinary carry semantics. The Muse-only variant remains gated. No environment attributes or renderer strings are persisted.

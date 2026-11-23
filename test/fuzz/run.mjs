@@ -25,7 +25,7 @@ const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];
 const agents = ['openai', 'anthropic'];
 const claims = ['dom_host', 'dom_marker', 'ua_token'];
-const checks = ['form-burst','webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
+const checks = ['automation-window-profile','form-burst','webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
 const base = () => ({storage:'{}', config:{}, race:'timer-first', double:true});
 function configExpression(spec) {
   return spec.configValue ?? '({' + Object.entries(spec.config || {}).map(([key,value]) => `${JSON.stringify(key)}:${value}`).join(',') + '})';
@@ -61,6 +61,20 @@ function evaluate(spec, script = detector) {
     return {errors};
   }
   const {events, writes, state} = result;
+  if (spec.expectedAW !== undefined) {
+    if (events.some(e => e.traffic_signals?.includes('AW')) !== spec.expectedAW)
+      fail('automation-window-profile', 'unexpected AW for ' + spec.awProfile);
+    if (events.some(e => e.traffic_agent || e.traffic_agent_claim || e.traffic_class === 'declared_agent'))
+      fail('automation-window-profile', 'AW fixture inferred identity');
+    if (spec.expectedFinalClass && events.find(e => e.traffic_phase === 'final')?.traffic_class !== spec.expectedFinalClass)
+      fail('automation-window-profile', 'AW fixture bypassed or failed corroboration gate');
+  }
+  if (spec.awNoCarry) {
+    const saved = JSON.parse(result.storage.visitor_verdict).lastClass;
+    if (saved !== 'suspicious') fail('automation-window-profile', 'direct AW seeded CS carry');
+    if (spec.interaction && events.some(e => e.traffic_signals?.includes('NI')))
+      fail('automation-window-profile', 'active AW fixture unexpectedly depends on NI');
+  }
   if (spec.expectedBT !== undefined && events.some(e => e.traffic_signals?.includes('BT')) !== spec.expectedBT) fail('form-burst', 'paired keydown/input failed expected BT coverage');
   if (spec.webmcp || spec.webmcpEvents) {
     const control = evaluate({...spec, webmcp: undefined, webmcpEvents: 0}, script);
@@ -189,6 +203,7 @@ function randomSpec() {
   if (rand()<.08) s.ua = 'a'.repeat(pick([24,32,128,10000])) + '!';
   if (rand()<.2) s.form = pick(['burst','normal','paste','untrusted']);
   if (rand()<.15) s.host = pick(['start','late']);
+  if (rand()<.15) s.awProfile = pick(['emulated','toolbar','fullscreen','standalone','window-controls-overlay','screen-kiosk','electron','mobile','windows','muse']);
   if (rand()<.15) s.marker = pick(['start','late','after-final','decoy']);
   return s;
 }
@@ -226,6 +241,23 @@ function corpus() {
   for (const marker of ['start','late','after-final']) for (const race of ['timer-first','hide-first','visibility']) {
     list.push({...base(),marker,race,storage:JSON.stringify({timestamps:[],lastClass:{value:'automated',direct:true},tpPages:0}),
       expectedClass:'automated',noHardRenewal:true,label:`carried automated + marker ${marker} ${race}`});
+  }
+  for (const awProfile of ['emulated','toolbar','fullscreen','standalone','window-controls-overlay','screen-kiosk','electron','mobile','windows','muse']) {
+    for (const awDelta of [-3,-2,0,2,3]) {
+      const expectedAW = awProfile === 'muse' || awProfile === 'emulated' && Math.abs(awDelta) <= 2;
+      list.push({...base(),awProfile,awDelta,noWebGL:awProfile !== 'muse',softwareGL:awProfile === 'muse',
+        config:{debug:'true',webgl:'true'},expectedAW,expectedFinalClass:expectedAW ? 'suspicious' : 'human',
+        label:'headed emulated viewport / control ' + awProfile + ' delta ' + awDelta});
+    }
+  }
+  for (const awProfile of ['emulated','toolbar','fullscreen','standalone','window-controls-overlay','screen-kiosk','mobile','windows']) {
+    for (const awMask of [0,1,2,3,4,5,6,7]) {
+      const matched = awProfile === 'emulated';
+      const strong = [3,5,6,7].includes(awMask);
+      list.push({...base(),awProfile,awMask,interaction:true,config:{debug:'true',webgl:'true'},
+        expectedAW:matched && awMask > 0,expectedFinalClass:matched && strong ? 'suspicious' : 'human',
+        awNoCarry:matched && strong,label:'active AW corroborator count ' + awProfile + ' mask ' + awMask});
+    }
   }
   return list;
 }

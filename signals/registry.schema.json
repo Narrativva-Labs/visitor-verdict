@@ -183,7 +183,8 @@
               "interaction",
               "navigation",
               "pointer",
-              "worker"
+              "worker",
+              "automationEnvironment"
             ]
           },
           "parent": {
