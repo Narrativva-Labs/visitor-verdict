@@ -733,7 +733,14 @@
         if (type === 'change' && field && !field.disabled && !field.readOnly &&
             (name === 'SELECT' || name === 'INPUT' && /^(checkbox|radio)$/i.test(field.type)) &&
             event.isTrusted === false && lastTrusted !== -Infinity && now - lastTrusted > 2000) {
-          try { if (field.getClientRects().length > 0) { untrustedControl = true; } } catch (ignore) {}
+          try {
+            var visibility = w.getComputedStyle(field).visibility, rects = field.getClientRects();
+            if (visibility !== 'hidden' && visibility !== 'collapse') {
+              for (var r = 0; r < rects.length; r++) {
+                if (rects[r].width > 1 && rects[r].height > 1) { untrustedControl = true; break; }
+              }
+            }
+          } catch (ignore) {}
         }
         return;
       }

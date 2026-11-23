@@ -2,6 +2,8 @@
 
 ## 1.4.1
 
+- Second review: reject hidden/tiny UC controls; accept hyphenated server operators and rdns_match verification; repair signal evidence, UC/BT regression coverage, paired-key fuzzing and payload/size documentation.
+
 - Explicitly clear non-applicable agent and claim fields on every browser data-layer publication to avoid stale GTM identity.
 - Require prior trusted page input and visible client rects for UC; pair BT input with trusted keydown timestamps to avoid compressed input creation times (synthetic regression; physical stall test pending).
 - Exclude language-only worker differences from WK and stop WK alone from opening the suspicious gate. DH remains unchanged. UB still directly labels suspicious but cannot seed CS without independent suspicious evidence; remove the GTM traffic_class User Property mapping.

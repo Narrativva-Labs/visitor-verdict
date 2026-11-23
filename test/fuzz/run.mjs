@@ -25,7 +25,7 @@ const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];
 const agents = ['openai', 'anthropic'];
 const claims = ['dom_host', 'dom_marker', 'ua_token'];
-const checks = ['webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
+const checks = ['form-burst','webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
 const base = () => ({storage:'{}', config:{}, race:'timer-first', double:true});
 function configExpression(spec) {
   return spec.configValue ?? '({' + Object.entries(spec.config || {}).map(([key,value]) => `${JSON.stringify(key)}:${value}`).join(',') + '})';
@@ -61,6 +61,7 @@ function evaluate(spec, script = detector) {
     return {errors};
   }
   const {events, writes, state} = result;
+  if (spec.expectedBT !== undefined && events.some(e => e.traffic_signals?.includes('BT')) !== spec.expectedBT) fail('form-burst', 'paired keydown/input failed expected BT coverage');
   if (spec.webmcp || spec.webmcpEvents) {
     const control = evaluate({...spec, webmcp: undefined, webmcpEvents: 0}, script);
     const classification = rows => rows?.map(e => [e.traffic_class, e.traffic_score, e.traffic_phase, e.traffic_signals, e.traffic_agent]);
@@ -195,7 +196,7 @@ function randomSpec() {
 function corpus() {
   const list = [{...base(),label:'baseline'}, {...base(),poisonSnapshot:true,label:'public snapshot poisoning'}];
   for (const host of ['start','late']) for (const webdriver of [true,false]) list.push({...base(),host,webdriver,expectedClass:webdriver ? 'automated' : undefined,label:'host precedence'});
-  for (const form of ['burst','normal','paste','untrusted']) list.push({...base(),form,expectedClass:'human',label:'form signals cannot classify alone'});
+  for (const form of ['burst','normal','paste','untrusted']) list.push({...base(),form,config:{debug:'true'},expectedClass:'human',expectedBT:form==='burst',label:'paired form signals cannot classify alone'});
   for (const webmcp of ['document','legacy','both','throw']) {
     for (const webmcpTrusted of [true,false,null]) list.push({...base(), webmcp, webmcpTrusted,
       webmcpEvents: 300, label: `WebMCP ${webmcp} trusted=${webmcpTrusted}`});

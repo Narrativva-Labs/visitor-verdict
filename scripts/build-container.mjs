@@ -48,9 +48,9 @@ const currentClass = `function() {
     // B7 exposes the verified wire verdict; accept its normalized echo too.
     if (server && server.type !== 'crawler_verified' && server.purpose !== 'crawler' &&
         server.purpose !== 'intermediary' && server.claim !== 'server_intermediary' &&
-        typeof server.operator === 'string' && /^[a-z][a-z0-9_]{0,31}$/.test(server.operator) &&
+        typeof server.operator === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(server.operator) &&
         (server['class'] === 'declared_agent' && /^(server_signature|server_ip)$/.test(server.claim) ||
-         server.v === 1 && server.type === 'agent_verified' && /^(signature_valid|ip_match)$/.test(server.verification))) {
+         server.v === 1 && server.type === 'agent_verified' && /^(signature_valid|ip_match|rdns_match)$/.test(server.verification))) {
       return 'declared_agent';
     }
   } catch (e) {}

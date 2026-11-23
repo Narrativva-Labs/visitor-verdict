@@ -170,6 +170,7 @@ if (spec.host === 'late') placeHost();
 if (spec.form) {
   var field = {tagName:'INPUT'};
   for (var b = 0; b < 3; b++) {
+    dispatch(document, 'keydown', {target:field, isTrusted:spec.form !== 'untrusted', timeStamp:now});
     dispatch(document, 'input', {target:field, isTrusted:spec.form !== 'untrusted', inputType:spec.form === 'paste' ? 'insertFromPaste' : 'insertText'});
     advance(spec.form === 'normal' ? 100 : 2);
   }

@@ -20,7 +20,7 @@ export async function runContracts(detectorSource) {
       dispatchEvent: event => {listeners[event.type]?.(event); return true;}
     };
     const window = {screen: {width: 1440, height: 900}, innerWidth: 1440, innerHeight: 900,
-      outerWidth: 1440, outerHeight: 960, chrome: {},
+      outerWidth: 1440, outerHeight: 960, chrome: {}, getComputedStyle: field => ({visibility: field.visibility || 'visible'}),
       sessionStorage: {getItem: key => store.get(key), setItem: (key, value) => store.set(key, value)},
       addEventListener: document.addEventListener, removeEventListener: document.removeEventListener,
       setTimeout: (fn, delay) => {timers.set(++next, {fn, at: now + delay}); return next;},
@@ -70,7 +70,7 @@ export async function runContracts(detectorSource) {
     for (const mode of ['startup', 'hidden', 'missing', 'throws', 'visible']) {
       const f = fixture(), target = {tagName: 'SELECT', getClientRects() {
         if (mode === 'throws') throw Error('detached');
-        return mode === 'hidden' ? [] : [{}];
+        return mode === 'hidden' ? [] : [{width: 100, height: 20}];
       }};
       if (mode === 'missing') delete target.getClientRects;
       if (mode !== 'startup') { f.emit('click', {isTrusted: true}); f.advance(2001); }
@@ -116,6 +116,68 @@ export async function runContracts(detectorSource) {
     const window = {__visitorVerdict: {class: 'human'}};
     Object.defineProperty(window, '__visitorVerdictServer', {get() {throw Error('blocked');}});
     assert.equal(evaluate(window), 'human');
+  });
+  await test('Round 2: UC rejects invisible and tiny rects after prior trusted input', () => {
+    for (const [visibility, width, height, expected] of [
+      ['visible', 100, 20, true], ['hidden', 100, 20, false], ['collapse', 100, 20, false],
+      ['visible', 1, 20, false], ['visible', 100, 1, false], ['visible', 0, 20, false],
+      ['visible', 1, 1, false], ['visible', 1.01, 1.01, true]
+    ]) {
+      const f = fixture(), target = {tagName:'SELECT', visibility, getClientRects:()=>[{width,height}]};
+      f.emit('click', {isTrusted:true}); f.advance(2001);
+      f.emit('change', {target,isTrusted:false}); f.advance(8000);
+      assert.equal(f.signals.includes('UC'), expected, [visibility,width,height].join('/'));
+    }
+  });
+  await test('Round 2: BT key guards and lifecycle resets each reject an otherwise positive burst', () => {
+    const guards = [{}, {repeat:true}, {ctrlKey:true}, {altKey:true}, {metaKey:true}, {isComposing:true},
+      {isTrusted:false}, {timeStamp:undefined}, {timeStamp:NaN}, {timeStamp:Infinity}, {timeStamp:-1}, {timeStamp:'2'}];
+    for (const guard of guards) {
+      const f = fixture(), target = {tagName:'INPUT'};
+      for (let i=0;i<3;i++) {
+        f.emit('keydown', {target,isTrusted:true,timeStamp:i*2,...guard});
+        f.emit('input', {target,isTrusted:true,inputType:'insertText'});
+      }
+      f.advance(8000); assert.equal(f.signals.includes('BT'), Object.keys(guard).length===0, JSON.stringify(guard));
+    }
+    for (const reset of ['keyup','focusin','pointerdown','touchstart','visibilitychange']) {
+      const f = fixture({config:{debug:true,finalOnHidden:false}}), target = {tagName:'INPUT'};
+      for (let i=0;i<3;i++) {
+        f.emit('keydown', {target,isTrusted:true,timeStamp:i*2});
+        if (i===1) {
+          if (reset==='visibilitychange') {
+            f.document.visibilityState='hidden'; f.emit(reset);
+            f.document.visibilityState='visible'; f.emit(reset);
+          } else f.emit(reset, {target,isTrusted:true});
+        }
+        f.emit('input', {target,isTrusted:true,inputType:'insertText'});
+      }
+      f.advance(8000); assert.ok(!f.signals.includes('BT'), reset);
+    }
+  });
+  await test('Round 2: declared identity is explicitly cleared when worker HL upgrades to automated', () => {
+    let worker;
+    const dom = markerDOM([['codex-agent-overlay-root']]), f = fixture({modify: objects => {
+      dom.modify(objects);
+      worker = fakeWorker(objects);
+    }});
+    const first=f.window.dataLayer[0];
+    assert.equal(first.traffic_class,'declared_agent'); assert.equal(first.traffic_agent,'openai');
+    assert.equal(first.traffic_agent_claim,'dom_marker');
+    worker.reply({userAgent:'HeadlessChrome/140.0',hardwareConcurrency:8}); f.advance(8000);
+    const final=f.window.dataLayer.at(-1), model=Object.assign({},first,final);
+    assert.equal(final.traffic_class,'automated');
+    for (const key of ['traffic_agent','traffic_agent_claim']) {
+      assert.ok(Object.hasOwn(final,key)); assert.equal(final[key],undefined); assert.equal(model[key],undefined);
+    }
+  });
+  await test('Round 2: GTM accepts library operator punctuation and rdns verification', async () => {
+    const {containerVersion:c}=JSON.parse(await readFile(new URL('../gtm/container-import.json',import.meta.url),'utf8'));
+    const script='('+c.variable.find(v=>v.name==='VV - current class').parameter[0].value+')()';
+    for (const operator of ['cloudflare_browser_run','vendor-agent']) for (const verification of ['signature_valid','ip_match','rdns_match']) {
+      assert.equal(vm.runInNewContext(script,{window:{__visitorVerdict:{class:'human'},__visitorVerdictServer:
+        {v:1,type:'agent_verified',operator,verification,purpose:'user_directed'}}}), 'declared_agent');
+    }
   });
   await test('Mobile human context preserves device geometry/touch without any UA override', () => {
     const device = {userAgent: 'device UA', defaultBrowserType: 'chromium', viewport: {width: 393, height: 727},
@@ -839,24 +901,26 @@ export async function runContracts(detectorSource) {
     assert.equal(fixture({store: f.store, now: 31000}).window.__visitorVerdict.class, 'human');
   });
   await test('UB carry requires suspicious evidence even after removing its score and family contribution', () => {
-    for (const mode of ['ub-weight', 'wk-weight', 'independent']) {
+    for (const mode of ['ub-weight', 'wk-weight', 'independent', 'wk-independent']) {
       let worker;
       const f = fixture({modify: objects => {
         worker = fakeWorker(objects); objects.navigator.userAgentData = {brands: chromeBrands};
         objects.document.createElement = () => ({getContext: () => ({getExtension: () => null})});
         if (mode === 'wk-weight') objects.window.screen = {width: 800, height: 600};
+        if (mode === 'wk-independent') objects.store.set('visitor_verdict', JSON.stringify({timestamps: [9000, 9500]}));
         if (mode === 'independent') {
           objects.window.screen = {width: 800, height: 600};
           objects.store.set('visitor_verdict', JSON.stringify({timestamps: [9000, 9500]}));
         }
       }});
-      worker.reply({...workerNav, userAgent: mode === 'wk-weight' ? 'Chrome/141.0 Desktop' : workerNav.userAgent, userAgentData: {brands: []}});
+      worker.reply({...workerNav, userAgent: mode.startsWith('wk-') ? 'Chrome/141.0 Desktop' : workerNav.userAgent, userAgentData: {brands: []}});
       f.emit('mousemove', {isTrusted: false}); f.advance(8000);
       assert.equal(f.window.__visitorVerdict.class, 'suspicious');
+      if (mode === 'wk-independent') assert.deepEqual([...f.signals].sort(), ['FN','NI','SY','UB','WK']);
       const saved = JSON.parse(f.store.get('visitor_verdict')).lastClass;
-      assert.equal(saved.direct === true, mode === 'independent');
+      assert.equal(saved.direct === true, ['independent', 'wk-independent'].includes(mode));
       const next = fixture({store: f.store, now: 21000});
-      assert.equal(next.signals.includes('CS'), mode === 'independent');
+      assert.equal(next.signals.includes('CS'), ['independent', 'wk-independent'].includes(mode));
     }
   });
   await test('Opting out of hidden final preserves pending worker/permissions and trusted TR decay on return', async () => {
@@ -1727,14 +1791,14 @@ export async function runContracts(detectorSource) {
   await test('UC: password managers, hidden fields, readonly controls, recent trusted UI and hydration', () => {
     for (const target of [{tagName:'INPUT',type:'hidden'}, {tagName:'INPUT',type:'password'}, {tagName:'INPUT',type:'text'},
       {tagName:'TEXTAREA'}, {tagName:'SELECT', disabled:true}, {tagName:'SELECT',readOnly:true}]) {
-      const f=fixture(); f.emit('change',{target,isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'));
+      const f=fixture(); target.getClientRects=()=>[{width:100,height:20}]; f.emit('click',{isTrusted:true}); f.advance(2001); f.emit('change',{target,isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'));
     }
     for (const type of ['click','keyup','pointerup','focusin','keydown','touchstart','mousemove','scroll']) {
       const f=fixture(); f.emit(type,{isTrusted:true}); f.advance(2000);
-      f.emit('change',{target:{tagName:'SELECT'},isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'),type);
+      f.emit('change',{target:{tagName:'SELECT',getClientRects:()=>[{width:100,height:20}]},isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'),type);
     }
     for (const type of ['checkbox','radio']) {
-      const f=fixture(); f.emit('click',{isTrusted:true}); f.advance(2001); f.emit('change',{target:{tagName:'INPUT',type,getClientRects:()=>[{}]},isTrusted:false}); f.advance(8000); assert.ok(f.signals.includes('UC'));
+      const f=fixture(); f.emit('click',{isTrusted:true}); f.advance(2001); f.emit('change',{target:{tagName:'INPUT',type,getClientRects:()=>[{width:100,height:20}]},isTrusted:false}); f.advance(8000); assert.ok(f.signals.includes('UC'));
     }
   });
   await test('BT: input-only events, coarse clocks, composition and performance fallback cannot supply key timing', () => {
@@ -1845,7 +1909,7 @@ export async function runContracts(detectorSource) {
         const f = fixture();
         if (mode === 'recent' || mode === 'expired') f.emit('keydown', {isTrusted: true});
         if (mode === 'expired') f.advance(2001);
-        f.emit(type, {target: {tagName: mode === 'other' ? 'DIV' : tagName, getClientRects: () => [{}]},
+        f.emit(type, {target: {tagName: mode === 'other' ? 'DIV' : tagName, getClientRects: () => [{width:100,height:20}]},
           isTrusted: mode === 'trusted' ? true : mode === 'missing' ? undefined : false});
         f.advance(8000);
         assert.equal(f.signals.includes('UC'), tagName === 'SELECT' && type === 'change' && mode === 'expired', mode);

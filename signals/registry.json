@@ -697,13 +697,13 @@
         {
           "product": "Visitor Verdict",
           "versions": "1.4.1",
-          "result": "Synthetic regression contracts verify guards and queued-event sensitivity; physical browser keystrokes during a busy loop were not tested.",
+          "result": "Synthetic contracts verify supported UA/webdriver/core-count comparisons, no language-only scoring, and no suspicious gate opened by WK alone.",
           "kind": "code-review",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [
-        "Locale-switching extensions can reproduce the ChatGPT field language mismatch; differences are not identity."
+        "Main-thread-only UA switchers or hardware-concurrency overrides can differ from a worker. Language differences are ignored; WK never establishes identity or opens the suspicious gate alone."
       ],
       "scoringFamily": "worker"
     },
@@ -728,6 +728,13 @@
           "result": "Implemented condition and synthetic contract semantics only; upstream product/browser version range not established.",
           "kind": "code-review",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
+        },
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.4.1",
+          "result": "Synthetic contracts verify direct suspicious labeling without UB-only CS carry, no renewal from old CS, and positive CS carry with independent UB+WK+FN+SY evidence retaining WK weight 2.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [
@@ -1707,13 +1714,13 @@
         {
           "product": "Visitor Verdict",
           "versions": "1.4.1",
-          "result": "Synthetic regression contracts verify guards and queued-event sensitivity; physical browser keystrokes during a busy loop were not tested.",
+          "result": "Synthetic contracts verify paired keydown timing, repeat/modifier/composition/invalid-clock guards and lifecycle resets. Physical browser typing during a 500 ms busy loop remains untested.",
           "kind": "code-review",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [
-        "Assistive technology, voice input, text expanders and hardware scanners can batch insertText. Identical quantized timestamps are ignored. No text or values are read."
+        "Assistive tools, text expanders and hardware scanners that emit paired keydown and insertText can still match. Voice/IME input without a valid non-composing keydown pair is ignored. Identical quantized timestamps are ignored. No text or values are read."
       ],
       "scoringFamily": "interaction"
     },
@@ -1722,7 +1729,7 @@
       "kind": "code",
       "code": "UC",
       "family": "behaviour",
-      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, after previous trusted page input more than 2000 ms ago, with nonempty getClientRects(). Initialization without prior trusted input, hidden or text fields never qualify. Final only; interaction cap 2.",
+      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, after previous trusted page input more than 2000 ms ago, with at least one getClientRects() rectangle wider and taller than 1 px and computed visibility neither hidden nor collapse. Initialization without prior trusted input, hidden or text fields never qualify. Final only; interaction cap 2.",
       "weight": 2,
       "hardness": "soft",
       "status": "experimental",
@@ -1741,7 +1748,7 @@
         {
           "product": "Visitor Verdict",
           "versions": "1.4.1",
-          "result": "Synthetic regression contracts verify guards and queued-event sensitivity; physical browser keystrokes during a busy loop were not tested.",
+          "result": "Synthetic contracts verify prior trusted page input, the 2000 ms boundary, enabled/writable discrete controls, client rect dimensions above 1 px and computed visibility guards.",
           "kind": "code-review",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }

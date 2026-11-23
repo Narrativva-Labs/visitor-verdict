@@ -13,7 +13,7 @@ Visitor Verdict labels clear automation in GA4 that GA4's built-in bot filtering
 | Classes | `automated` (automation evidence), `declared_agent` (unverified agent claim: UA token or agent UI marker), `suspicious` (uncertain evidence), `human` (no automation detected) |
 | Catches | WebDriver/headless and Selenium/Puppeteer/Playwright defaults, audit tools, declared AI fetchers; OpenAI's in-page agent overlay (ChatGPT desktop browser plugin) and Claude in Chrome through legacy element IDs or its observed 1.0.107 host shape (operator in `traffic_agent`); some masked headless setups via opt-in UB → `suspicious`. Feature/configuration dependent, not universal tool detection. |
 | Known misses | Patchright, undetected-chromedriver, nodriver, stealth with human-like input; agents that inject no known marker, including own-browser agents and remote agent browsers without another tell (the ChatGPT agent's remote browser ended `human` in v1.0 field runs; whether it shows the overlay marker is not yet verified); see the [observed benchmark](docs/benchmark.md). |
-| Footprint | ~18.8 KB minified; ~3 ms default in earlier local measurements; no runtime dependencies. |
+| Footprint | 21 168 B minified; ~3 ms default in earlier local measurements; no runtime dependencies. |
 | Privacy | One bounded `sessionStorage` key (`visitor_verdict`); no identifiers, fingerprints, cookies or detector requests. Agent markers check three fixed IDs or element shape (tag, attribute/child counts and display); no page content or form values are read. A blocked optional worker may cause a browser CSP report. |
 | Integration | Initial/agent/final data-layer events, GTM import, GA4 event parameters. |
 
@@ -44,7 +44,7 @@ An alternative to the GTM detector tag. Set `window.visitorVerdictConfig` before
 
 ```html
 <script src="https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@v1.4.1/dist/visitor-verdict.min.js"
-        integrity="sha384-1Sx10X9oJuk4PjDMCur/QDy/r+SfyhSilzi6Il5xlU3m2jpH8mU04yP5yaH2zyU7"
+        integrity="sha384-5/YOpORmxAYL08/TpSplJERPTFCwjsAzJ/paS2vkm532IqL8ZpPgbl9jRkLTbhKs"
         crossorigin="anonymous"></script>
 ```
 

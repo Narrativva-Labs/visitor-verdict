@@ -39,8 +39,8 @@ Weights below are the implemented defaults. Missing or blocked optional APIs are
 | `CD` | Previous document had a direct declaration (UA token or agent UI marker), stored at initial (marker at load), agent phase or final; carries `declared_agent` (never `automated`) to the next document only, with the stored operator if a marker set one | 100 / inherited |
 | `CS` | Previous final was suspicious from current-page evidence; `{value: "suspicious", direct: true}` is consumed to a passive string at start and carries one document only. CS alone cannot renew itself or upgrade to automated/declared_agent | 0 / inherited |
 | `DH` | Observed Claude host shape; visible direct body DIV, no attributes/children, display contents; same declaration precedence/carry as DM | 100 / declared |
-| `BT` | Three trusted non-composing insertText events on the same control within 5 ms | 2 / interaction |
-| `UC` | Untrusted SELECT/checkbox/radio change, no trusted page input in prior 2000 ms | 2 / interaction |
+| `BT` | Three trusted non-composing insertText events on the same control paired with trusted keydown timestamps spanning positive time up to 5 ms; repeat/modifier/invalid-clock/reset guards apply | 2 / interaction |
+| `UC` | Untrusted enabled/writable SELECT/checkbox/radio change after earlier trusted page input >2000 ms ago; visible rect wider/taller than 1 px required | 2 / interaction |
 | `DM` | Agent UI marker: element with an exact ID at its expected parent (`codex-agent-overlay-root` as a child of the root element → `openai`; `claude-agent-glow-border` or `claude-phantom-cursor` as a child of `body` → `anthropic`, older Claude in Chrome versions only). Checked at start, then watched until found | 100 / declared; sets `traffic_agent` (with `declared_agent` only) |
 | `G0` | Both dimensions zero for screen, viewport or outer size; only visible, focused, top-level; rechecked final | 1 / geometry |
 | `GS` | 800×600 screen or 1280×720 screen equal to viewport | 1 / geometry |
@@ -67,7 +67,7 @@ Mobile human controls therefore emulate viewport/screen, device scale, mobile la
 
 ### Form interaction (1.4.0)
 
-BT adds 2 interaction points for three trusted non-composing `insertText` events on the same form control, each paired with a trusted `keydown`, spanning positive time up to 5 ms in `keydown.timeStamp`. Input creation times can be compressed during editing after queued key dispatch; the synthetic regression covers this sensitivity, but a physical typing test during a busy loop has not been performed. Missing/invalid key timestamps, unpaired input, repeats and modifier shortcuts do not qualify. Identical quantized times are ignored. Paste, replacement/autofill and composing input do not qualify. Assistive technology, text expanders and scanners may still match. UC adds 2 points only for untrusted `change` on enabled, writable SELECT or checkbox/radio after trusted page input more than 2000 ms earlier, with nonempty `getClientRects()`. Initialization without prior trusted input, hidden controls and text fields never qualify. Delayed legitimate updates after earlier interaction can still match. Both share the interaction cap of 2 and require corroboration. Input/change observations do not set activity, suppress NI/SY or decay TR. Listeners and transient field/timing state are removed at final; values are never read.
+BT adds 2 interaction points for three trusted non-composing `insertText` events on the same form control, each paired with a trusted `keydown`, spanning positive time up to 5 ms in `keydown.timeStamp`. Input creation times can be compressed during editing after queued key dispatch; the synthetic regression covers this sensitivity, but a physical typing test during a busy loop has not been performed. Missing/invalid key timestamps, unpaired input, repeats and modifier shortcuts do not qualify. Identical quantized times are ignored. Paste, replacement/autofill and composing input do not qualify. Assistive technology, text expanders and scanners may still match. UC adds 2 points only for untrusted `change` on enabled, writable SELECT or checkbox/radio after trusted page input more than 2000 ms earlier, with at least one `getClientRects()` rectangle wider and taller than 1 px and computed visibility neither `hidden` nor `collapse`. Initialization without prior trusted input, hidden controls and text fields never qualify. Delayed legitimate updates after earlier interaction can still match. Both share the interaction cap of 2 and require corroboration. Input/change observations do not set activity, suppress NI/SY or decay TR. Listeners and transient field/timing state are removed at final; values are never read.
 
 ### Agent UI markers (DM)
 
@@ -146,7 +146,7 @@ Numeric overrides must be finite integers: `idleMs` 1–3,600,000; `fastNavMs` 1
 
 Set `window.visitorVerdictConfig` before loading the detector. v1 uses only the new names, with no runtime compatibility aliases or migration of the previous session-storage key. Session history uses only `sessionStorage['visitor_verdict']`; see the [storage schema](privacy.md).
 
-All publication phases publish the same fields (a broken/throwing data-layer consumer can prevent delivery while local finalization still completes):
+Both identity keys are own properties even when undefined; consumers must test their values rather than key presence. JSON serialization omits undefined values, but GTM receives the original object. All publication phases publish the same fields (a broken/throwing data-layer consumer can prevent delivery while local finalization still completes):
 
 ```js
 {
@@ -154,11 +154,11 @@ All publication phases publish the same fields (a broken/throwing data-layer con
   traffic_class: 'human', // human | suspicious | automated | declared_agent
   traffic_phase: 'initial', // initial | agent | final
   traffic_score: 0,
-  traffic_version: '1.4.0',
-  // traffic_agent_claim: 'dom_host', // optional declaration evidence, also on CD
+  traffic_version: '1.4.1',
+  traffic_agent_claim: undefined, // declaration evidence when applicable; explicitly cleared otherwise
   traffic_webmcp: 'none', // none | capable | used; informational only
   traffic_webmcp_count: 0, // trusted lifecycle events, capped at 255
-  traffic_agent: 'openai' // openai | anthropic; only with declared_agent and operator evidence (DM/DH/CD)
+  traffic_agent: undefined // openai | anthropic with declared_agent and operator evidence; cleared otherwise
 }
 ```
 
@@ -166,7 +166,7 @@ There is at most one initial, one agent and one final detector publication per d
 
 The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with `{class, score, phase, version, webmcp, webmcpCount}` and, only with class `declared_agent` when the operator is known from a marker, `agent` (`'openai'` or `'anthropic'`), plus optional evidence `claim` (`dom_marker`, `dom_host`, `ua_token`). `phase` is `'initial'`, `'agent'` or `'final'`. Re-read the global when you need the latest phase or WebMCP information; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
 
-`window.__visitorVerdictLast` contains the validated previous stored class string captured at detector startup, or `undefined` when unavailable. Storage may reflect a final, an earlier marker publication, or a consumed carry when that document never finalized. Provenance objects are reduced to their validated class string. This is a read-only, non-configurable value; it does not refresh when storage changes. The GTM current-class variable reads the current snapshot first, then this startup fallback, and never reads storage itself or defaults to human.
+`window.__visitorVerdictLast` contains the validated previous stored class string captured at detector startup, or `undefined` when unavailable. Storage may reflect a final, an earlier marker publication, or a consumed carry when that document never finalized. Provenance objects are reduced to their validated class string. This is a read-only, non-configurable value; it does not refresh when storage changes. The imported GTM current-class variable preserves browser automated/declared, prefers verified B7 agents over browser human/suspicious (excluding crawler/intermediary), then uses this startup fallback, and never reads storage itself or defaults to human.
 
 ## Hardening and its limits
 
