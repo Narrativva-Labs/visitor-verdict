@@ -337,7 +337,8 @@
             (hints.platform && hints.platform !== 'Linux') ||
             d.visibilityState !== 'visible' || !d.hasFocus() || d.fullscreenElement !== null ||
             typeof w.matchMedia !== 'function') { return; }
-        var modes = ['fullscreen', 'standalone', 'window-controls-overlay'];
+        if (w.documentPictureInPicture && w.documentPictureInPicture.window === w) { return; }
+        var modes = ['fullscreen', 'standalone', 'window-controls-overlay', 'minimal-ui', 'picture-in-picture'];
         for (var j = 0; j < modes.length; j++) {
           if (w.matchMedia('(display-mode: ' + modes[j] + ')').matches !== false) { return; }
         }
@@ -357,7 +358,7 @@
         }
         var corroborators = (missingGL ? 1 : 0) + (denied ? 1 : 0) + (hasBrands && !chromeBrand ? 1 : 0);
         var windowProfile = hints.platform === 'Linux' && barless && fits && smaller && corroborators > 0;
-        strongAW = windowProfile && corroborators >= 2;
+        strongAW = windowProfile && missingGL && corroborators >= 2;
         // Architecture is used only when already exposed. Never request high entropy.
         if (windowProfile || hints.architecture === 'arm' && swiftShader) { add('AW', 3, 'automationEnvironment'); }
       } catch (ignore) {}
@@ -462,7 +463,8 @@
         (env >= 2 && (families.interaction || families.navigation)));
     }
     // Consent is only a transient transition bit, never persisted or scored.
-    var analyticsGranted = false, consentReplayed = false, lastPublication = null;
+    var analyticsGranted = false, regionalDefault = false, consentUpdated = false;
+    var finalWhileGranted = false, consentReplayed = false, lastPublication = null;
     function copyPublication(event) {
       var copy = {}, name;
       for (name in event) {
@@ -485,32 +487,40 @@
         var kind = tag.call(command);
         if ((kind !== '[object Array]' && kind !== '[object Arguments]') || command[0] !== 'consent' ||
             (command[1] !== 'default' && command[1] !== 'update') || !command[2]) { return; }
+        var isUpdate = command[1] === 'update';
+        if (!isUpdate && consentUpdated) { return; }
         var value = command[2].analytics_storage;
+        if (!isUpdate && own.call(command[2], 'region')) {
+          regionalDefault = true; analyticsGranted = false; return;
+        }
         if (value !== 'granted' && value !== 'denied') { return; }
         var changed = !analyticsGranted && value === 'granted';
-        analyticsGranted = value === 'granted';
+        analyticsGranted = value === 'granted' && (isUpdate || !regionalDefault);
+        if (isUpdate) { consentUpdated = true; }
         if (historical || !afterFinal || command[1] !== 'update' || !changed || !finalPublished ||
-            consentReplayed || !lastPublication) { return; }
+            finalWhileGranted || consentReplayed || !lastPublication) { return; }
         // Guard before calling consumers: replay cannot reenter itself or renew carry.
         consentReplayed = true;
         var event = copyPublication(lastPublication);
         event.traffic_phase = 'final'; event.traffic_replay = 'consent';
-        pushPublication(event);
+        return event;
       } catch (ignore) {}
     }
     function watchConsent(name) {
       try {
         var layer = w[name];
-        if (layer === undefined || layer === null) { layer = w[name] = []; }
         if (tag.call(layer) !== '[object Array]' || typeof layer.push !== 'function') { return; }
         // Read queued commands before initial publication; do not retain their objects.
         for (var j = 0; j < layer.length; j++) { consentCommand(layer[j], true); }
         var push = layer.push;
         layer.push = function () {
-          // GTM must process consent first so consent-blocked tags can receive replay.
-          var afterFinal = finalPublished;
+          // Observe before reentrant finalization, deliver replay after consent consumers.
+          var afterFinal = finalPublished, replay = null;
+          for (var k = 0; k < arguments.length; k++) {
+            replay = consentCommand(arguments[k], false, afterFinal) || replay;
+          }
           var result = push.apply(this, arguments);
-          for (var k = 0; k < arguments.length; k++) { consentCommand(arguments[k], false, afterFinal); }
+          if (replay) { pushPublication(replay); }
           return result;
         };
       } catch (ignore) {}
@@ -528,7 +538,7 @@
           typeof total !== 'number' || !isFinite(total)) { return initial; }
       // Mark before any consumer callback can reenter. Never read public state.
       if (phase === 'initial') { initialPublished = true; initial = result; }
-      else if (phase === 'final') { finalPublished = true; }
+      else if (phase === 'final') { finalPublished = true; finalWhileGranted = analyticsGranted; }
       else { agentPublished = true; }
       latest = result;
       var state = {'class': result, score: total, phase: phase, version: version,

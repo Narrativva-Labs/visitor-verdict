@@ -2,7 +2,10 @@
 
 ## 1.5.0 — 2026-11-23
 
-- Add experimental AW (automation window / emulated desktop viewport) with weight 3 in the automationEnvironment family, using the ordinary gate for a single window corroborator or the passive Muse variant. A window profile with at least two of unavailable WebGL, startup Notification denied and missing Google Chrome brand directly yields suspicious even during interaction; strong AW weight/family are excluded from CS proof, preserving carry only for independent ordinary evidence. Cover Linux viewport/corroborator and passive ARM/SwiftShader variants, app/fullscreen/mobile guards and synthetic headed Playwright controls; no version/CPU predicates or operator inference.
+- B8 review: require missing WebGL for direct AW; exclude minimal-ui, picture-in-picture and Document PiP. Keep denied plus Chromium-only brands as ordinary scoring when WebGL works.
+- Make regional consent defaults conservatively unknown until update, suppress replay after a final sent while granted, and observe only existing layers with shared page-wide state. Document GTM template API limits, Basic/Advanced behavior and standalone load order; extend fuzz/adversarial replay validation.
+
+- Add experimental AW (automation window / emulated desktop viewport) with weight 3 in the automationEnvironment family, using the ordinary gate for a single window corroborator or the passive Muse variant. A window profile with unavailable WebGL plus startup Notification denied or missing Google Chrome brand directly yields suspicious even during interaction; strong AW weight/family are excluded from CS proof, preserving carry only for independent ordinary evidence. Cover Linux viewport/corroborator and passive ARM/SwiftShader variants, app/fullscreen/mobile guards and synthetic headed Playwright controls; no version/CPU predicates or operator inference.
 - Clarify that Vanilla intentionally deduplicates consent replay because it retains the pending classification itself.
 
 - Replay the latest final result once on a late analytics consent grant (`traffic_replay: 'consent'`); configurable with `replayOnConsent` (default true). Observe configured/default data layers and gtag Arguments without storing consent or renewing session carry. Maximum four publications per document.

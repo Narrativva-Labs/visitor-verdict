@@ -19,7 +19,7 @@ export async function runContracts(detectorSource) {
       createEvent: () => ({initEvent(type) { this.type = type; }}),
       dispatchEvent: event => {listeners[event.type]?.(event); return true;}
     };
-    const window = {screen: {width: 1440, height: 900}, innerWidth: 1440, innerHeight: 900,
+    const window = {dataLayer: [], screen: {width: 1440, height: 900}, innerWidth: 1440, innerHeight: 900,
       outerWidth: 1440, outerHeight: 960, chrome: {}, getComputedStyle: field => ({visibility: field.visibility || 'visible'}),
       sessionStorage: {getItem: key => store.get(key), setItem: (key, value) => store.set(key, value)},
       addEventListener: document.addEventListener, removeEventListener: document.removeEventListener,
@@ -51,7 +51,7 @@ export async function runContracts(detectorSource) {
   const consent = (value, kind = 'update', asArguments = false) => asArguments
     ? (function () { return arguments; })('consent', kind, {analytics_storage: value})
     : ['consent', kind, {analytics_storage: value}];
-  const publications = (f, name = 'dataLayer') => f.window[name].filter(e => e.event === 'traffic_class');
+  const publications = (f, name = 'dataLayer') => f.window[name].filter(e => e?.event === 'traffic_class');
   await test('B8: denied to granted after final replays exactly once, arrays and Arguments', () => {
     for (const asArguments of [false, true]) {
       const f = fixture();
@@ -85,7 +85,7 @@ export async function runContracts(detectorSource) {
   });
   await test('B8: custom and default layers observe late consent and publish only to custom', () => {
     for (const source of ['custom', 'dataLayer']) {
-      const f = fixture({config: {dataLayerName: 'custom'}});
+      const f = fixture({config: {dataLayerName: 'custom'}, modify: ({window}) => {window.custom = [];}});
       f.window[source].push(consent('denied'));
       f.emit('visibilitychange'); f.document.visibilityState = 'hidden'; f.emit('visibilitychange');
       f.window[source].push(consent('granted', 'update', true));
@@ -125,8 +125,80 @@ export async function runContracts(detectorSource) {
     finalize = () => f.emit('pagehide');
     f.window.dataLayer.push(consent('granted'));
     assert.equal(publications(f).length, 2);
-    f.window.dataLayer.push(consent('granted'));
+    f.window.dataLayer.push(consent('denied'), consent('granted'));
     assert.equal(publications(f).length, 2);
+  });
+  await test('B8 review: regional defaults stay unknown in either order until update, queued and live', () => {
+    for (const queued of [true, false]) for (const reverse of [true, false]) {
+      const regional = ['consent', 'default', {analytics_storage: 'denied', region: ['CZ']}];
+      const global = consent('granted', 'default');
+      const commands = reverse ? [global, regional] : [regional, global];
+      const f = fixture({modify: ({window}) => {if (queued) window.dataLayer = commands.slice();}});
+      if (!queued) f.window.dataLayer.push(...commands);
+      f.advance(8000); f.window.dataLayer.push(consent('granted'));
+      assert.equal(publications(f).length, 3);
+      f.window.dataLayer.push(consent('denied'), consent('granted'));
+      assert.equal(publications(f).length, 3);
+    }
+    const f = fixture();
+    f.window.dataLayer.push(['consent', 'default', {region:['CZ'],analytics_storage:'denied'}], consent('granted'));
+    f.advance(8000); f.window.dataLayer.push(consent('denied'), consent('granted'));
+    assert.equal(publications(f).length, 2, 'Update resolves regional uncertainty before final');
+  });
+  await test('B8 review: final while granted blocks later withdrawal/regrant on either layer', () => {
+    for (const kind of ['default', 'update']) {
+      const f = fixture({config:{dataLayerName:'custom'}, modify: ({window}) => {window.custom = [];}});
+      f.window.dataLayer.push(consent('granted', kind)); f.advance(8000);
+      f.window.custom.push(consent('denied'), consent('granted'));
+      assert.equal(publications(f, 'custom').length, 2);
+    }
+  });
+  await test('B8 review: observation creates no absent default/custom layer; standalone output still publishes', () => {
+    const f = fixture({config:{dataLayerName:'custom'}, modify: ({window}) => {delete window.dataLayer; window.custom = [];}});
+    assert.equal(Object.hasOwn(f.window, 'dataLayer'), false);
+    f.advance(8000); f.window.custom.push(consent('granted'));
+    assert.equal(publications(f, 'custom').length, 3);
+    assert.equal(Object.hasOwn(f.window, 'dataLayer'), false);
+    const g = fixture({modify: ({window}) => {delete window.dataLayer;}});
+    g.advance(8000); assert.equal(publications(g).length, 2);
+    g.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(g).length, 2, 'A layer created by publication was absent at subscription time');
+  });
+  await test('B8 review: malformed and throwing commands are isolated without reading unrelated consent values', () => {
+    const bad = [null, {}, ['consent'], ['consent','update'], ['consent','update',null],
+      ['consent','update',{analytics_storage:'bogus'}], {0:'consent',1:'update',2:{analytics_storage:'granted'}},
+      ['consent','update',Object.defineProperty({},'analytics_storage',{get(){throw Error('blocked');}})],
+      Object.defineProperty([], '0', {get(){throw Error('blocked command');}})];
+    const f = fixture(); f.advance(8000);
+    for (const command of bad) f.window.dataLayer.push(command);
+    assert.equal(publications(f).length, 2);
+    const defaults = {analytics_storage:'denied'};
+    Object.defineProperty(defaults, 'region', {get(){throw Error('Must not inspect region');}});
+    f.window.dataLayer.push(['consent','default',defaults], consent('granted','default'));
+    const values = {analytics_storage:'granted'};
+    Object.defineProperty(values,'ad_storage',{get(){throw Error('Must not read');}});
+    f.window.dataLayer.push(['consent','update',values]);
+    assert.equal(publications(f).length, 3);
+  });
+  await test('B8 review: later FIFO GTM wrapper processes consent before nested replay; unsafe post wrapper documented', () => {
+    for (const post of [false, true]) {
+      const f = fixture(); f.advance(8000);
+      let granted = false, deliveredWithConsent;
+      const previous = f.window.dataLayer.push;
+      const process = items => items.forEach(e => {
+        if (e[0] === 'consent') granted = true;
+        if (e.traffic_replay) deliveredWithConsent = granted;
+      });
+      f.window.dataLayer.push = function (...items) {
+        if (!post) process(items);
+        const result = previous.apply(this, items);
+        if (post) process(items);
+        return result;
+      };
+      f.window.dataLayer.push(consent('granted'));
+      assert.equal(publications(f).length, 3);
+      assert.equal(deliveredWithConsent, !post);
+    }
   });
   await test('Audit: non-declared publications explicitly clear sticky GTM identity', () => {
     for (const kind of ['human', 'suspicious', 'automated']) {
@@ -513,6 +585,20 @@ export async function runContracts(detectorSource) {
     delete events[0].event.traffic_version;
     assert.equal(summarize({events}).status, 'ERROR');
   });
+  await test('B8 review: adversarial summaries separate one legitimate final replay and reject duplicates', async () => {
+    const {summarize, paths} = await import('./adversarial/report.mjs');
+    const event = phase => ({event:'traffic_class',traffic_phase:phase,traffic_class:'human',traffic_score:0,traffic_version:'1.5.0',traffic_signals:[]});
+    const events = paths.flatMap(path => ['initial','final'].map(phase => ({path,event:event(phase)})));
+    const replay = {path:paths[0],event:{...event('final'),traffic_replay:'consent'}};
+    assert.equal(summarize({events:[...events,replay]}).status,'COMPLETE');
+    assert.equal(summarize({events:[...events,replay]}).pages[0].finalCount,1);
+    assert.equal(summarize({events:[...events,replay]}).pages[0].replayCount,1);
+    for (const trace of [[...events,replay,replay],[replay,...events],
+      [...events,{...replay,event:{...replay.event,traffic_replay:'wrong'}}],
+      [...events,{...replay,event:{...replay.event,traffic_phase:'agent'}}]]) {
+      assert.equal(summarize({events:trace}).status,'ERROR');
+    }
+  });
   await test('v1 reentrant initial publication, stale timers, BFCache and duplicate loads cannot publish twice', () => {
     let pagehide;
     const events = [];
@@ -768,7 +854,7 @@ export async function runContracts(detectorSource) {
     assert.equal(explicit.window.__visitorVerdict.class, 'automated', 'Existing hard evidence keeps precedence');
   });
   await test('B8b-2: active observed profile and every corroborator pair are suspicious without NI or CS', () => {
-    for (const mask of [3, 5, 6, 7]) {
+    for (const mask of [3, 5, 7]) {
       const f = fixture({config: {debug: true, webgl: true, suspiciousThreshold: 1000}, modify: objects => {
         automationProfile(objects, mask & 1 ? null : 'GPU');
         objects.window.Notification.permission = mask & 2 ? 'denied' : 'default';
@@ -815,6 +901,14 @@ export async function runContracts(detectorSource) {
     declared.advance(8000); assert.equal(declared.window.__visitorVerdict.class, 'declared_agent');
     assert.equal(declared.window.__visitorVerdict.agent, undefined, 'Strong AW cannot assign an operator');
   });
+  await test('B8 review AW: denied plus Chromium brands without missing WebGL remains gated, opt-out cannot be strong', () => {
+    for (const webgl of [true, false]) {
+      const f = fixture({config:{debug:true,webgl},modify: objects => {automationProfile(objects, webgl ? 'GPU' : null);}});
+      f.emit('click',{isTrusted:true}); f.emit('scroll',{isTrusted:true}); f.advance(8000);
+      assert.ok(f.signals.includes('AW')); assert.ok(!f.signals.includes('WG'));
+      assert.equal(f.window.__visitorVerdict.class, 'human');
+    }
+  });
   await test('B8b AW: each window corroborator suffices, AW alone and two families never bypass the gate', () => {
     for (const evidence of ['missing-gl', 'denied', 'brands', 'none']) {
       const f = fixture({modify: objects => {
@@ -836,7 +930,8 @@ export async function runContracts(detectorSource) {
       ({window}) => {window.screen = {width: 1364, height: 937};},
       ({window}) => {window.screen = {width: 1360, height: 932};},
       ({document}) => {document.fullscreenElement = {};},
-      ...['fullscreen', 'standalone', 'window-controls-overlay'].map(mode => ({window}) => {
+      ({window}) => {window.documentPictureInPicture = {window};},
+      ...['fullscreen', 'standalone', 'window-controls-overlay', 'minimal-ui', 'picture-in-picture'].map(mode => ({window}) => {
         window.matchMedia = query => ({matches: query === '(display-mode: ' + mode + ')'});
       }),
       ...['Windows NT 10.0', 'Macintosh', 'Android', 'Linux Tablet', 'Linux Electron/30.0', 'Linux Kiosk'].map(os => ({navigator}) => {
@@ -940,7 +1035,7 @@ export async function runContracts(detectorSource) {
       assert.equal(f.window.__visitorVerdict.class, 'human', `HW guard ${index}`);
     }
     const frame = fixture({modify: objects => {headlessGeometry(objects); objects.window.top = {};}});
-    assert.equal(frame.window.dataLayer, undefined);
+    assert.equal(frame.window.dataLayer.length, 0);
   });
   await test('HW rechecks final geometry after hidden/unfocused initial; real Mac window remains human', () => {
     for (const hidden of [false, true]) {
@@ -1678,7 +1773,7 @@ export async function runContracts(detectorSource) {
       window.top = {}; Object.defineProperty(window, 'sessionStorage', {get() {reads++; throw Error('frame storage');}});
       document.createElement = () => {throw Error('frame probe');};
     }});
-    assert.equal(reads, 0); assert.equal(f.window.__visitorVerdict, undefined); assert.equal(f.window.dataLayer, undefined);
+    assert.equal(reads, 0); assert.equal(f.window.__visitorVerdict, undefined); assert.equal(f.window.dataLayer.length, 0);
     assert.equal(f.timers.size, 0); assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
   });
   await test('F6 prerender defers probes, pageview and publication until activation, once', () => {
@@ -1688,7 +1783,7 @@ export async function runContracts(detectorSource) {
       const get = window.sessionStorage.getItem; window.sessionStorage.getItem = key => {reads++; return get(key);};
     }});
     vm.runInContext(source, f.context); f.advance(50000);
-    assert.equal(reads, 0); assert.equal(f.store.size, 0); assert.equal(f.window.dataLayer, undefined); assert.equal(f.timers.size, 0);
+    assert.equal(reads, 0); assert.equal(f.store.size, 0); assert.equal(f.window.dataLayer.length, 0); assert.equal(f.timers.size, 0);
     f.document.prerendering = false; f.emit('prerenderingchange');
     assert.equal(f.window.dataLayer.length, 1);
     assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).timestamps, [60000]);
@@ -2491,7 +2586,7 @@ export async function runContracts(detectorSource) {
       document.prerendering = true;
       Object.defineProperty(document, 'modelContext', {get() {reads++; return {};}});
     }});
-    assert.equal(reads, 0); assert.equal(deferred.window.dataLayer, undefined);
+    assert.equal(reads, 0); assert.equal(deferred.window.dataLayer.length, 0);
     deferred.document.prerendering = false; deferred.emit('prerenderingchange');
     assert.equal(reads, 1); assert.equal(deferred.window.__visitorVerdict.webmcp, 'capable');
     const blocked = fixture({modify: ({document, navigator}) => {

@@ -25,7 +25,7 @@ const snap = new vm.Script(snapshot);
 const classes = ['human', 'suspicious', 'automated', 'declared_agent'];
 const agents = ['openai', 'anthropic'];
 const claims = ['dom_host', 'dom_marker', 'ua_token'];
-const checks = ['automation-window-profile','form-burst','webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
+const checks = ['consent-replay','automation-window-profile','form-burst','webmcp-class-invariance','no-throw/budget','payload-privacy','class/score','phase-uniqueness','storage-bounds','named-property-pollution','snapshot-immutability','suspicious-carry'];
 const base = () => ({storage:'{}', config:{}, race:'timer-first', double:true});
 function configExpression(spec) {
   return spec.configValue ?? '({' + Object.entries(spec.config || {}).map(([key,value]) => `${JSON.stringify(key)}:${value}`).join(',') + '})';
@@ -75,6 +75,11 @@ function evaluate(spec, script = detector) {
     if (spec.interaction && events.some(e => e.traffic_signals?.includes('NI')))
       fail('automation-window-profile', 'active AW fixture unexpectedly depends on NI');
   }
+  for (const replay of events.filter(e => e.traffic_replay === 'consent')) {
+    const prior = events[events.indexOf(replay)-1];
+    if (!prior || JSON.stringify(replay) !== JSON.stringify({...prior,traffic_phase:'final',traffic_replay:'consent'}))
+      fail('consent-replay','replay did not preserve last publication');
+  }
   if (spec.expectedBT !== undefined && events.some(e => e.traffic_signals?.includes('BT')) !== spec.expectedBT) fail('form-burst', 'paired keydown/input failed expected BT coverage');
   if (spec.webmcp || spec.webmcpEvents) {
     const control = evaluate({...spec, webmcp: undefined, webmcpEvents: 0}, script);
@@ -86,7 +91,7 @@ function evaluate(spec, script = detector) {
   }
   // Read the effective boolean in its own realm; string "true" must stay private.
   for (const event of events) {
-    const allowed = ['event','traffic_class','traffic_phase','traffic_score','traffic_version','traffic_agent','traffic_agent_claim','traffic_webmcp','traffic_webmcp_count', ...(debug ? ['traffic_signals'] : [])];
+    const allowed = ['event','traffic_class','traffic_phase','traffic_score','traffic_version','traffic_agent','traffic_agent_claim','traffic_webmcp','traffic_webmcp_count','traffic_replay', ...(debug ? ['traffic_signals'] : [])];
     if (Object.keys(event).some(key => !allowed.includes(key)) || !['event','traffic_class','traffic_phase','traffic_score','traffic_version'].every(key => Object.hasOwn(event,key)) || event.event !== 'traffic_class') {
       fail('payload-privacy', `unexpected payload keys/value: ${JSON.stringify(event).slice(0,250)}`);
     }
@@ -108,9 +113,14 @@ function evaluate(spec, script = detector) {
   if (result.previous !== undefined && !classes.includes(result.previous)) fail('class/score', 'invalid previous class');
   if (!state || !classes.includes(state.class) || typeof state.score !== 'number' || !Number.isFinite(state.score)) fail('class/score','missing/invalid __visitorVerdict class or score');
   const initials = events.filter(e => e.traffic_phase === 'initial').length;
+  const replays = events.filter(e => e.traffic_replay !== undefined);
+  const ordinaryFinals = events.filter(e => e.traffic_phase === 'final' && e.traffic_replay === undefined);
   const finals = events.filter(e => e.traffic_phase === 'final').length;
+  if (replays.length > 1 || replays.some(e => e.traffic_replay !== 'consent' || e.traffic_phase !== 'final') ||
+      replays.some(e => events.indexOf(e) < events.indexOf(ordinaryFinals[0]))) fail('consent-replay','invalid replay shape/order');
+  if (spec.expectedReplay !== undefined && replays.length !== spec.expectedReplay) fail('consent-replay','unexpected replay count');
   const agentEvents = events.filter(e => e.traffic_phase === 'agent').length;
-  if (initials !== 1 || finals > 1 || agentEvents > 1 || events[0]?.traffic_phase !== 'initial') fail('phase-uniqueness', `${initials} initial, ${agentEvents} agent, ${finals} final events`);
+  if (initials !== 1 || ordinaryFinals.length !== 1 || finals > 2 || events.length > 4 || agentEvents > 1 || events[0]?.traffic_phase !== 'initial') fail('phase-uniqueness', `${initials} initial, ${agentEvents} agent, ${finals} final events`);
   // A watched marker escalates the latest snapshot whether it lands before or after final.
   // No observer without MutationObserver or without a pagehide listener (which needs add and remove).
   if (['late','after-final'].includes(spec.marker) && !(spec.old || []).some(f => ['noMutationObserver','noWindowAdd','noWindowRemove'].includes(f)) && state && !['declared_agent','automated'].includes(state.class) &&
@@ -203,7 +213,8 @@ function randomSpec() {
   if (rand()<.08) s.ua = 'a'.repeat(pick([24,32,128,10000])) + '!';
   if (rand()<.2) s.form = pick(['burst','normal','paste','untrusted']);
   if (rand()<.15) s.host = pick(['start','late']);
-  if (rand()<.15) s.awProfile = pick(['emulated','toolbar','fullscreen','standalone','window-controls-overlay','screen-kiosk','electron','mobile','windows','muse']);
+  if (rand()<.15) s.consentCase = pick(['late','early-grant','regional','regional-reverse']);
+  if (rand()<.15) s.awProfile = pick(['emulated','toolbar','fullscreen','standalone','window-controls-overlay','minimal-ui','picture-in-picture','document-pip','screen-kiosk','electron','mobile','windows','muse']);
   if (rand()<.15) s.marker = pick(['start','late','after-final','decoy']);
   return s;
 }
@@ -242,7 +253,7 @@ function corpus() {
     list.push({...base(),marker,race,storage:JSON.stringify({timestamps:[],lastClass:{value:'automated',direct:true},tpPages:0}),
       expectedClass:'automated',noHardRenewal:true,label:`carried automated + marker ${marker} ${race}`});
   }
-  for (const awProfile of ['emulated','toolbar','fullscreen','standalone','window-controls-overlay','screen-kiosk','electron','mobile','windows','muse']) {
+  for (const awProfile of ['emulated','toolbar','fullscreen','standalone','window-controls-overlay','minimal-ui','picture-in-picture','document-pip','screen-kiosk','electron','mobile','windows','muse']) {
     for (const awDelta of [-3,-2,0,2,3]) {
       const expectedAW = awProfile === 'muse' || awProfile === 'emulated' && Math.abs(awDelta) <= 2;
       list.push({...base(),awProfile,awDelta,noWebGL:awProfile !== 'muse',softwareGL:awProfile === 'muse',
@@ -253,10 +264,16 @@ function corpus() {
   for (const awProfile of ['emulated','toolbar','fullscreen','standalone','window-controls-overlay','screen-kiosk','mobile','windows']) {
     for (const awMask of [0,1,2,3,4,5,6,7]) {
       const matched = awProfile === 'emulated';
-      const strong = [3,5,6,7].includes(awMask);
+      const strong = [3,5,7].includes(awMask);
       list.push({...base(),awProfile,awMask,interaction:true,config:{debug:'true',webgl:'true'},
         expectedAW:matched && awMask > 0,expectedFinalClass:matched && strong ? 'suspicious' : 'human',
         awNoCarry:matched && strong,label:'active AW corroborator count ' + awProfile + ' mask ' + awMask});
+    }
+  }
+  for (const consentCase of ['late','early-grant','regional','regional-reverse']) {
+    for (const disabled of [false,true]) for (const dataLayerName of ['dataLayer','customLayer']) {
+      list.push({...base(),consentCase,config:{debug:'true',dataLayerName:JSON.stringify(dataLayerName),replayOnConsent:String(!disabled)},
+        expectedReplay:disabled || consentCase === 'early-grant' ? 0 : 1,label:'consent replay ' + consentCase});
     }
   }
   return list;
@@ -305,6 +322,7 @@ function minimize(original, property, originalDetail, evaluateCase = evaluate) {
 
 if (args.includes('--self-test')) {
   const fixtures = [
+    ['consent-replay','window.dataLayer.push({event:"traffic_class",traffic_phase:"final",traffic_replay:"wrong"});'],
     ['no-throw/budget','throw Error("fixture");'],
     ['no-throw/budget','while(true){}'],
     ['payload-privacy','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0,raw:"oops"});'],

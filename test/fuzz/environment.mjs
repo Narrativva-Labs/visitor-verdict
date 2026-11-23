@@ -101,6 +101,7 @@ if (spec.awProfile) {
   }
   if (spec.awProfile === 'toolbar') window.outerHeight += 80;
   if (spec.awProfile === 'electron') navigator.userAgent += ' Electron/50.0';
+  if (spec.awProfile === 'document-pip') window.documentPictureInPicture = {window:window};
   if (spec.awProfile === 'mobile') navigator.userAgentData.mobile = true;
   if (spec.awProfile === 'windows') navigator.userAgentData.platform = 'Windows';
   if (spec.awProfile === 'muse') { navigator.userAgentData.architecture = 'arm'; window.outerHeight += 80; }
@@ -141,7 +142,18 @@ window.visitorVerdictConfig = CONFIG_EXPRESSION;
 var cfg = window.visitorVerdictConfig;
 var layerName = cfg && typeof cfg.dataLayerName === 'string' && cfg.dataLayerName.length > 0 && cfg.dataLayerName.length <= 128 && !/^(?:__proto__|prototype|constructor)$/.test(cfg.dataLayerName) ? cfg.dataLayerName : 'dataLayer';
 window[layerName] = [];
-window[layerName].push = function (event) { captured.push(event); return Array.prototype.push.call(this, event); };
+window[layerName].push = function (event) { if (event && event.event === 'traffic_class') captured.push(event); return Array.prototype.push.call(this, event); };
+function consentCommand(value, kind, region) {
+  var values = {analytics_storage:value};
+  if (region) values.region = ['CZ'];
+  return (function () { return arguments; })('consent', kind || 'update', values);
+}
+if (spec.consentCase) {
+  var defaults = [consentCommand('denied','default',true),consentCommand('granted','default')];
+  if (spec.consentCase === 'regional-reverse') defaults.reverse();
+  if (spec.consentCase.indexOf('regional') === 0) defaults.forEach(function (item) { window[layerName].push(item); });
+  if (spec.consentCase === 'early-grant') window[layerName].push(consentCommand('granted'));
+}
 if (spec.soft) { navigator.languages = []; navigator.language = ''; navigator.plugins = []; window.chrome = undefined; window.screen = {width:800,height:600}; }
 (spec.pollution || []).forEach(function (p) {
   var value = new Element();
@@ -208,6 +220,13 @@ advance(4000001);
 if (spec.marker === 'after-final') { placeMarker('claude-phantom-cursor', bodyNode); placeMarker('claude-phantom-cursor', bodyNode); }
 dispatch(window, 'pagehide'); dispatch(window, 'pagehide');
 stale.forEach(function (t) { t.fn(); });
+if (spec.consentCase) {
+  window[layerName].push(consentCommand('denied'));
+  window[layerName].push(consentCommand('granted'));
+  window[layerName].push(consentCommand('granted'));
+  window[layerName].push(consentCommand('denied'));
+  window[layerName].push(consentCommand('granted'));
+}
 dispatch(window, 'pageshow', {persisted:true}); dispatch(window, 'pagehide');
 `;
 
