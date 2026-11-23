@@ -35,7 +35,7 @@ Goal: recognise and measure AI agents and verified bots, keep their conversions 
 - [x] Keep evidence and identity apart in the output (server 0.4.0): only verification or a page marker (claim `dom_marker`) names an operator, a user-agent token never does; verified operators are counted with `vv_type=agent_verified` or `crawler_verified`
 - [x] More signing operators from public key directories (server 0.4.0, live directories checked 2026-11-22): Meta Muse `muse.ai`, Manus, Google `agent.bot.goog` (dictionary label `g`), and Browserbase reported as an intermediary (purpose `intermediary`), not as the agent
 - [ ] Amazon Bedrock AgentCore Browser once AWS documents a public key directory (signing is opt-in per customer browser)
-- [ ] Personal Agent Protocol (Poppy 1.0) as an optional verifier: a verified session means an agent acting for a person; a manifest or `client_id` alone is only a claim
+- [x] B5: optional Poppy 1.0 signed-out web operator verifier (server 0.6.0), ES256/PS384 delegation chain and replay checks; no account/action authorization, manifest or `client_id` alone remains a claim; OAuth/stateful session validation remains outside scope
 - [ ] Agents that never load the page: orders placed through agentic checkout protocols (ACP, UCP) are measured from the shop or payment backend and sent server-side with an agent label and the protocol as the channel; other API calls (catalogue, MCP) are labelled on the server, since a browser detector cannot see them
 - [ ] Longer field test on live sites
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing

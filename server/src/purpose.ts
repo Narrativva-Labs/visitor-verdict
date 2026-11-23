@@ -14,6 +14,7 @@ export function purposeFor(
 ): AgentPurpose {
   if (!verdict.verified || !['signature_valid', 'ip_match'].includes(verdict.verification))
     return 'unknown';
+  if (verdict.verified.method === 'poppy') return 'unknown';
   const operator =
     verdict.verified.method === 'rdns'
       ? dnsEvidence?.operator

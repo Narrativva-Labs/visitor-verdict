@@ -63,13 +63,19 @@ export function visitorLabels({
       : undefined;
   const claim = marker
     ? 'dom_marker'
-    : verdict
-      ? verdict.claimed.signatureAgents.length
-        ? 'signature_agent'
-        : verdict.claimed.uaTokens.length
-          ? 'ua_token'
-          : 'none'
-      : '-';
+    : verification === 'signature_valid' &&
+        verdict?.verified?.method === 'signature' &&
+        verdict.claimed.signatureAgents.length > 0
+      ? 'signature_agent'
+      : verdict
+        ? verdict.claimed.poppySession
+          ? 'poppy_session'
+          : verdict.claimed.signatureAgents.length
+            ? 'signature_agent'
+            : verdict.claimed.uaTokens.length
+              ? 'ua_token'
+              : 'none'
+        : '-';
   let type: VisitorType;
   if (verification === 'signature_invalid') type = 'bot_spoofed';
   else if (verified) {
@@ -78,7 +84,12 @@ export function visitorLabels({
     // segment `intermediary` says the operator is the infrastructure, not the agent.
     type = purpose === 'crawler' ? 'crawler_verified' : 'agent_verified';
   } else if (browser === 'automated') type = 'bot_automation';
-  else if (browser === 'declared_agent' || claim === 'ua_token' || claim === 'signature_agent')
+  else if (
+    browser === 'declared_agent' ||
+    claim === 'ua_token' ||
+    claim === 'signature_agent' ||
+    claim === 'poppy_session'
+  )
     type = 'agent_unverified';
   else if (browser === 'suspicious') type = 'bot_suspicious';
   else if (browser === 'human') type = 'human';

@@ -106,6 +106,7 @@ export function validateConfig(options: VerifierOptions) {
   const identities = new Set<string>();
   const urls = new Set<string>();
   let staticCount = 0;
+  const poppyIds = new Set<string>();
   const registry: Registry = options.registry.map((operator: Operator) => {
     if (
       !operator ||
@@ -188,6 +189,18 @@ export function validateConfig(options: VerifierOptions) {
       identities.add(operator.signatureAgent!);
       urls.add(operator.directoryUrl!);
     }
+    if (operator.poppyClientId !== undefined || operator.poppyJwksUri !== undefined) {
+      httpsUrl(operator.poppyClientId);
+      httpsUrl(operator.poppyJwksUri);
+      if (
+        new URL(operator.poppyClientId!).hostname !== new URL(operator.poppyJwksUri!).hostname ||
+        poppyIds.has(operator.poppyClientId!)
+      )
+        throw new TypeError('Invalid Poppy registry');
+      poppyIds.add(operator.poppyClientId!);
+      urls.add(operator.poppyClientId!);
+      urls.add(operator.poppyJwksUri!);
+    }
     const ipLists = operator.ipLists.map((list: IpList) => {
       if (
         !list ||
@@ -234,7 +247,12 @@ export function validateConfig(options: VerifierOptions) {
   const staleMaxSeconds = options.staleMaxSeconds ?? 86400;
   if (!Number.isSafeInteger(staleMaxSeconds) || staleMaxSeconds < 0 || staleMaxSeconds > 86400)
     throw new TypeError('Invalid staleMaxSeconds');
+  if (options.poppy !== undefined && (!options.poppy || typeof options.poppy.enabled !== 'boolean'))
+    throw new TypeError('Invalid Poppy options');
+  if (options.poppy?.enabled && !options.fetcher)
+    throw new TypeError('Poppy requires an injected fetcher');
   return {
+    poppy: options.poppy?.enabled === true,
     maxLifetimeSeconds,
     staleMaxSeconds,
     registry,

@@ -153,6 +153,8 @@ export const additionalOperators: Operator[] = [
   // Crawler claims below are not verification capabilities. Muse has separate provisional signing evidence.
   {
     operator: 'meta',
+    poppyClientId: 'https://muse.ai/poppy/agent.json',
+    poppyJwksUri: 'https://muse.ai/poppy/jwks.json',
     verifiedByCapture: false,
     checked: '2026-11-22',
     source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',

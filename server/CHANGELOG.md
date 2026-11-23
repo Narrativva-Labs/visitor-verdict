@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-11-23
+
+- Add opt-in Poppy 1.0 signed-out web operator verification: ES256 sessions, ES256/PS384 delegated keys, pinned Muse metadata/JWKS, bounded cache and replay protection. No account or action authorization.
+- Add claim `poppy_session` to `vv_detail`; keep existing visitor types and signature outcome precedence. Downstream detail allowlists need the new claim.
+- Add offline crypto, parser fuzz, document limits, freshness and mixed WBA/IP coverage.
+- Keep replay/truncated ES256 signatures unverified, pin Poppy purpose to unknown, allow delegation clock skew and compatible 1.x headers. Skip unsupported public JWKS peers, cache imported keys, expose only root kid hashes, respect request deadlines before replay insertion and derive detail claims from the winning method.
+
 ## 0.5.1 — 2026-11-23
 
 - Refresh unknown/inactive signing keys with indeterminate rotation outcomes; add Kernel runtime validity/rotation coverage.

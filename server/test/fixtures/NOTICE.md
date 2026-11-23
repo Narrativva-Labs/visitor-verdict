@@ -49,3 +49,7 @@ cover only @authority;req, not a Content-Digest or the directory body. Runtime
 trust remains the exact configured HTTPS URL. Kernel's key has nbf/exp and is
 short-lived; it must not be treated as permanently active. No signed visitor
 request was captured for these operators. Local fixture hashes are in sha256.json.
+
+poppy-agent.json is the owner-supplied Muse public CIMD document captured on
+2026-11-23 from https://muse.ai/poppy/agent.json. Tests generate their own keys;
+this metadata fixture is not evidence of a captured verified Session request.

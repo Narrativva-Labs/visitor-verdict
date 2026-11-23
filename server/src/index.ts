@@ -1,3 +1,4 @@
+import { PoppyVerifier, poppyMetadata, poppyKeys } from './poppy.js';
 import { headerMismatch } from './header-consistency.js';
 import { createClaimParser } from './claims.js';
 import { requiredHeaderNames as collectRequiredHeaderNames } from './fields.js';
@@ -51,6 +52,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     now: config.now,
     onRefresh: config.onRefresh,
   });
+  const poppy = config.poppy ? new PoppyVerifier(config.registry, cache, config.now) : undefined;
   const parseClaims = createClaimParser(config.registry);
   const staticRanges = staticBlocks(config.registry);
   const rdns = config.reverseDns
@@ -58,6 +60,16 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     : undefined;
   const targets = new Map<string, [string, DocumentKind, (data: unknown) => unknown]>();
   for (const operator of config.registry) {
+    if (poppy && operator.poppyClientId && operator.poppyJwksUri) {
+      const client = operator.poppyClientId,
+        jwks = operator.poppyJwksUri;
+      targets.set('directory:' + client, [
+        client,
+        'directory',
+        (d) => poppyMetadata(d, client, jwks),
+      ]);
+      targets.set('directory:' + jwks, [jwks, 'directory', poppyKeys]);
+    }
     if (operator.directoryUrl)
       targets.set('directory:' + operator.directoryUrl, [
         operator.directoryUrl,
@@ -84,6 +96,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     verdict: AgentVerdict,
     signal: AbortSignal,
     cacheOnly: boolean,
+    deadlineAt: number,
   ): Promise<AgentVerdict> {
     let presented = false;
     let dnsPurpose: DnsPurposeEvidence | undefined;
@@ -112,8 +125,14 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       const trusted = identities.some((identity) =>
         config.registry.some((o) => o.signatureAgent === identity),
       );
-      if (claims.agent.values.length && !trusted && !presented)
+      if (
+        claims.agent.values.length &&
+        !trusted &&
+        !presented &&
+        !(poppy && h.has('poppy-session'))
+      )
         throw new Failure('untrusted_signature_agent', true);
+      if (poppy && h.has('poppy-session')) verdict.claimed.poppySession = true;
       if (presented) {
         if (!field(h, 'signature') || !field(h, 'signature-input'))
           throw new Failure('incomplete_signature_headers');
@@ -175,7 +194,13 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         verdict.ip = evidence.ip;
         ipUnavailable = evidence.unavailable;
         ipCacheMiss = evidence.cacheMiss === true;
-        if (!verdict.ip && !verdict.verified && rdns && !cacheOnly) {
+        if (
+          !verdict.ip &&
+          !verdict.verified &&
+          rdns &&
+          !cacheOnly &&
+          !(poppy && h.has('poppy-session'))
+        ) {
           const dns = await rdns.verify(input.clientIp, claims.uaTokens, now, signal);
           if (dns.operator) {
             verdict.rdns = { operator: dns.operator };
@@ -183,6 +208,20 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           } else if (dns.unavailable && !ipUnavailable) dnsUnavailable = true;
           else if (dns.notConfirmed) dnsNotConfirmed = true;
         }
+      }
+      if (poppy && h.has('poppy-session')) {
+        const outcome = await poppy.evaluate(h, input, now, cacheOnly, signal, deadlineAt);
+        if (signal.aborted || performance.now() >= deadlineAt)
+          throw new Failure('deadline_exceeded', true);
+        verdict.poppy = outcome.diagnostic;
+        verdict.signatures.push({
+          label: 'poppy',
+          result: outcome.diagnostic.result,
+          reason: outcome.diagnostic.reason,
+        });
+        presented = true;
+        if (outcome.verified && (!verdict.verified || isIntermediary(verdict.verified)))
+          verdict.verified = outcome.verified;
       }
       if (signal.aborted) throw new Failure('deadline_exceeded', true);
       Object.assign(
@@ -238,7 +277,13 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             resolve({ ...emptyVerdict(), reason: 'deadline_exceeded' });
           }, config.deadlineMs);
         });
-        const work = run(input, verdict, controller.signal, options?.cacheOnly === true);
+        const work = run(
+          input,
+          verdict,
+          controller.signal,
+          options?.cacheOnly === true,
+          started + config.deadlineMs,
+        );
         const result = await Promise.race([work, deadline]);
         if (performance.now() - started >= config.deadlineMs) {
           controller.abort();

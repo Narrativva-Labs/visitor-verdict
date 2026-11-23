@@ -537,3 +537,74 @@ Publish a reviewed, complete feed under an immutable public repository tag such 
 Pinned rules do not update automatically; operators must publish a new tag and
 marketers must select it to refresh their data. This is a local feed builder, not
 a deployment or publishing command.
+
+## Optional Poppy 1.0 verification (0.6.0)
+
+Enable with `poppy: { enabled: true }` in `createVerifier` and provide an injected
+`fetcher`. Default is off. This web adapter verifies signed-out requests only,
+using the request's HTTPS origin as the Company identifier (no OAuth issuer).
+Supply the original `method`, `host`, `target` and `Poppy-Session` / `Poppy-Version`
+headers through the trusted transport adapter. The default registry pins Muse's
+`https://muse.ai/poppy/agent.json` and `https://muse.ai/poppy/jwks.json` under the
+provisional operator `meta`. Custom registry entries require both `poppyClientId`
+and `poppyJwksUri`, on the same exact hostname. Metadata must repeat both URLs.
+The injected transport must validate TLS, honor manual redirects and refuse
+loopback/private/link-local resolved addresses, including DNS rebinding. Request
+claims cannot add fetch destinations. Do not use a permissive fetcher for custom
+registries. No discovery document or OAuth server is installed or fetched.
+
+[Poppy 1.0 §4.1 and §5.2–5.3](https://personalagentprotocol.org/docs/1.0/spec#session-header)
+requires an ES256 Session JWT and an ES256 or PS384 delegation signed by the
+agent's published key. Direct root-key session signatures are unsupported.
+Delegations last at most 24 hours; Session JWTs have no `exp`. This adapter checks
+`iat` within ±60 seconds, exact origin audience, method, URL without query or
+fragment, public P-256 delegated key and RFC 7638 thumbprint. Delegation `iat`
+allows up to 60 seconds of future clock skew; `exp` must still be after verification
+time and at most 24 hours after `iat`. Compatible `Poppy-Version: 1.x` headers
+(major.minor, at most 32 characters) are verified using only the 1.0 rules (§3.4). Unknown algorithms, clients, keys, malformed claims and unavailable
+documents remain unverified. A cryptographic mismatch against a declared agent's
+known key is `signature_invalid`, mapped to `bot_spoofed` like WBA. Replay and
+truncated ES256 signatures remain `none` (`poppy_replay` / `poppy_malformed`),
+without spoofing attribution.
+
+Documents use the WBA cache: 64 KiB bodies, at most 32 JWKS keys, configured fetch
+timeout and verification deadline, stale bounds, coalescing and 60-second failure
+backoff. Unsupported public JWKS entries are skipped; private key members reject
+the whole document. Supported root `KeyObject`s are imported once per refresh;
+delegated public `KeyObject`s use a bounded cache of 128 entries. Unknown key IDs
+trigger one throttled refresh. `warm()` includes the two
+pinned documents only when Poppy is enabled; cache-only mode can verify warmed
+keys. JWTs are limited to 16 KiB with bounded JSON depth and duplicate JSON members
+rejected. Process-local replay storage holds hashes through the acceptance window,
+with 10,000 total and 2,500 entries per operator; capacity failures are unverified.
+Each verifier owns this store; cross-process replay protection is not provided.
+Poppy runs after other asynchronous evidence. Its request signal and absolute
+monotonic deadline are checked between document/crypto stages and before replay
+insertion, so timed-out work cannot consume a nonce. A shared cache refresh may
+finish for future requests, but aborted Poppy work starts no follow-up fetch.
+
+A valid direct WBA proof wins attribution ties with Poppy; valid Poppy wins over a
+valid intermediary WBA signer. A valid direct proof wins over an invalid peer;
+invalid proof wins when only intermediary infrastructure verifies. Poppy proofs
+use the existing signature outcome policy, ahead of IP/DNS: IP cannot rescue an
+invalid or indeterminate presented Poppy proof. This preserves WBA's conservative
+fallback policy. Structurally malformed WBA headers still fail the existing outer
+request parser before Poppy evaluation.
+
+Only operator identity is verified. There is no user/account authorization,
+action approval, session continuity/end-state lookup or browser-cookie validation.
+Authorization headers and `ath` claims remain unverified because OAuth client
+binding is unavailable. Signed-out sessions are fully eligible for operator
+verification. `agent_purpose` is conservatively `unknown` for Poppy.
+`vv_type` adds no values; `vv_detail` adds claim `poppy_session` (within 100
+characters), while verification remains `signature_valid` / `signature_invalid`
+/ `none`. This claim means header presence when unverified, never delegation of
+user authority. With a valid WBA winner, the claim is `signature_agent`, even if
+a Poppy header is also present. Browser page-marker precedence remains unchanged.
+Ambiguous raw targets (backslashes, dot segments or whitespace) remain unverified
+with `poppy_request`; URL parsing errors use the same reason.
+Diagnostics contain only bounded reason codes, ES256, version and a hash of the
+operator's root `kid`; delegated per-user key fingerprints are never returned;
+never forward JWTs, subjects or Authorization values to logs or analytics.
+Vanilla and downstream sGTM detail allowlists must accept `poppy_session` before
+consuming this new claim; their packages are not changed here.

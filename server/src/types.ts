@@ -22,6 +22,8 @@ export interface AgentRequest {
 /** An operator whose exact endpoints are trusted by application configuration. */
 export interface Operator {
   operator: string;
+  poppyClientId?: string;
+  poppyJwksUri?: string;
   signatureAgent?: string;
   directoryUrl?: string;
   /** Operator-specific compatibility for non-thumbprint keyid values; default false. */
@@ -93,12 +95,13 @@ export interface AgentVerdict {
   /** Weak local diagnostics; never identity or verification evidence. */
   evidence?: readonly 'header_mismatch'[];
   agent_purpose: AgentPurpose;
-  claimed: { uaTokens: string[]; signatureAgents: string[] };
+  claimed: { uaTokens: string[]; signatureAgents: string[]; poppySession?: boolean };
+  poppy?: import('./poppy.js').PoppyResult;
   verification: 'signature_valid' | 'signature_invalid' | 'no_signature' | 'ip_match' | 'none';
   reason: string;
   verified?: {
     operator: string;
-    method: 'signature' | 'ip' | 'rdns';
+    method: 'signature' | 'ip' | 'rdns' | 'poppy';
     /** Signed proof expiry in Unix seconds, without verification clock skew. */
     expiresAt?: number;
     signatureAgent?: string;
@@ -121,6 +124,7 @@ export interface SignatureResult {
 }
 /** Construction-time configuration. Clock values are Unix seconds. */
 export interface VerifierOptions {
+  poppy?: { enabled: boolean };
   registry: Registry;
   authorities: readonly string[];
   fetcher?: Fetcher;
