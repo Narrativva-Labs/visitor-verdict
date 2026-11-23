@@ -337,7 +337,9 @@
             (hints.platform && hints.platform !== 'Linux') ||
             d.visibilityState !== 'visible' || !d.hasFocus() || d.fullscreenElement !== null ||
             typeof w.matchMedia !== 'function') { return; }
-        if (w.documentPictureInPicture && w.documentPictureInPicture.window === w) { return; }
+        try {
+          if (w.opener && w.opener.documentPictureInPicture && w.opener.documentPictureInPicture.window === w) { return; }
+        } catch (ignore) {}
         var modes = ['fullscreen', 'standalone', 'window-controls-overlay', 'minimal-ui', 'picture-in-picture'];
         for (var j = 0; j < modes.length; j++) {
           if (w.matchMedia('(display-mode: ' + modes[j] + ')').matches !== false) { return; }
@@ -479,8 +481,9 @@
         var layer = w[config.dataLayerName];
         if (layer === undefined || layer === null) { layer = w[config.dataLayerName] = []; }
         if (typeof layer.length === 'number' && isFinite(layer.length) && layer.length >= 0 &&
-            Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); }
+            Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); return true; }
       } catch (ignore) {}
+      return false;
     }
     function consentCommand(command, historical, afterFinal) {
       try {
@@ -490,10 +493,11 @@
         var isUpdate = command[1] === 'update';
         if (!isUpdate && consentUpdated) { return; }
         var value = command[2].analytics_storage;
-        if (!isUpdate && own.call(command[2], 'region')) {
-          regionalDefault = true; analyticsGranted = false; return;
-        }
         if (value !== 'granted' && value !== 'denied') { return; }
+        if (!isUpdate && own.call(command[2], 'region')) {
+          if (value === 'denied') { regionalDefault = true; analyticsGranted = false; }
+          return;
+        }
         var changed = !analyticsGranted && value === 'granted';
         analyticsGranted = value === 'granted' && (isUpdate || !regionalDefault);
         if (isUpdate) { consentUpdated = true; }
@@ -506,9 +510,10 @@
         return event;
       } catch (ignore) {}
     }
-    function watchConsent(name) {
+    function watchConsent(name, create) {
       try {
         var layer = w[name];
+        if (create && (layer === undefined || layer === null)) { layer = w[name] = []; }
         if (tag.call(layer) !== '[object Array]' || typeof layer.push !== 'function') { return; }
         // Read queued commands before initial publication; do not retain their objects.
         for (var j = 0; j < layer.length; j++) { consentCommand(layer[j], true); }
@@ -518,9 +523,21 @@
           var afterFinal = finalPublished, replay = null;
           for (var k = 0; k < arguments.length; k++) {
             replay = consentCommand(arguments[k], false, afterFinal) || replay;
+            if (replay && !analyticsGranted) { replay = null; consentReplayed = false; }
           }
-          var result = push.apply(this, arguments);
-          if (replay) { pushPublication(replay); }
+          var result;
+          try { result = push.apply(this, arguments); }
+          catch (error) {
+            // A failed consumer has not confirmed delivery. Allow a later grant to retry.
+            if (replay) { consentReplayed = false; analyticsGranted = false; }
+            throw error;
+          }
+          if (replay) {
+            if (analyticsGranted) {
+              if (!pushPublication(replay)) { consentReplayed = false; analyticsGranted = false; }
+            }
+            else { consentReplayed = false; }
+          }
           return result;
         };
       } catch (ignore) {}
@@ -913,8 +930,8 @@
       }
       canHide = addListener(w, 'pagehide', hide, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
       if (config.replayOnConsent) {
-        watchConsent(config.dataLayerName);
-        if (config.dataLayerName !== 'dataLayer' && w.dataLayer !== w[config.dataLayerName]) { watchConsent('dataLayer'); }
+        watchConsent(config.dataLayerName, true);
+        if (config.dataLayerName !== 'dataLayer' && w.dataLayer !== w[config.dataLayerName]) { watchConsent('dataLayer', false); }
       }
       watchWebmcp(); visibility();
       var operator = marker();

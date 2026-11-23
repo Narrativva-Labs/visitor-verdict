@@ -153,7 +153,7 @@ export async function runContracts(detectorSource) {
       assert.equal(publications(f, 'custom').length, 2);
     }
   });
-  await test('B8 review: observation creates no absent default/custom layer; standalone output still publishes', () => {
+  await test('B8 review: missing primary layer is created and watched; missing secondary is untouched', () => {
     const f = fixture({config:{dataLayerName:'custom'}, modify: ({window}) => {delete window.dataLayer; window.custom = [];}});
     assert.equal(Object.hasOwn(f.window, 'dataLayer'), false);
     f.advance(8000); f.window.custom.push(consent('granted'));
@@ -162,7 +162,74 @@ export async function runContracts(detectorSource) {
     const g = fixture({modify: ({window}) => {delete window.dataLayer;}});
     g.advance(8000); assert.equal(publications(g).length, 2);
     g.window.dataLayer.push(consent('granted'));
-    assert.equal(publications(g).length, 2, 'A layer created by publication was absent at subscription time');
+    assert.equal(publications(g).length, 3, 'A detector-created primary layer is watched');
+    const custom=fixture({config:{dataLayerName:'custom'},modify:({window})=>{delete window.dataLayer;}});
+    custom.advance(8000); custom.window.custom.push(consent('granted'));
+    assert.equal(publications(custom,'custom').length,3);
+    assert.equal(Object.hasOwn(custom.window,'dataLayer'),false);
+  });
+  await test('B8 round 2: CCPA/ad-only and regional granted defaults do not revoke global analytics grant', () => {
+    for (const values of [{ad_storage:'denied',region:['US-CA']},
+      {analytics_storage:'granted',region:['CZ']}, {analytics_storage:'invalid',region:['CZ']}]) {
+      for (const reverse of [false,true]) {
+        const f = fixture();
+        const commands = [consent('granted','default'),['consent','default',values]];
+        if (reverse) commands.reverse();
+        f.window.dataLayer.push(...commands); f.advance(8000);
+        f.window.dataLayer.push(consent('granted'),consent('denied'),consent('granted'));
+        assert.equal(publications(f).length, 2);
+      }
+    }
+  });
+  await test('B8 round 2: revoke in a batch or reentrant consumer cancels replay without consuming its limit', () => {
+    for (const reentrant of [false,true]) {
+      let revoke = false;
+      const f = fixture({modify: ({window}) => {
+        const previous = window.dataLayer.push;
+        window.dataLayer.push = function (...items) {
+          const result = previous.apply(this,items);
+          if (revoke) { revoke=false; this.push(consent('denied')); }
+          return result;
+        };
+      }});
+      f.advance(8000);
+      if (reentrant) { revoke=true; f.window.dataLayer.push(consent('granted')); }
+      else f.window.dataLayer.push(consent('granted'),consent('denied'));
+      assert.equal(publications(f).length,2,'No replay after denied');
+      f.window.dataLayer.push(consent('granted'));
+      assert.equal(publications(f).length,3,'Next grant still has its replay allowance');
+    }
+    const f=fixture(); f.advance(8000);
+    f.window.dataLayer.push(consent('granted'),consent('denied'),consent('granted'));
+    assert.equal(publications(f).length,3);
+  });
+  await test('B8 round 2: failed replay delivery does not consume the replay allowance', () => {
+    let fail=true;
+    const f=fixture({modify:({window})=>{
+      const push=window.dataLayer.push;
+      window.dataLayer.push=function(...items) {
+        if(fail && items.some(e=>e?.traffic_replay === 'consent')) throw Error('replay delivery failed');
+        return push.apply(this,items);
+      };
+    }});
+    f.advance(8000); f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).length,2);
+    fail=false; f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).length,3);
+  });
+  await test('B8 round 2: saved push exception preserves throw and permits a later grant retry', () => {
+    let fail=false;
+    const f=fixture({modify: ({window}) => {
+      const push=window.dataLayer.push;
+      window.dataLayer.push=function (...items) {if(fail) throw Error('consumer failed'); return push.apply(this,items);};
+    }});
+    f.advance(8000); fail=true;
+    assert.throws(()=>f.window.dataLayer.push(consent('granted')),/consumer failed/);
+    assert.equal(publications(f).length,2);
+    fail=false; f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).length,3);
+    f.window.dataLayer.push(consent('denied'),consent('granted'));
+    assert.equal(publications(f).length,3);
   });
   await test('B8 review: malformed and throwing commands are isolated without reading unrelated consent values', () => {
     const bad = [null, {}, ['consent'], ['consent','update'], ['consent','update',null],
@@ -901,6 +968,15 @@ export async function runContracts(detectorSource) {
     declared.advance(8000); assert.equal(declared.window.__visitorVerdict.class, 'declared_agent');
     assert.equal(declared.window.__visitorVerdict.agent, undefined, 'Strong AW cannot assign an operator');
   });
+  await test('B8 round 2: blocked opener access does not disable AW outside a PiP display mode', () => {
+    const f=fixture({modify:objects=>{
+      automationProfile(objects);
+      Object.defineProperty(objects.window,'opener',{get(){throw Error('cross origin');}});
+    }});
+    assert.ok(f.signals.includes('AW'));
+    f.emit('click',{isTrusted:true}); f.advance(8000);
+    assert.equal(f.window.__visitorVerdict.class,'suspicious');
+  });
   await test('B8 review AW: denied plus Chromium brands without missing WebGL remains gated, opt-out cannot be strong', () => {
     for (const webgl of [true, false]) {
       const f = fixture({config:{debug:true,webgl},modify: objects => {automationProfile(objects, webgl ? 'GPU' : null);}});
@@ -930,7 +1006,7 @@ export async function runContracts(detectorSource) {
       ({window}) => {window.screen = {width: 1364, height: 937};},
       ({window}) => {window.screen = {width: 1360, height: 932};},
       ({document}) => {document.fullscreenElement = {};},
-      ({window}) => {window.documentPictureInPicture = {window};},
+      ({window}) => {window.opener = {documentPictureInPicture: {window}};},
       ...['fullscreen', 'standalone', 'window-controls-overlay', 'minimal-ui', 'picture-in-picture'].map(mode => ({window}) => {
         window.matchMedia = query => ({matches: query === '(display-mode: ' + mode + ')'});
       }),

@@ -118,6 +118,7 @@ function evaluate(spec, script = detector) {
   const finals = events.filter(e => e.traffic_phase === 'final').length;
   if (replays.length > 1 || replays.some(e => e.traffic_replay !== 'consent' || e.traffic_phase !== 'final') ||
       replays.some(e => events.indexOf(e) < events.indexOf(ordinaryFinals[0]))) fail('consent-replay','invalid replay shape/order');
+  if (spec.agentAfterReplay && replays.length && (!result.agentReplayCleared || !events.slice(events.indexOf(replays[0])+1).some(e => e.traffic_phase === 'agent' && e.traffic_replay === undefined))) fail('consent-replay','late agent did not clear sticky replay');
   if (spec.expectedReplay !== undefined && replays.length !== spec.expectedReplay) fail('consent-replay','unexpected replay count');
   const agentEvents = events.filter(e => e.traffic_phase === 'agent').length;
   if (initials !== 1 || ordinaryFinals.length !== 1 || finals > 2 || events.length > 4 || agentEvents > 1 || events[0]?.traffic_phase !== 'initial') fail('phase-uniqueness', `${initials} initial, ${agentEvents} agent, ${finals} final events`);
@@ -174,7 +175,7 @@ function rand() { seed += 0x6D2B79F5; let n = seed; n = Math.imul(n ^ n >>> 15, 
 const pick = xs => xs[Math.floor(rand()*xs.length)];
 const integer = n => Math.floor(rand()*n);
 const values = ['undefined','null','true','false','"true"','"false"','""','0','-1','1','2','20','255','NaN','Infinity','-Infinity','1.5','{}','[]','function () {}','({__proto__:null,constructor:"polluted"})'];
-const configKeys = ['finalOnHidden','idleMs','fastNavMs','fastNavCount','suspiciousThreshold','debug','webgl','worker','dataLayerName','agentTokens'];
+const configKeys = ['replayOnConsent','finalOnHidden','idleMs','fastNavMs','fastNavCount','suspiciousThreshold','debug','webgl','worker','dataLayerName','agentTokens'];
 function jsonValue(depth=0) {
   const atoms = [null,true,false,0,-1,1,255,256,1.5,1e300,'true','false','__proto__','constructor','automated','declared_agent','suspicious'];
   if (depth > 2 || rand() < .5) return pick(atoms);
@@ -213,7 +214,7 @@ function randomSpec() {
   if (rand()<.08) s.ua = 'a'.repeat(pick([24,32,128,10000])) + '!';
   if (rand()<.2) s.form = pick(['burst','normal','paste','untrusted']);
   if (rand()<.15) s.host = pick(['start','late']);
-  if (rand()<.15) s.consentCase = pick(['late','early-grant','regional','regional-reverse']);
+  if (rand()<.15) s.consentCase = pick(['late','early-grant','regional','regional-reverse','ad-only','regional-granted','batch-revoke','batch-retry','throw-retry']);
   if (rand()<.15) s.awProfile = pick(['emulated','toolbar','fullscreen','standalone','window-controls-overlay','minimal-ui','picture-in-picture','document-pip','screen-kiosk','electron','mobile','windows','muse']);
   if (rand()<.15) s.marker = pick(['start','late','after-final','decoy']);
   return s;
@@ -275,6 +276,21 @@ function corpus() {
       list.push({...base(),consentCase,config:{debug:'true',dataLayerName:JSON.stringify(dataLayerName),replayOnConsent:String(!disabled)},
         expectedReplay:disabled || consentCase === 'early-grant' ? 0 : 1,label:'consent replay ' + consentCase});
     }
+  }
+  for (const consentCase of ['late','ad-only','regional-granted','batch-revoke','batch-retry','throw-retry']) {
+    for (const cross of [false,true]) {
+      list.push({...base(),consentCase,consentCrossLayer:cross,config:{debug:'true',dataLayerName:cross ? '"customLayer"' : '"dataLayer"'},
+        expectedReplay:['ad-only','regional-granted','batch-revoke'].includes(consentCase) ? 0 : 1,label:'round 2 consent ' + consentCase});
+    }
+  }
+  for (const disabled of [false,true]) for (const cross of [false,true]) {
+    list.push({...base(),consentCase:'late',agentAfterReplay:true,consentCrossLayer:cross,
+      config:{debug:'true',dataLayerName:cross ? '"customLayer"' : '"dataLayer"',replayOnConsent:String(!disabled)},
+      expectedReplay:disabled ? 0 : 1,label:'replay then agent clears sticky metadata'});
+  }
+  for (const name of ['dataLayer','customLayer']) {
+    list.push({...base(),consentCase:'late',absentPrimary:true,config:{debug:'true',dataLayerName:JSON.stringify(name)},expectedReplay:1,
+      label:'detector creates primary layer and watches consent'});
   }
   return list;
 }

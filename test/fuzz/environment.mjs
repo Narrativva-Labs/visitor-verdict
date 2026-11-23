@@ -101,7 +101,7 @@ if (spec.awProfile) {
   }
   if (spec.awProfile === 'toolbar') window.outerHeight += 80;
   if (spec.awProfile === 'electron') navigator.userAgent += ' Electron/50.0';
-  if (spec.awProfile === 'document-pip') window.documentPictureInPicture = {window:window};
+  if (spec.awProfile === 'document-pip') window.opener = {documentPictureInPicture:{window:window}};
   if (spec.awProfile === 'mobile') navigator.userAgentData.mobile = true;
   if (spec.awProfile === 'windows') navigator.userAgentData.platform = 'Windows';
   if (spec.awProfile === 'muse') { navigator.userAgentData.architecture = 'arm'; window.outerHeight += 80; }
@@ -143,6 +143,8 @@ var cfg = window.visitorVerdictConfig;
 var layerName = cfg && typeof cfg.dataLayerName === 'string' && cfg.dataLayerName.length > 0 && cfg.dataLayerName.length <= 128 && !/^(?:__proto__|prototype|constructor)$/.test(cfg.dataLayerName) ? cfg.dataLayerName : 'dataLayer';
 window[layerName] = [];
 window[layerName].push = function (event) { if (event && event.event === 'traffic_class') captured.push(event); return Array.prototype.push.call(this, event); };
+if (spec.consentCrossLayer && layerName !== 'dataLayer') window.dataLayer = [];
+var consentLayer = spec.consentCrossLayer ? window.dataLayer : window[layerName];
 function consentCommand(value, kind, region) {
   var values = {analytics_storage:value};
   if (region) values.region = ['CZ'];
@@ -151,8 +153,38 @@ function consentCommand(value, kind, region) {
 if (spec.consentCase) {
   var defaults = [consentCommand('denied','default',true),consentCommand('granted','default')];
   if (spec.consentCase === 'regional-reverse') defaults.reverse();
-  if (spec.consentCase.indexOf('regional') === 0) defaults.forEach(function (item) { window[layerName].push(item); });
-  if (spec.consentCase === 'early-grant') window[layerName].push(consentCommand('granted'));
+  if (spec.consentCase === 'regional' || spec.consentCase === 'regional-reverse') defaults.forEach(function (item) { consentLayer.push(item); });
+  if (spec.consentCase === 'early-grant') consentLayer.push(consentCommand('granted'));
+  if (['ad-only','regional-granted'].indexOf(spec.consentCase) !== -1) consentLayer.push(consentCommand('granted','default'));
+  if (spec.consentCase === 'ad-only') consentLayer.push(['consent','default',{ad_storage:'denied',region:['US-CA']}]);
+  if (spec.consentCase === 'regional-granted') consentLayer.push(consentCommand('granted','default',true));
+}
+var failConsentPush = false;
+if (spec.consentCase === 'throw-retry') {
+  var previousConsentPush = consentLayer.push;
+  consentLayer.push = function () {
+    if (failConsentPush) throw Error('consumer failure');
+    return previousConsentPush.apply(this,arguments);
+  };
+}
+if (spec.absentPrimary) delete window[layerName];
+function exerciseConsent() {
+  consentLayer = spec.consentCrossLayer ? window.dataLayer : window[layerName];
+  if (spec.consentCase === 'batch-revoke' || spec.consentCase === 'batch-retry') {
+    consentLayer.push(consentCommand('granted'),consentCommand('denied'));
+    if (spec.consentCase === 'batch-retry') consentLayer.push(consentCommand('granted'));
+    return;
+  }
+  if (spec.consentCase === 'throw-retry') {
+    failConsentPush = true;
+    try { consentLayer.push(consentCommand('granted')); } catch (ignore) {}
+    failConsentPush = false;
+  }
+  consentLayer.push(consentCommand('denied'));
+  consentLayer.push(consentCommand('granted'));
+  consentLayer.push(consentCommand('granted'));
+  consentLayer.push(consentCommand('denied'));
+  consentLayer.push(consentCommand('granted'));
 }
 if (spec.soft) { navigator.languages = []; navigator.language = ''; navigator.plugins = []; window.chrome = undefined; window.screen = {width:800,height:600}; }
 (spec.pollution || []).forEach(function (p) {
@@ -217,16 +249,11 @@ if (spec.race === 'visibility') {
   advance(4000000); document.visibilityState = 'visible'; dispatch(document, 'visibilitychange');
 }
 advance(4000001);
+if (spec.agentAfterReplay) { exerciseConsent(); placeMarker('codex-agent-overlay-root', rootNode); }
 if (spec.marker === 'after-final') { placeMarker('claude-phantom-cursor', bodyNode); placeMarker('claude-phantom-cursor', bodyNode); }
 dispatch(window, 'pagehide'); dispatch(window, 'pagehide');
 stale.forEach(function (t) { t.fn(); });
-if (spec.consentCase) {
-  window[layerName].push(consentCommand('denied'));
-  window[layerName].push(consentCommand('granted'));
-  window[layerName].push(consentCommand('granted'));
-  window[layerName].push(consentCommand('denied'));
-  window[layerName].push(consentCommand('granted'));
-}
+if (spec.consentCase && !spec.agentAfterReplay) exerciseConsent();
 dispatch(window, 'pageshow', {persisted:true}); dispatch(window, 'pagehide');
 `;
 
@@ -241,7 +268,8 @@ if (spec.poisonSnapshot) {
   try { delete window.__visitorVerdict; } catch (e) {}
 }
 `;
-export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
+export const snapshot = `nativeJSON.stringify({events:spec.absentPrimary ? window[layerName].filter(function(e){return e && e.event === 'traffic_class';}) : captured,
+  agentReplayCleared:captured.some(function(e){return e.traffic_phase === 'agent' && Object.prototype.hasOwnProperty.call(e,'traffic_replay') && e.traffic_replay === undefined;}),writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
   beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
   readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
   initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.5.0',
