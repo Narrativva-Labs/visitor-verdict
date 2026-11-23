@@ -2,6 +2,8 @@
 
 ## 0.6.1 — 2026-11-23
 
+- Reuse successfully fetched directories within a request to avoid duplicate refreshes and self-cooldown; preserve non-WBA IP fallback with insecure context. Refresh Poppy algorithm rotations and reject duplicate kid values consistently before and after refresh. Expand SAIL export and browser claim/precedence regressions.
+
 - Reserve spoofing labels for cryptographic mismatches against trusted identities; incomplete, expired and replayed proofs remain indeterminate.
 - Refresh mutable WBA aliases and Poppy root kids once on mismatch with single-flight and cooldown; require secure WBA context.
 - Treat nonexclusive SAIL ranges as weak evidence and support shared atomic Poppy replay storage.

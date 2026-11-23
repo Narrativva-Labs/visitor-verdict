@@ -234,7 +234,8 @@ export class PoppyVerifier {
         mode,
       );
       if (!active()) return fail('poppy_deadline');
-      let keys = await this.cache.load(op.poppyJwksUri, 'directory', now, poppyKeys, mode);
+      const trace = { fetched: false };
+      let keys = await this.cache.load(op.poppyJwksUri, 'directory', now, poppyKeys, mode, trace);
       if (!active()) return fail('poppy_deadline');
       let candidates = keys.filter((k) => k.kid === dlg.h.kid);
       if (!candidates.length) {
@@ -245,6 +246,7 @@ export class PoppyVerifier {
           now,
           poppyKeys,
           cacheOnly ? 'cached-forced' : 'forced',
+          trace,
         );
         candidates = keys.filter((k) => k.kid === dlg.h.kid);
       }
@@ -252,15 +254,24 @@ export class PoppyVerifier {
       if (candidates.length !== 1) return fail('poppy_key_unavailable');
       reason = 'poppy_key_unavailable';
       let root = candidates[0];
-      if (root.alg !== dlg.h.alg) return fail('poppy_key_unavailable');
       diagnostic.kidFingerprint = hash(root.kid).slice(0, 16);
-      if (!signed(dlg, root.key)) {
-        if (cacheOnly) return fail('poppy_key_unavailable');
-        keys = await this.cache.load(op.poppyJwksUri, 'directory', now, poppyKeys, 'mismatch');
-        if (!active()) return fail('poppy_deadline');
-        candidates = keys.filter((k) => k.kid === dlg.h.kid && k.alg === dlg.h.alg);
-        if (candidates.length !== 1) return fail('poppy_key_unavailable');
-        root = candidates[0];
+      if (root.alg !== dlg.h.alg || !signed(dlg, root.key)) {
+        if (!trace.fetched) {
+          if (cacheOnly) return fail('poppy_key_unavailable');
+          keys = await this.cache.load(
+            op.poppyJwksUri,
+            'directory',
+            now,
+            poppyKeys,
+            'mismatch',
+            trace,
+          );
+          if (!active()) return fail('poppy_deadline');
+          candidates = keys.filter((k) => k.kid === dlg.h.kid);
+          if (candidates.length !== 1) return fail('poppy_key_unavailable');
+          root = candidates[0];
+        }
+        if (root.alg !== dlg.h.alg) return fail('poppy_key_unavailable');
         if (!signed(dlg, root.key)) return fail('poppy_signature_invalid', true);
       }
       if (!active()) return fail('poppy_deadline');

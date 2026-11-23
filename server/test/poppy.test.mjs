@@ -728,3 +728,70 @@ test('audit: concurrent Poppy root rotation uses a single refresh', async () => 
   assert.ok(results.every((v) => v.verification === 'signature_valid'));
   assert.equal(calls, 2);
 });
+for (const warm of [false, true])
+  test(`round2: Poppy mismatch uses its own fresh JWKS (warm=${warm})`, async () => {
+    let calls = 0;
+    const { v } = verifier({
+      fetcher: async (url) =>
+        Response.json(
+          url === client
+            ? agent
+            : { keys: [{ ...pub(wrong), kid: ++calls === 1 && warm ? 'old' : 'root' }] },
+        ),
+    });
+    if (warm) await v.warm();
+    const verdict = await v.verify(request());
+    assert.equal(verdict.reason, 'poppy_signature_invalid');
+    assert.equal(verdict.verification, 'signature_invalid');
+    assert.equal(calls, warm ? 2 : 1);
+  });
+for (const alg of ['ES256', 'PS384'])
+  test(`round2: Poppy refreshes same kid rotated to ${alg}`, async () => {
+    let calls = 0;
+    const { v } = verifier({
+      fetcher: async (url) =>
+        Response.json(
+          url === client
+            ? agent
+            : {
+                keys: [
+                  {
+                    ...pub(
+                      ++calls === 1 ? (alg === 'ES256' ? rsa : root) : alg === 'ES256' ? root : rsa,
+                    ),
+                    kid: 'root',
+                  },
+                ],
+              },
+        ),
+    });
+    await v.warm();
+    assert.equal((await v.verify(request({ rootAlg: alg }))).verification, 'signature_valid');
+    assert.equal(calls, 2);
+  });
+test('round2: duplicate Poppy kid across algorithms stays ambiguous after refresh', async () => {
+  let calls = 0;
+  const { v } = verifier({
+    fetcher: async (url) =>
+      Response.json(
+        url === client
+          ? agent
+          : {
+              keys:
+                ++calls === 1
+                  ? [{ ...pub(wrong), kid: 'root' }]
+                  : [
+                      { ...pub(root), kid: 'root' },
+                      { ...pub(rsa), kid: 'root' },
+                    ],
+            },
+      ),
+  });
+  await v.warm();
+  for (let i = 0; i < 2; i++) {
+    const verdict = await v.verify(request({ p: { jti: 'ambiguous-' + i } }));
+    assert.equal(verdict.verification, 'none');
+    assert.equal(verdict.reason, 'poppy_key_unavailable');
+  }
+  assert.equal(calls, 2);
+});

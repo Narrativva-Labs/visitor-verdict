@@ -200,12 +200,14 @@ export class AgentCache {
     return entry;
   }
 
+  /** trace records only a successfully awaited fetch, never a cached/cooldown fallback. */
   async load<T>(
     url: string,
     kind: DocumentKind,
     now: number,
     decode: (data: unknown) => T,
     mode: LoadMode = 'request',
+    trace?: { fetched: boolean },
   ): Promise<T> {
     const cacheKey = kind + ':' + url;
     const entry = this.touch(cacheKey, kind);
@@ -227,7 +229,9 @@ export class AgentCache {
     }
     if (pending) {
       if (cacheOnly) throw new Failure('cache_miss', true);
-      return pending as Promise<T>;
+      const data = (await pending) as T;
+      if (trace) trace.fetched = true;
+      return data;
     }
     if (now < entry.cooldown) {
       if (mode === 'mismatch') throw new Failure('directory_unavailable', true);
@@ -241,7 +245,9 @@ export class AgentCache {
       entry[slot].catch(() => {});
       throw new Failure('cache_miss', true);
     }
-    return entry[slot] as Promise<T>;
+    const data = (await entry[slot]) as T;
+    if (trace) trace.fetched = true;
+    return data;
   }
 
   /** Keep an entry warm: refresh shortly before soft expiry, retrying after failures. */

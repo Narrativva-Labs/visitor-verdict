@@ -9,7 +9,7 @@ const output=join(dir,'output.json');
 const run=(extra=[])=>spawnSync(process.execPath,['scripts/build-sgtm-rules.mjs','--source-dir',dir,'--output',output,...extra],{encoding:'utf8'});
 try{
  for(const o of defaultRegistry) for(const list of o.ipLists){
-  const body=list.format==='sail' ? `schema = "draft-kelley-webbotauth-sail-00"\nmodified = 2026-11-23T00:00:00Z\nexpires_after = 86400\n[[prefix_sets]]\nname = "test"\nexclusive = true\nipv4_prefixes = ["192.0.2.0/25", "192.0.2.128/25"]\nipv6_prefixes = ["2001:db8::/33"]\n[[services]]\nname = "${list.service}"\nexhaustive = true\nprefix_sets = ["test"]\n` : JSON.stringify({prefixes:[{ipv4Prefix:'192.0.2.128/25'},{ipv4Prefix:'192.0.2.0/25'},{ipv4Prefix:'198.51.100.42/32'},{ipv6Prefix:'2001:db8::/33'}]});
+  const body=list.format==='sail' ? `schema = "draft-kelley-webbotauth-sail-00"\nmodified = 2026-11-23T00:00:00Z\nexpires_after = 86400\n[[prefix_sets]]\nname = "test"\nexclusive = true\nipv4_prefixes = ["192.0.2.0/25", "192.0.2.128/25"]\nipv6_prefixes = ["2001:db8::/33"]\n[[prefix_sets]]\nname = "shared"\nexclusive = false\nipv4_prefixes = ["203.0.113.0/24"]\nipv6_prefixes = ["2001:db9::/32"]\n[[services]]\nname = "${list.service}"\nexhaustive = true\nprefix_sets = ["test", "shared"]\n` : JSON.stringify({prefixes:[{ipv4Prefix:'192.0.2.128/25'},{ipv4Prefix:'192.0.2.0/25'},{ipv4Prefix:'198.51.100.42/32'},{ipv6Prefix:'2001:db8::/33'}]});
   await writeFile(join(dir,`${o.operator}--${list.name}.txt`),body);
  }
  let r=run();assert.equal(r.status,0,r.stderr);
@@ -17,7 +17,7 @@ try{
  assert.equal(feed.schema,1);assert.equal(new Date(feed.generated_at).toISOString(),feed.generated_at);assert.ok(Date.now()-Date.parse(feed.generated_at)<60000);assert.equal(feed.complete,true);assert.ok(Buffer.byteLength(original)<=200000);assert.deepEqual(feed.missing,[]);
  const group=feed.groups.find(g=>g.list==='chatgpt-user');assert.deepEqual(group.v4,[[3221225984,3221226239],[3325256746,3325256746]]);assert.deepEqual(group.v6,[['20010db8000000000000000000000000',33]]);
  assert.equal(feed.tokens[group.tokens[0]],'ChatGPT-User');assert.equal(feed.operators[group.operator].id,'openai');
- const sail=feed.groups.find(g=>g.list==='sail');assert.equal(sail.v4.length,1);assert.ok(sail.tokens.length);
+ const sail=feed.groups.find(g=>g.list==='sail');assert.deepEqual(sail.v4,[[3221225984,3221226239]]);assert.deepEqual(sail.v6,[['20010db8000000000000000000000000',33]]);assert.ok(sail.tokens.length);
  // Missing input must never replace an existing good output silently.
  await rm(join(dir,'openai--chatgpt-user.txt'));r=run();assert.notEqual(r.status,0);assert.equal(await readFile(output,'utf8'),original);
  r=run(['--allow-partial']);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(await readFile(output,'utf8')).complete,false);

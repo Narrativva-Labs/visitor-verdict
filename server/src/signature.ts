@@ -25,6 +25,8 @@ interface SignatureContext {
   fields: Omit<SignatureFields, 'label'>;
   maxLifetimeSeconds: number;
   cacheOnly: boolean;
+  secure?: boolean;
+  directoryLoads?: Map<string, { fetched: boolean }>;
 }
 function checkActive(signal: AbortSignal) {
   if (signal.aborted) throw new Failure('deadline_exceeded', true);
@@ -64,6 +66,7 @@ export async function evaluateSignature(
     const sig = sigs.get(label);
     if (member && member[1].get('tag') !== 'web-bot-auth')
       return { result: { label, result: 'none', reason: 'ignored_non_wba' } };
+    if (member && env.secure === false) throw new Failure('insufficient_context', true);
     if (
       !member ||
       !sig ||
@@ -99,6 +102,8 @@ export async function evaluateSignature(
     if (sig[0].byteLength !== 64) throw new Failure('invalid_signature_length');
     const bytes = Buffer.from(sig[0]);
     const base = signatureBase(env.context, env.headers, inner, { ...env.fields, label });
+    const trace = env.directoryLoads?.get(operator.directoryUrl) ?? { fetched: false };
+    env.directoryLoads?.set(operator.directoryUrl, trace);
     let keys = withKidAliases(
       await env.cache.load(
         operator.directoryUrl,
@@ -106,6 +111,7 @@ export async function evaluateSignature(
         env.now,
         publicKeys,
         env.cacheOnly ? 'cached' : 'request',
+        trace,
       ),
       operator.allowKidAlias === true,
     );
@@ -125,6 +131,7 @@ export async function evaluateSignature(
           env.now,
           publicKeys,
           env.cacheOnly ? 'cached-forced' : 'forced',
+          trace,
         ),
         operator.allowKidAlias === true,
       );
@@ -132,10 +139,17 @@ export async function evaluateSignature(
     let key = keys.get(keyid);
     if (!key || !activeKey(key, env.now)) throw new Failure('unknown_keyid', true);
     if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes)) {
-      if (keyid !== key.thumbprint) {
+      if (keyid !== key.thumbprint && !trace.fetched) {
         if (env.cacheOnly) throw new Failure('insufficient_context', true);
         keys = withKidAliases(
-          await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, 'mismatch'),
+          await env.cache.load(
+            operator.directoryUrl,
+            'directory',
+            env.now,
+            publicKeys,
+            'mismatch',
+            trace,
+          ),
           operator.allowKidAlias === true,
         );
         checkActive(env.signal);

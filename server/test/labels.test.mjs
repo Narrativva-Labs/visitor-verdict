@@ -119,34 +119,41 @@ test('operator validation and 100-character limit never truncate structural fiel
 });
 
 // Browser markers: observed operator evidence, never verification.
+const browserClaims = [undefined, 'dom_marker', 'dom_host', 'untrusted|claim'];
 const markers = [undefined, 'openai', 'anthropic', 'google', 'OpenAI', 'anthropic|x', ''];
 for (const verification of verifications)
   test(`browser marker matrix ${verification}`, () => {
     for (const purpose of purposes)
       for (const browserClass of browsers)
         for (const claim of claims)
-          for (const browserAgent of markers) {
-            const input = { verdict: verdict(verification, purpose, claim), browserClass };
-            const base = visitorLabels({ ...input, browserPhase: 'agent' });
-            const actual = visitorLabels({ ...input, browserPhase: 'agent', browserAgent });
-            const verified = ['signature_valid', 'ip_match'].includes(verification);
-            const used =
-              !verified &&
-              verification !== 'signature_invalid' &&
-              browserClass === 'declared_agent' &&
-              ['openai', 'anthropic'].includes(browserAgent);
-            // The marker never changes the visitor type.
-            assert.equal(actual.vv_type, base.vv_type);
-            if (!used) {
-              assert.deepEqual(actual, base);
-              continue;
+          for (const browserAgent of markers)
+            for (const browserAgentClaim of browserClaims) {
+              const input = { verdict: verdict(verification, purpose, claim), browserClass };
+              const base = visitorLabels({ ...input, browserPhase: 'agent' });
+              const actual = visitorLabels({
+                ...input,
+                browserPhase: 'agent',
+                browserAgent,
+                browserAgentClaim,
+              });
+              const verified = ['signature_valid', 'ip_match'].includes(verification);
+              const used =
+                !verified &&
+                verification !== 'signature_invalid' &&
+                browserClass === 'declared_agent' &&
+                ['openai', 'anthropic'].includes(browserAgent);
+              // The marker never changes the visitor type.
+              assert.equal(actual.vv_type, base.vv_type);
+              if (!used) {
+                assert.deepEqual(actual, base);
+                continue;
+              }
+              assert.equal(actual.vv_type, 'agent_unverified');
+              const detail = base.vv_detail.split('|');
+              detail[0] = browserAgent;
+              detail[3] = browserAgentClaim === 'dom_host' ? 'dom_host' : 'dom_marker';
+              assert.equal(actual.vv_detail, detail.join('|'));
             }
-            assert.equal(actual.vv_type, 'agent_unverified');
-            const detail = base.vv_detail.split('|');
-            detail[0] = browserAgent;
-            detail[3] = 'dom_marker';
-            assert.equal(actual.vv_detail, detail.join('|'));
-          }
   });
 test('browser marker without server evidence and precedence of verified identity', () => {
   assert.deepEqual(
@@ -210,29 +217,35 @@ test('unlisted purpose values never reach vv_detail', () => {
 
 test('evidence vs identity: every named operator states its source in the same detail', () => {
   // The operator segment is filled only by (a) verification on this hit or (b) a page marker
-  // (claim dom_marker). A UA token or an unverified Signature-Agent never names an operator.
+  // (claim dom_marker or dom_host). A UA token or an unverified Signature-Agent never names an operator.
   for (const verification of [undefined, ...verifications])
     for (const purpose of purposes)
       for (const claim of claims)
         for (const browserClass of browsers)
           for (const browserAgent of [undefined, 'openai', 'anthropic', 'google'])
-            for (const browserPhase of phases) {
-              const { vv_type, vv_detail } = visitorLabels({
-                verdict: verification && verdict(verification, purpose, claim),
-                browserClass,
-                browserPhase,
-                browserAgent,
-              });
-              const [operator, verified, , source] = vv_detail.split('|');
-              if (operator === 'none') continue;
-              if (['signature_valid', 'ip_match'].includes(verified))
-                assert.ok(
-                  ['agent_verified', 'crawler_verified', 'automation_verified'].includes(vv_type),
-                );
-              else {
-                assert.equal(source, 'dom_marker', vv_detail);
-                assert.equal(vv_type, 'agent_unverified', vv_detail);
-                assert.ok(['openai', 'anthropic'].includes(operator));
+            for (const browserPhase of phases)
+              for (const browserAgentClaim of browserClaims) {
+                const { vv_type, vv_detail } = visitorLabels({
+                  verdict: verification && verdict(verification, purpose, claim),
+                  browserClass,
+                  browserPhase,
+                  browserAgent,
+                  browserAgentClaim,
+                });
+                const [operator, verified, , source] = vv_detail.split('|');
+                if (operator === 'none') continue;
+                if (['signature_valid', 'ip_match'].includes(verified))
+                  assert.ok(
+                    ['agent_verified', 'crawler_verified', 'automation_verified'].includes(vv_type),
+                  );
+                else {
+                  assert.equal(
+                    source,
+                    browserAgentClaim === 'dom_host' ? 'dom_host' : 'dom_marker',
+                    vv_detail,
+                  );
+                  assert.equal(vv_type, 'agent_unverified', vv_detail);
+                  assert.ok(['openai', 'anthropic'].includes(operator));
+                }
               }
-            }
 });

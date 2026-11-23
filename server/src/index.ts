@@ -107,6 +107,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     deadlineAt: number,
   ): Promise<AgentVerdict> {
     let presented = false;
+    const directoryLoads = new Map<string, { fetched: boolean }>();
     let dnsPurpose: DnsPurposeEvidence | undefined;
     try {
       const h = headers(input.headers);
@@ -142,7 +143,6 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         throw new Failure('untrusted_signature_agent', true);
       if (poppy && h.has('poppy-session')) verdict.claimed.poppySession = true;
       if (presented) {
-        if (input.secure === false) throw new Failure('insufficient_context', true);
         if (!field(h, 'signature') || !field(h, 'signature-input'))
           throw new Failure('incomplete_signature_headers');
         const rawInput = field(h, 'signature-input');
@@ -169,6 +169,8 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
             fields: { inputs: parsedInputs, signatures: parsedSignatures, agent: claims.agent },
             maxLifetimeSeconds: config.maxLifetimeSeconds,
             cacheOnly,
+            secure: input.secure,
+            directoryLoads,
           });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
           verdict.signatures.push(evaluation.result);

@@ -79,7 +79,7 @@ and guarantees the 100-character bound, including a sticky operator in collector
 Since 0.3.5 `browserAgent` carries an operator observed by the browser detector from a
 page marker (`openai` or `anthropic` only). It is used only with browser class
 `declared_agent` and only when the server has neither a verified identity nor an
-invalid signature; the claim segment is then `dom_marker` and the type stays
+invalid signature; the claim segment is then `dom_host` when explicitly supplied via `browserAgentClaim`, otherwise `dom_marker`, and the type stays
 `agent_unverified`. Verified identity always wins, and a marker never upgrades a type to
 verified or downgrades a spoofed one. The browser phase `agent` marks the detector's
 update after such a marker appears.
@@ -94,20 +94,20 @@ must expire and clear on close. No library persistence or request waiting is int
 
 The operator segment of `vv_detail` is filled only from verified evidence on the hit
 (`signature_valid`/`ip_match` in the verification segment) or from a browser page marker
-(claim `dom_marker`, type `agent_unverified`). UA tokens and unverified Signature-Agent values
+(claim `dom_marker` or `dom_host`, type `agent_unverified`). UA tokens and unverified Signature-Agent values
 are claims and never name an operator. A collector's sticky operator travels with the sticky
 type that established it, so `vv_type` in {agent_verified, crawler_verified, automation_verified} is the reliable
 "verified operator" test for every hit, and verification `signature_valid|ip_match` is the
-per-hit test. The format stays six segments; the only addition is the purpose value
-`intermediary`, and unlisted purpose values become `unknown`.
+per-hit test. The format stays six segments; the purpose value
+`intermediary` remains, browser claims distinguish `dom_marker` from `dom_host`, and unlisted purpose values become `unknown`.
 
 ## Keyed signature members (0.4.0)
 
 Draft-01 §5.2.2 lets a signer cover another label's `signature` and `signature-input`
 members. The verifier now supports these keyed components (RFC 9421 §2.1.2) and serializes
-the member per RFC 8941. Since 0.4.1 absent covered members fail with
-signature_invalid/required_component_missing (RFC 9421 §2.1.2); wrong member shapes fail
-with signature_invalid/malformed_signature. These fields are already supplied, unlike
+the member per RFC 8941. In 0.6.1 absent covered members return
+none/required_component_missing (RFC 9421 §2.1.2); wrong member shapes return
+none/malformed_signature. Neither is a trusted cryptographic mismatch. These fields are already supplied, unlike
 ordinary headers potentially omitted by adapters. Integral Decimals anywhere in either
 member are indeterminate/unsupported_component because the parser erases the Decimal type;
 Decimal created/expires on the evaluated label remain indeterminate/invalid_timestamp_type.
@@ -149,3 +149,5 @@ must allow the three new origins listed in README. Labels and direct proof
 precedence remain unchanged; no traffic is withheld.
 
 In 0.6.1 only a trusted cryptographic mismatch gives signature_invalid/bot_spoofed. Incomplete, expired and replayed proofs are indeterminate. Mutable WBA aliases and Poppy roots refresh once on mismatch with single-flight and cooldown. Optional Poppy replayStore uses the WBA NonceStore interface for shared atomic retention; the default protects one verifier instance only.
+
+Per-request directory-load provenance distinguishes cached returns from successfully awaited fetches, including shared in-flight loads. WBA members reuse this provenance: after a fresh fetch a crypto mismatch is definitive without another refresh or self-cooldown. Poppy applies the same rule to its root JWKS, including algorithm rotation; candidate selection always requires exactly one matching kid before testing its algorithm. Insecure context is rejected only for relevant WBA members, so non-WBA signatures retain independent IP/rDNS fallback.

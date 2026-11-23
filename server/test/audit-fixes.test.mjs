@@ -85,10 +85,66 @@ test('audit: browser dom_host remains distinct and bounded', () => {
   );
 });
 test('audit: intermediary proof labels verified automation, direct proof retains precedence', async () => {
-  const v = makeVerifier({ registry: [{ ...operator, intermediary: true }] });
+  const directIdentity = 'https://direct.example';
+  const v = makeVerifier({
+    registry: [
+      { ...operator, intermediary: true },
+      {
+        ...operator,
+        operator: 'direct',
+        signatureAgent: directIdentity,
+        directoryUrl: directIdentity + '/keys',
+      },
+    ],
+  });
+  const browser = {
+    browserClass: 'declared_agent',
+    browserAgent: 'anthropic',
+    browserAgentClaim: 'dom_host',
+  };
   const verdict = await v.verify(signed());
-  assert.equal(visitorLabels({ verdict }).vv_type, 'automation_verified');
-  assert.equal(visitorLabels({ verdict }).vv_detail.split('|')[2], 'intermediary');
+  assert.equal(visitorLabels({ verdict, ...browser }).vv_type, 'automation_verified');
+  assert.equal(visitorLabels({ verdict, ...browser }).vv_detail.split('|')[2], 'intermediary');
+  assert.equal(visitorLabels({ verdict, ...browser }).vv_detail.split('|')[3], 'signature_agent');
+  const agent = `s="${operator.signatureAgent}", d="${directIdentity}"`;
+  const infra = signed({
+    agent,
+    components: ['"@authority"', '"@method"', '"signature-agent";key="s"'],
+    values: { '"signature-agent";key="s"': JSON.stringify(operator.signatureAgent) },
+  });
+  const direct = signed({
+    agent,
+    label: 'd',
+    components: ['"@authority"', '"@method"', '"signature-agent";key="d"'],
+    values: { '"signature-agent";key="d"': JSON.stringify(directIdentity) },
+  });
+  for (const peers of [
+    [infra, direct],
+    [direct, infra],
+  ]) {
+    const req = {
+      ...direct,
+      headers: {
+        ...direct.headers,
+        signature: peers.map((p) => p.headers.signature).join(', '),
+        'signature-input': peers.map((p) => p.headers['signature-input']).join(', '),
+      },
+    };
+    const verified = await v.verify(req);
+    assert.equal(verified.verified?.operator, 'direct');
+    assert.ok(verified.signatures.every((s) => s.result === 'signature_valid'));
+    assert.equal(visitorLabels({ verdict: verified, ...browser }).vv_type, 'agent_verified');
+    assert.equal(
+      visitorLabels({ verdict: verified, ...browser }).vv_detail.split('|')[3],
+      'signature_agent',
+    );
+  }
+  const bad = signed();
+  bad.headers.signature = 's=:' + Buffer.alloc(64).toString('base64') + ':';
+  const spoofed = visitorLabels({ verdict: await v.verify(bad), ...browser });
+  assert.equal(spoofed.vv_type, 'bot_spoofed');
+  assert.equal(spoofed.vv_detail.split('|')[0], 'none');
+  assert.equal(spoofed.vv_detail.split('|')[3], 'signature_agent');
 });
 test('audit: shared SAIL evidence cannot label a copied UA as verified', async () => {
   const body = readFileSync(
@@ -151,4 +207,56 @@ test('audit: unrefreshed cache-only alias mismatch is never spoofed', async () =
   assert.equal(calls, 2);
   assert.equal((await v.verify(signed({ kid: 'alias' }))).verification, 'none');
   assert.equal(calls, 2);
+});
+for (const warm of [false, true])
+  test(`round2: WBA alias mismatch uses its own fresh document (warm=${warm})`, async () => {
+    let calls = 0;
+    const v = makeVerifier({
+      registry: [{ ...operator, allowKidAlias: true }],
+      fetcher: async () =>
+        Response.json({ keys: [{ ...jwk, kid: ++calls === 1 && warm ? 'old' : 'new' }] }),
+    });
+    if (warm) await v.warm();
+    const req = signed({ kid: 'new' });
+    req.headers.signature = 's=:' + Buffer.alloc(64).toString('base64') + ':';
+    const verdict = await v.verify(req);
+    assert.equal(verdict.reason, 'crypto_mismatch');
+    assert.equal(verdict.verification, 'signature_invalid');
+    assert.equal(calls, warm ? 2 : 1);
+  });
+test('round2: insecure unrelated signature still permits independent IP verification', async () => {
+  const v = makeVerifier({
+    registry: [{ ...operator, extraUaTokens: ['Test-Agent'], staticPrefixes: ['192.0.2.0/24'] }],
+  });
+  const verdict = await v.verify({
+    method: 'GET',
+    host: 'example.com',
+    secure: false,
+    clientIp: '192.0.2.1',
+    headers: {
+      'user-agent': 'Test-Agent',
+      'signature-input': 'x=("@method");tag="other"',
+      signature: 'x=:AA==:',
+    },
+  });
+  assert.equal(verdict.verification, 'ip_match');
+  assert.deepEqual(verdict.signatures, [{ label: 'x', result: 'none', reason: 'ignored_non_wba' }]);
+});
+test('round2: labels in one request share fresh WBA directory provenance', async () => {
+  let calls = 0;
+  const v = makeVerifier({
+    registry: [{ ...operator, allowKidAlias: true }],
+    fetcher: async () => {
+      calls++;
+      return Response.json({ keys: [{ ...jwk, kid: 'alias' }] });
+    },
+  });
+  const good = signed({ kid: 'alias' });
+  const bad = signed({ kid: 'alias', label: 'bad' });
+  good.headers['signature-input'] += ', ' + bad.headers['signature-input'];
+  good.headers.signature += ', bad=:' + Buffer.alloc(64).toString('base64') + ':';
+  const verdict = await v.verify(good);
+  assert.equal(verdict.verification, 'signature_valid');
+  assert.equal(verdict.signatures.find((s) => s.label === 'bad').reason, 'crypto_mismatch');
+  assert.equal(calls, 1);
 });
