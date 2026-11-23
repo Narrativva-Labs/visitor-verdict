@@ -1,0 +1,7 @@
+HTTP/2 200
+date: Sun, 22 Nov 2026 23:03:02 GMT
+content-type: application/http-message-signatures-directory+json
+content-length: 142
+signature: sig1=:dnEnn93mtxXXbXM1z70zj1Pb8tdWpQQitR2PGIp34EbU0AUFx4iDETYxq7jOugk9XzreYMFzCZ6Ok6osCTk+AA==:
+signature-input: sig1=("@authority";req);alg="ed25519";keyid="ytpCrk8u74NJ08SQepVrOmovFBEXUZPq7Nv8FCg_Qdw";nonce="+7hCKGzKHdnm+rO+o7rx0nVx85gZwBIDfRZ/qw9m54erjYkHLc5vLc9Xl6V8swmitPvUTcHeWAIf5d0siEbBEA==";tag="http-message-signatures-directory";created=1795388582;expires=1795388882
+cache-control: max-age=60, public

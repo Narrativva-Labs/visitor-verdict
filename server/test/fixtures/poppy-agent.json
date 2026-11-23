@@ -1,0 +1,12 @@
+{
+  "client_id": "https://muse.ai/poppy/agent.json",
+  "client_name": "Muse",
+  "logo_uri": "https://muse.ai/images/pwa_icons/any/512.png",
+  "jwks_uri": "https://muse.ai/poppy/jwks.json",
+  "redirect_uris": ["https://muse.ai/api/hatch/oauth/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "private_key_jwt",
+  "dpop_bound_access_tokens": true,
+  "extensions": { "operations": { "version": "2" } }
+}

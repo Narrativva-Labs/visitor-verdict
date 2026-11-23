@@ -17,8 +17,10 @@ The labels are for analysis and review. Whether to change what you send to an ad
 - **Agent-assisted purchases are real revenue.** Browser agents such as OpenAI's in-browser agent or Claude in Chrome run in a person's own browser, with that person's account and card. The person asked the agent to act. A `declared_agent` purchase with `traffic_agent` set (excluding `server_intermediary`) can be a customer buying through a tool; the browser label alone does not establish purpose. Coverage remains partial: v1.4.0 adds an experimental host-shape check (`traffic_agent_claim: 'dom_host'`) for Claude in Chrome 1.0.107 (4/4 controlled runs vs 0/2 controls in one profile, with unverified field false positives that must be monitored via `traffic_agent_claim`), while remote cloud browsers such as ChatGPT cloud agent end `human` in the browser and are recognised only on the server via HTTP Message Signatures. Agent-assisted revenue in browser-only setups is therefore a lower bound.
 - **Verified automation platforms are not user agents.** Server-side verification distinguishes verified automation infrastructure (`vv_type = 'automation_verified'`, e.g., Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf — or `traffic_agent_claim = 'server_intermediary'` in browser echo) whose end purpose (QA, scraping, or user-delegated automation) is unknown. Report `automation_verified` as its own group, separate from both customer user agents (`agent_user`) and crawlers (`crawler_verified`).
 - **Browser labels are self-declared, unverified evidence.** A UA token or an agent UI marker is a claim, and `human` means only that no automation was detected. Neither is reliable enough to decide on its own which revenue counts.
+- **A verified operator is not a verified customer.** A signature verifies the operator, not a real customer’s interest, purchase approval or payment legitimacy. Payment confirmation and fraud checks remain separate.
 - **Excluding by default loses data you cannot get back.** A held or dropped conversion is gone for bidding and attribution; a labelled one can still be analysed, segmented or adjusted later.
-- **Payment and fraud checks already exist.** Refunds, chargebacks and fraud review belong to the payment and order systems. Send orders with their order ID so that platforms can apply later adjustments (for example Google Ads [conversion adjustments](https://support.google.com/google-ads/answer/7686447)).
+- **Payment and fraud checks already exist.** Refunds, chargebacks and fraud review belong to the payment and order systems. Send orders from the server after payment confirmation, with their order ID, so that platforms can apply later adjustments (for example Google Ads [conversion adjustments](https://support.google.com/google-ads/answer/7686447)).
+- **Unsigned traffic can still be automated.** The masked-headless negative control returned `no_signature` and `automated`; signatures do not cover all automation.
 
 ## How to report on labelled conversions
 
@@ -38,14 +40,56 @@ Use GA4 or the BigQuery export; see [GA4 reporting](ga4-reporting.md#reporting),
 - Do not use the class to block access, deny service or make decisions about individuals.
 - Do not use pre-consent classifications for advertising or send pre-consent labels to ad platforms; follow the site's consent setup (see [privacy](privacy.md#consent-and-deployment)).
 
+For practical Meta and Google Ads setup, use the [passive reporting recipes](ad-platform-recipes.md).
+
 ## Server-side verification
 
-Server-side verification of signed agents (Web Bot Auth / HTTP Message Signatures, published IP ranges, and optional Poppy 1.0) is developed in the server verifier library (v0.6.1, integrated into [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side) and server-side GTM). It follows the same rule: it adds labels (`agent_verified`, `agent_unverified`, `crawler_verified`, `automation_verified`, `bot_automation`, `bot_spoofed`, `bot_suspicious`, `human`, `pending`), it withholds nothing, and any label forwarded to ad platforms in sGTM is strictly a passive reporting parameter.
+Server-side verification of signed agents (Web Bot Auth / HTTP Message Signatures, published IP ranges, and optional Poppy 1.0) is provided by the [Node server library](../server/README.md) (v0.6.1), with [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side) as its first collector integration. The separate sGTM template uses IP and browser evidence without cryptographic verification. It follows the same rule: it adds labels (`agent_verified`, `agent_unverified`, `crawler_verified`, `automation_verified`, `bot_automation`, `bot_spoofed`, `bot_suspicious`, `human`, `pending`), it withholds nothing, and any label forwarded to ad platforms in sGTM is strictly a passive reporting parameter.
 
 `agent_verified` confirms identity, not customer intent: `purpose=user_directed` enters the server SQL `agent_user` group, while unknown or missing purpose enters `agent_verified_unknown_purpose` (including verified Poppy identities). Server library 0.6.1 emits `automation_verified`; SQL also accepts older `agent_verified` + `purpose=intermediary` at the same infrastructure priority. Browser echo `server_signature`/`server_ip` does not encode purpose, so browser-only reporting cannot make this distinction; use the collector’s `vv_detail` with Query B/B2.
+
+### Server labels (library 0.6.1)
+
+| `vv_type` | Meaning | Suggested collector rank |
+|---|---|---|
+| `pending` | No browser class or qualifying server evidence yet | 0 |
+| `human` | Browser reports no automation evidence; not proof of a person | 1 |
+| `bot_suspicious` | Uncertain browser evidence | 2 |
+| `agent_unverified` | Browser declaration or unverified UA, Signature-Agent or Poppy claim | 3 |
+| `bot_automation` | Hard browser automation evidence without stronger server evidence | 4 |
+| `bot_spoofed` | Cryptographic signature mismatch against a known valid key | 4.5 |
+| `automation_verified` | Verified signing infrastructure; downstream agent unknown | 4.75 |
+| `agent_verified` | Verified agent identity; purpose is `user_directed` or `unknown` | 5 |
+| `crawler_verified` | Verified identity with crawler purpose | 5 |
+
+`visitorLabels` derives each hit statelessly; these ranks are collector retention/reporting guidance. On a single hit, a cryptographic mismatch yields `bot_spoofed`; valid evidence identifies crawler, infrastructure or agent before falling back to browser evidence. Expiry, replay, malformed input, unknown keys and unavailable verification are indeterminate, not proof of spoofing. A collector can retain earlier stronger evidence; the type does not prove that every subsequent hit was freshly verified. Collector retention must be bounded (the reference uses 10,000 entries and a 30-minute TTL), with expiry capped by proof lifetime; process restarts clear it. Scope full events to client/session and denied pings to page/client, never IP or cross-page identity. Live collector memory may replace equal-rank evidence; SQL independently applies its documented export-order tie break.
+
+`vv_detail` has six pipe-separated positions, at most 100 characters:
+
+```text
+operator|verification|purpose|claim|browser_class|browser_phase
+openai|signature_valid|user_directed|signature_agent|human|final
+```
+
+Verification is `signature_valid`, `signature_invalid`, `ip_match`, `no_signature` or `none` (or `-` without a verdict). Purpose is `user_directed`, `crawler`, `intermediary`, `unknown` or `-`. Claim is `signature_agent`, `ua_token`, `dom_marker`, `dom_host`, `poppy_session`, `none` or `-`; browser class is `human`, `suspicious`, `automated` or `declared_agent`; browser phase is `initial`, `final` or `agent`. Absent browser class/phase is `-`, and an unknown operator is `none`.
+
+`dom_marker` names browser-observed UI evidence, not verification; `dom_host` preserves the experimental Claude in Chrome 1.0.107 host-shape evidence in library 0.6.1. Neither authenticates the operator. Verified Browserbase, Kernel, Cloudflare Browser Run and Shopify Cloudsurf signing infrastructure uses `automation_verified` with purpose `intermediary`; older exports may instead contain `agent_verified` + `intermediary`, which SQL assigns the same 4.75 rank. The downstream agent remains unknown.
+
+Count retained verified identities using `agent_verified`, `crawler_verified` and `automation_verified`; count fresh per-hit verification using the detail verification segment (`signature_valid` or `ip_match`). An operator name alone is insufficient. Separate verified agents with unknown/missing purpose as `agent_verified_unknown_purpose`; only explicit `user_directed` purpose establishes that role. Optional Poppy 1.0 verifies a signed-out delegation chain, not payment approval or account/action authorization; a manifest or `client_id` alone is a claim.
+
+Never export raw headers, claims or diagnostic verdicts. A collector can drop detail before type to meet payload limits; missing detail does not invalidate the type.
+
+### Server-side GTM (labelling only)
+
+The Visitor Verdict server-side GTM variable template is in development. It uses published IP rules and browser signals, without cryptographic verification. Rules come from [jsDelivr, pinned to `sgtm-rules-v1.1.1`](https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@sgtm-rules-v1.1.1/dist/sgtm-rules.json); update the pin when adopting a reviewed feed. Use its `vv_type` and `vv_detail` output variables directly in tags; see the [ad-platform recipes](ad-platform-recipes.md). The Node verifier and its optional Poppy/signature verification are separate from this template.
+
+### Backend orders
+
+For backend-measured agent orders, compute the verdict on the checkout request and retain the compact label with the order. A later payment webhook or cookieless analytics ping cannot reconstruct that request’s identity. This library does not implement an order/session database or checkout integration.
 
 ## Open questions
 
 - No platform has published a standard parameter for how agent-made conversions should be marked or sent.
 - No independent study quantifies how bot or agent conversions affect Smart Bidding or Advantage+.
+- Whether GA4 excludes known agents as bots, and whether Google retracts conversions from declared-agent clicks, is unverified.
 - Privacy: this is not legal advice. Check the legal basis for any data you send to ad platforms with your own counsel.

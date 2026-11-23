@@ -1,0 +1,7 @@
+HTTP/2 200
+age: 567
+cache-control: public, max-age=3600
+content-type: application/http-message-signatures-directory+json
+date: Sun, 22 Nov 2026 22:53:34 GMT
+signature: sig1=:N0jUHJd7BDOdiqjg+VGN96NkCnjZwBkEhzTbgtWUUoywbZ7jq0vDZlHLT2OkFTTAgtLW0608Ag9P/KgM734wAA==:
+signature-input: sig1=("@authority";req);created=1795388014;keyid="5z6F4EJybUfoygglZXiAYaS6O1GU8hA1JrA-m7lGURM";alg="ed25519";expires=1795391614;tag="http-message-signatures-directory"

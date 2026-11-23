@@ -1,0 +1,13 @@
+HTTP/2 200 
+date: Fri, 20 Nov 2026 08:17:44 GMT
+content-type: application/http-message-signatures-directory+json
+content-length: 170
+x-ratelimit-limit: 1000
+x-ratelimit-remaining: 999
+x-ratelimit-reset: 60
+cache-control: max-age=86400
+signature: sig1=:9PGiQyeK1qR9PnYkOwCD15WKSEu+ZCU7CWtksqSg5SSJXWLQwVHINmFDcHYCFJr/gD/31mivHNY6nigJfx0ICQ==:, sig2=:LjUPY00IuM0R8k1qF+u2dXRd1VQcZrtm/2jx3n8iu4YMnM6ylxwZrQP2+meB31ZECogETynut5KDURc7GgeYCA==:
+signature-input: sig1=("@authority");alg="ed25519";created=1795162664;expires=1795162964;keyid="Xk_eOiOd9LOoBlPDuVGzORLcYvjm7zxBkaYHFsP6J_I";tag="http-message-signatures-directory", sig2=("@authority");alg="ed25519";created=1795162664;expires=1795162964;keyid="YdsRKBhpcfV4_n1kXCwzslhGlJzdfAPkjDvlkfgvZDc";tag="http-message-signatures-directory"
+vary: Origin
+server: APISIX/3.11.0
+

@@ -2,6 +2,47 @@
 
 The dashboard labels traffic; it removes nothing. The headline is **All sessions**. Agent-assisted sessions (`agent_user`) are usually real customers: show their purchases, revenue and leads separately as a breakdown, never merged into an "automation" or "excluded" total. Verified automation platforms (`automation_verified`: Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf) are kept as their own group, separate from both user agents and crawlers.
 
+## Server collector: `vv_type` and `vv_detail`
+
+For the Vanilla collector integration, use [session-classification.sql](session-classification.sql). Replace the dataset and dates, run Query 0 to validate ping-page IDs, currencies and coverage, then run the whole script. Adapt the terminal SELECTs into separate reporting tables for scheduled reporting; keep session units and denied ping-page units separate. The SQL was validated once against the demo property's live export on 2026-11-21.
+
+In Looker Studio, **Create → Data source → BigQuery**, choose the reporting table, then **Connect / Add to report**. Repeat per result. See [Google's BigQuery connector](https://cloud.google.com/looker/docs/studio/connect-to-google-bigquery).
+
+Register `vv_type` and `vv_detail` as **event-scoped** GA4 custom dimensions. Data API names are `customEvent:vv_type` and `customEvent:vv_detail`. The collector sends these two labels instead of the old six parameters. The tracker sends browser evidence to the server as before; the collector computes the two GA4 labels without waiting.
+
+For a GA4 connector operator dimension, use:
+
+```text
+REGEXP_EXTRACT(vv_detail, '^([^|]+)')
+```
+
+`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, with unknown operator `none` and absent positions `-`. It contains current-hit evidence plus the sticky known operator. A sticky type may describe stronger earlier evidence, so do not assume every detail verifies its sticky type. Use **vv_detail begins with `openai|`** for an operator event filter. Since server 0.3.5 the operator can also come from a browser page marker (claim `dom_marker`, type `agent_unverified`); a UA token never names an operator. **Count verified operators with vv_type = `agent_verified` or `crawler_verified`** (per hit: verification segment `signature_valid` or `ip_match`), and exclude purpose `intermediary` (Browserbase, signing infrastructure, server 0.4.0) when counting the agents themselves. A calculated field for the operator source:
+
+```text
+CASE WHEN vv_type IN ('agent_verified', 'crawler_verified') THEN 'verified'
+     WHEN REGEXP_EXTRACT(vv_detail, '^([^|]+)') != 'none' THEN 'dom_marker'
+     ELSE 'none' END
+```
+
+The complete `vv_type` dictionary is `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`. In [session-classification.sql](session-classification.sql) session ranks are respectively 0, 1, 2, 3, 4, 5, 5, 6; the first role wins a rank-5 tie. This reporting rank deliberately puts `bot_spoofed` highest, so a session with any invalid signature is reported as spoofed. The collector's live sticky memory instead ranks `bot_spoofed` at 4.5, below verified identities (5), and lets fresh equal-rank evidence replace the earlier type ([server README](../../server/README.md)); a hit can therefore carry `agent_verified` in a session the query reports as `bot_spoofed`. Verified unknown purpose maps to `agent_verified` and preserves `unknown` in detail; this does not infer a user-directed role. `human` means no automation detected; a signature verifies an operator, not customer intent or purchase approval. See [GA4 setup and cohorts](ga4-explorations.md) for the value dictionary and limits.
+
+For quick event filters, **vv_type begins with `agent_`** selects verified/unverified agent labels, **begins with `bot_`** selects bot labels, and `crawler_verified` is separate. Build comparison cohorts that set sessions aside upstream from the strongest observed type, rather than filtering only events or using a user property; the headline stays All sessions.
+
+| Page | Source | Display |
+|---|---|---|
+| Headline | Query 1, session rows | **All sessions**, purchasing sessions, purchase CR and revenue; breakdown by strongest type beside it |
+| Coverage | Query 1, session rows | Type/detail/browser coverage, missing and pending counts, invalid labels |
+| Verified operators | Query 2, session rows | Verified operator × purpose × strongest type; unknown purpose separate |
+| Denied pings | Query 1/2, ping-page rows | Page units and their purchases/revenue, separate from session totals |
+
+Use `SUM(purchasing_units) / SUM(units)` for purchase CR with a zero-denominator guard. Both numerator and denominator must use the **same cohort/date/stream/unit type**. Never average daily rates or mix session revenue with ping-page revenue. Show purchases and unique transactions side by side; USD revenue does not deduplicate transactions or adjust refunds. Removing low-converting sessions raises CR by arithmetic, not demonstrated marketing improvement.
+
+Connect each result at its own grain. Do not join session totals to raw events or sum overlapping cohorts. Record date basis, timezone, stream, refresh time, exclusions and cohort rules on the report. Missing labels are unknown, not a reason to label a visit human. Later human evidence does not erase a stronger earlier type.
+
+## Browser-only integration: `traffic_class`
+
+For the unchanged Phase 1 browser/GTM field study, [bigquery.sql](bigquery.sql) reads `traffic_class`/`traffic_phase`/`traffic_agent`. Its browser-class cohorts are distinct from the collector's combined `vv_type` cohorts. Migration of the browser tag to `vv_type` is a later major version after that field test.
+
 Use [bigquery.sql](bigquery.sql) as the transformation. Set the export dataset, **one web stream ID**, timezone, date range, scan padding, optional first-observed-city filter and test windows. Run the whole script. It creates temporary tables and returns A–I plus study summary and evaluation-window outputs; for scheduled reporting, adapt each terminal SELECT to write a separate reporting table in your own dataset. Keep the export read-only, rebuild recent dates for late arrivals, and preserve session-boundary padding.
 
 In Looker Studio, **Create → Data source → BigQuery**, choose the reporting table, then **Connect / Add to report**. Repeat per result. Set `session_day` (or event `day` for A/F2) as Date and the date-range dimension. See [Google's BigQuery connector](https://cloud.google.com/looker/docs/studio/connect-to-google-bigquery).

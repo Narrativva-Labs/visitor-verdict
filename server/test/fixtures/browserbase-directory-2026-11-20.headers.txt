@@ -1,0 +1,14 @@
+HTTP/2 200 
+age: 2368
+cache-control: public, max-age=3600
+content-type: application/http-message-signatures-directory+json
+date: Fri, 20 Nov 2026 07:38:16 GMT
+etag: "ae9762cf5d5353f93821d54e2719e5b451774d6da8d5771fbd6d3ac1cdfbf137"
+server: Vercel
+signature: binding0=:X9hxGvTIafxOcesNX3+eyY+9Dg1wksRkiazc/lPz6xSVUwILBbgt7glFbFYLuUyEjruQDEKPiAJ+W9bBY8kKBg==:, binding1=:WepSbyVqYGWnKL0Y9G5PjVtfbxCHEL7ZU0bn7ZJXfIHhFYf05Zpv60Qx++uEQ5mzMVm7b653MvWhIdBmNsEmBA==:
+signature-input: binding0=("@authority");created=1795160296;keyid="55U0GjHcGmsubLfmro6FsIWTuE4wJV7oQosxZOj09Fo";alg="ed25519";expires=1795163896;tag="http-message-signatures-directory", binding1=("@authority");created=1795160296;keyid="uzW0cY_yvjX-4HSUPJ1cM-Jvp2xKo0abhnf_H-P0wkE";alg="ed25519";expires=1795163896;tag="http-message-signatures-directory"
+strict-transport-security: max-age=63072000
+x-matched-path: /.well-known/http-message-signatures-directory
+x-vercel-cache: HIT
+x-vercel-id: fra1::pdx1::k8qjt-1795162664464-55ca45123e45
+

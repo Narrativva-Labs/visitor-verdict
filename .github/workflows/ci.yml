@@ -27,3 +27,27 @@ jobs:
       - run: node test/runner-contracts.mjs
       - run: node test/registry.mjs
       - run: node test/fuzz/run.mjs --runs 1000
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/test-sgtm-rules.mjs
+        working-directory: ${{ github.workspace }}
+      - run: npm run typecheck
+      - run: npm run format:check

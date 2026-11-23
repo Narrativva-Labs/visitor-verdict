@@ -2,6 +2,34 @@
 
 Visitor Verdict labels traffic; nothing is excluded from GA4. **All sessions** is the headline population. Optional comparison segments below leave the data intact. Agent-assisted sessions (`declared_agent` excluding `server_intermediary`, with **Traffic agent (event)** when an operator is known) are usually real customers using an AI agent: report them as their own segment (`agent_user`) with their purchases, revenue and leads, never merged with browser automation (`automated`) or verified automation platforms (`automation_verified`).
 
+Two integrations exist: [server collector](#server-collector-vv_type-and-vv_detail) labels use `vv_type` / `vv_detail`, while [browser/GTM](#browser-only-integration-traffic_class) uses `traffic_class` and its evidence fields. Keep their data sources and cohorts separate.
+
+## Server collector: `vv_type` and `vv_detail`
+
+Register two event-scoped custom dimensions in **Admin → Data display → Custom definitions**: **Visitor type** (`vv_type`) and **Visitor detail** (`vv_detail`). Data API names are `customEvent:vv_type` / `customEvent:vv_detail`. The collector derives these from browser and server evidence; the former six-field server label format is replaced by these two parameters. This does not remove the separate browser/GTM parameters.
+
+Early hits may be `pending`; a collector can retain stronger evidence for later hits without backfilling exported events. Preserve site consent handling. [The server dictionary](../conversion-guidance.md#server-labels-library-061) documents all nine types and the six `vv_detail` positions. Library 0.6.1 adds `automation_verified` (rank 4.75), between `bot_spoofed` (4.5) and direct verified agents/crawlers (5), and preserves `dom_host`. `bot_spoofed` requires a cryptographic mismatch against a known valid key; expiry/replay/unknown keys alone do not qualify. Optional Poppy verification can retain unknown purpose.
+
+### Server session segments
+
+Import **Stream ID**, **Event name**, **Visitor type**, **Visitor detail**, acquisition dimensions and supported session/purchase metrics into Explore. Create session segments scoped to one web stream. Keep whole sessions; filtering every chart to a classification event would remove purchases and engagement.
+
+1. **All sessions** is the headline, including missing labels and `pending`.
+2. Create separate diagnostic segments for `agent_verified`, `agent_unverified`, `automation_verified`, `crawler_verified`, `bot_automation`, `bot_spoofed` and `bot_suspicious`. These “any hit” segments can overlap; never add them together as a total.
+3. For a verified user-directed agent, require `Visitor type = agent_verified` AND detail matching `^[^|]*[|][^|]*[|]user_directed[|]` **within the same event**. Unknown/missing purpose is not a user-directed customer. To obtain mutually exclusive session groups, use SQL below instead of combining UI segments.
+4. Keep infrastructure separate: `automation_verified`, plus historical `agent_verified` with detail purpose `intermediary` on the same event. An operator named by `dom_marker`/`dom_host` is unverified. A known operator name alone does not establish verification.
+5. Coverage: valid types match `^(human|pending|agent_verified|automation_verified|agent_unverified|crawler_verified|bot_automation|bot_suspicious|bot_spoofed)$`. Show **With a valid type**, **Without a valid type** and **Pending observed** separately. Missing is not pending; neither means human. **Observed human-only** includes `human` and excludes every other valid type; it is diagnostic, never the headline.
+
+For optional sensitivity comparisons, duplicate All sessions and set aside explicit bot/infrastructure segments; state the choices and keep agent revenue in the headline. Avoid a shared “non-human” total. For known operators, inspect the first detail position; for fresh verification, require `signature_valid` or `ip_match` in the second position. Never interpret the whole detail string as an operator name.
+
+Headline purchase CR is purchasing sessions / sessions in the same cohort; use an additional `event_name=purchase` session condition for purchasers, with the same dates and stream. Keep purchases and leads separate. Report all revenue, with labelled breakdowns, rather than subtracting agent purchases.
+
+Use [campaign-dashboard.sql Query B](campaign-dashboard.sql) for mutually exclusive strongest-evidence session groups, USD revenue, transaction-ID deduplication and current/legacy infrastructure priority. Query B separates `agent_verified_unknown_purpose` from `agent_user`. Query B2 keeps denied/unjoinable pings separate: never add them to session revenue, and verify page-ID cardinality before grouping pings. Boundaries use the documented scan padding; missing IDs cannot be retroactively linked to a session. [session-classification.sql](session-classification.sql) is an older diagnostic recipe with a different ranking policy; use Query B/B2 for the audited 0.6.1 segmentation.
+
+The local `header_mismatch` diagnostic is weak header-consistency evidence, not verification, operator or purpose. It is not exported and does not change `vv_type` or the six detail positions. Proxy stripping and browser privacy policies can cause it.
+
+## Browser-only integration: `traffic_class`
+
 Use the web stream only, a consistent date range, and event-scoped custom dimensions registered in **Admin → Data display → Custom definitions**:
 
 - **Traffic class (event)** (parameter `traffic_class`)
@@ -19,7 +47,7 @@ Optionally wire the existing Google tag to **VV - initial OR VV - timer fallback
 
 For CSP-sensitive sites, import the sandboxed [current-class variable template](../../gtm/templates/vv-current-class.tpl), which currently covers browser evidence only and reads `__visitorVerdict.class` and `__visitorVerdictLast`, and replace the Custom JavaScript variable's references. It has no storage/network/write/execute permissions. The detector script must still satisfy CSP. See [readiness, mappings and consent](../ga4-reporting.md). Keep the dedicated traffic_class event for event-label coverage; never mark it as a key event. Preserve site consent handling and never use pre-consent classification for advertising.
 
-## Build whole-session segments in Explorations
+### Build whole-session segments in Explorations
 
 1. Open **Explore → Free form**, then **Variables → Dimensions → +**. Import **Stream ID**, **Event name**, **Traffic class (event)**, **Traffic agent (event)**, **Traffic agent claim (event)**, **Session source / medium**, and **Session default channel group**. Import **Sessions**, **Engaged sessions**, **Event count** and purchase-related metrics supported by the property. Use separate tabs for incompatible combinations.
 2. Under **Segments → + → Create a custom segment → Session segment**, create **All sessions** with an include condition **Stream ID = your web stream ID**. Use this stream restriction for every segment below. Keep the full session; do not apply a tab-level `event_name=traffic_class` filter, which would remove purchases and engagement events.
@@ -34,7 +62,7 @@ For CSP-sensitive sites, import the sandboxed [current-class variable template](
 
 Use [Google's segment builder](https://support.google.com/analytics/answer/9304353?hl=en) for condition scopes. Segments are limited to available exploration data; retention, sampling and modeled UI metrics can differ from raw export. Stream scoping and the date range must match across comparisons.
 
-## Purchases, revenue and timing
+### Purchases, revenue and timing
 
 Headline **purchase conversion rate = purchasing sessions / sessions in the same cohort**. Keep **leads** (`generate_lead`) separate from **purchases** (`purchase`): never add them into a combined conversion rate. In a duplicate tab, create a purchasing subset of each session segment by adding a separate session condition group containing `event_name=purchase`. Divide that subset's Sessions by its parent cohort's Sessions; keep the same date/stream. Use these session counts rather than purchase-event counts or the count of all key events. Never require `purchase` and `traffic_class` as event names on the same event. `add_to_cart` and `generate_lead` are separate diagnostics, not headline purchase conversions.
 
@@ -42,13 +70,13 @@ Report purchase revenue for **All sessions**, and break it down across the separ
 
 Use [bigquery.sql](bigquery.sql) for one row per `(user_pseudo_id, ga_session_id)` in one web stream, `class_group`, flags `any_automated`, `any_automation_verified`, `any_agent_user`, `any_suspicious`, `any_dom_host`, `has_class`, `has_agent_operator`, `agent_operator`, `automation_verified_operator`, `agent_claim`, `first_class`, `last_class`, `class_at_first_conversion`, and transaction-deduplicated USD `purchase_revenue`. The `class_at_first_conversion` field means the first **purchase**: its own class parameter, otherwise the latest class before it. An automatic event parameter can be a captured initial or startup-fallback value from shared settings; this timing field describes exported labels, not verified current-page evidence. No future class or user property fills that value. UI "contains a label" segments cannot reliably reconstruct this timing. Later `human` never erases earlier automation evidence in session classification.
 
-## Standard report comparisons
+### Standard report comparisons
 
 1. Open **Reports → Acquisition → Traffic acquisition → Add comparison / Create new**.
 2. Select **Traffic class (event)** where compatible, choose exact match `automated` or `declared_agent` separately (avoid lumping customer agents and bots together), and keep the default baseline. Add `suspicious` as another comparison; scope the report/comparisons to the web stream.
 3. Treat these as event-label comparisons. An event-scoped comparison or "does not match" filter does not guarantee exclusion of the entire session, can handle `(not set)` differently, and can leave earlier unlabelled conversions in scope. Because one page can send multiple `traffic_class` events and standard reports split mixed sessions across rows, use Exploration session segments or [bigquery.sql](bigquery.sql) for session-level counts and conversion rates. If the dimension is unavailable/incompatible, use Explore. See [comparison controls and compatibility](https://support.google.com/analytics/answer/9269518?hl=en).
 
-## Plausibility by hour and city
+### Plausibility by hour and city
 
 To check that detected automation looks like automation, build a **Free form** exploration with the session segments from above as comparisons (e.g., **All sessions** / human baseline vs. **Labelled: automation**):
 
@@ -57,7 +85,7 @@ To check that detected automation looks like automation, build a **Free form** e
 
 Treat both as sanity checks, not evidence about any single session: VPNs, corporate networks and night owls exist. See the [study protocol](../study/protocol.md) for how the result is reported.
 
-## Interpretation and coverage
+### Interpretation and coverage
 
 `human` means **no automation detected**, `suspicious` uncertain evidence, `automated` automation evidence without a judgement of intent, and `declared_agent` an unverified claim (separated in SQL into `agent_user` vs `automation_verified` when `traffic_agent_claim = 'server_intermediary'`). Score is not a probability. Comparison cohorts retain unknown sessions; "only human" selects visits where classification and delivery worked and biases the headline. Always display coverage and suspicious traffic alongside the headline, which stays All sessions.
 

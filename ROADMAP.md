@@ -1,6 +1,6 @@
 # Roadmap
 
-Visitor Verdict grows in small, verified steps. Each release states what has and has not been validated; field validation on real traffic is in progress. Phase 2 development runs alongside it and is released only after Phase 1 meets its exit criterion.
+Visitor Verdict grows in small, verified steps. Each release states what has and has not been validated; field validation on real traffic is in progress. Phase 2 development runs alongside it; the server package is not released, and Phase 2 release still depends on Phase 1 meeting its exit criterion.
 
 ## Phase 1 — Label clear automation in GA4 (current)
 
@@ -21,24 +21,28 @@ Goal: mark the obvious automation that GA4's built-in bot filtering lets through
 - [x] v1.3.0: WebMCP informational fields (`traffic_webmcp`: `none` | `capable` | `used`, and `traffic_webmcp_count`, capped at 255 per document for trusted `toolactivated`/`toolcancel` events); capability alone never labels a visitor; observed/page-forgeable, GA4 undercounts invocations after final
 - [ ] Lightweight field validation, 2–4 weeks on a few live sites (in progress since 2026-11-19): share of clear automation per site, coverage, no converting or engaged sessions labelled as clear automation, small panel of real people and devices
 - [ ] Publish the results, including what is missed
+- [ ] Next major version of the browser detector: the GTM tag also sends `vv_type` (only values derivable without a server: `human`, `pending`, `bot_automation`, `bot_suspicious`, `agent_unverified`) and `traffic_class` is phased out after a deprecation period — after the Phase 1 field test.
 
-**Exit criterion:** field results show clear automation is labelled and real visitors are not, on every validated site.
+**Exit criterion (open):** field results show clear automation is labelled and real visitors are not, on every validated site.
 
 ## Phase 2 — Recognise and measure AI agents on the server (in development)
 
-Developed in the separate server verifier library (`visitor-verdict-server` 0.6.1, unpublished) and server-side GTM template (`visitor-verdict-sgtm`); not released on `main` yet.
+The Node verifier lives in [`server/`](server/README.md) (`visitor-verdict-server` 0.6.1, unpublished). A [server-side GTM variable template](docs/conversion-guidance.md#server-side-gtm-labelling-only) is in development: it uses IP rules and browser signals without cryptographic verification, with the jsDelivr rules feed pinned to `sgtm-rules-v1.1.1`.
 
 Goal: recognise and measure AI agents, verified crawlers and verified automation platforms, keep their conversions and label them. Conversion routing is not implemented; any routing would use how the conversion itself is verified (paid order, confirmed lead). See the [conversion guidance](docs/conversion-guidance.md).
 
-- [x] Server verifier library (v0.6.1, unpublished): Web Bot Auth / HTTP Message Signatures (RFC 9421) against operators' key directories, operators' published IP ranges, replay protection; browser evidence, claimed identity and server verification kept as separate fields; `agent_verified` alone verifies identity, not purpose; SQL separates `agent_verified_unknown_purpose`; verified automation platforms (`automation_verified`: Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf) kept as their own group separate from user agents and crawlers
-- [x] First integration: [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) labels GA4 hits with `vv_type` and `vv_detail`, nothing withheld; running on its live demo since 2026-11-20, where a signed ChatGPT cloud agent session was verified as `agent_verified` (while ending `human` in the browser detector)
-- [ ] Keep evidence and identity apart in the output: a browser hint about the operator (UI marker, user-agent token) is never reported as a verified operator
-- [x] More signing operators from public key directories in server v0.6.1 (Meta Muse `muse.ai`, Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf, Manus, Google `agent.bot.goog`), with automation platforms/intermediaries reported as `automation_verified` rather than user agents — **caveat:** 8 of 9 signing operators currently have `verifiedByCapture: false` pending live capture verification; Amazon Bedrock AgentCore remains pending/opt-in
-- [x] Personal Agent Protocol (Poppy 1.0) optional verifier implemented in server v0.6.1 (`verifiedByCapture: false` — live capture verification pending; a manifest or `client_id` alone remains unverified)
+- [x] Server verifier library (v0.6.1, unpublished): Web Bot Auth / HTTP Message Signatures (RFC 9421) against operators' key directories, operators' published IP ranges, optional reverse DNS, replay protection; browser evidence, claimed identity and server verification kept as separate fields; `agent_verified` alone verifies identity, not purpose; SQL separates `agent_verified_unknown_purpose`; verified automation platforms (`automation_verified`: Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf) kept as their own group separate from user agents and crawlers
+- [x] Smoke test (2026-11-20): 32/32 signed requests verified in one ChatGPT agent header-capture run, including first-party analytics requests; one operator/run, not an accuracy study. See [sample and limits](research/agents-and-tells.md#field-observations-v10-2026-11-19).
+- [x] Warm key caches and serve cached keys during background refresh
+- [x] First integration: [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) labels GA4 hits with `vv_type` and `vv_detail`, nothing withheld; running on its live demo since 2026-11-20, where a signed ChatGPT cloud agent session was verified as `agent_verified` (while ending `human` in the browser detector); the earlier smoke test showed server labels on 5/5 `view_cart` Realtime events after cache warming, 1/5 before, with standard reporting/BigQuery unverified in that run
+- [x] Keep evidence and identity apart: `dom_marker` / experimental `dom_host` can name an unverified browser operator (`agent_unverified`); UA tokens alone never name a verified operator. Verified infrastructure uses `automation_verified` with suggested collector rank 4.75, below direct `agent_verified` / `crawler_verified` (5). `bot_spoofed` requires a cryptographic mismatch against a known valid key; expired, replayed, malformed or unknown-key proofs are indeterminate.
+- [x] More signing operators from public key directories in server v0.6.1 (Meta Muse `muse.ai`, Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf, Manus, Google `agent.bot.goog`), with automation platforms/intermediaries reported as `automation_verified` rather than user agents — **caveat:** 8 of 9 signing operators currently have `verifiedByCapture: false` pending live capture verification
+- [ ] Amazon Bedrock AgentCore Browser once a public key directory is documented (signing is opt-in per customer browser)
+- [x] Personal Agent Protocol (Poppy 1.0) optional verifier implemented in server v0.6.1 (`verifiedByCapture: false` — live capture verification pending; ES256/PS384 delegation-chain and replay checks; no account/action authorization; a manifest or `client_id` alone remains unverified; OAuth/stateful session validation remains outside scope)
 - [ ] Agents that never load the page: orders placed through agentic checkout protocols (ACP, UCP) are measured from the shop or payment backend and sent server-side with an agent label and the protocol as the channel; other API calls (catalogue, MCP) are labelled on the server, since a browser detector cannot see them
 - [ ] Longer field test on live sites
 - [ ] Measure on live sites how many bot and agent conversions reach ad platforms (GA4 → Google Ads import, Conversions API), before any conversion routing
-- [ ] Label conversions for Meta Conversions API (`custom_data`) and Google Ads custom conversion variables in server-side GTM strictly as passive reporting parameters (post-consent, never as an optimization target or exclusion); nothing withheld by default (see [conversion guidance](docs/conversion-guidance.md))
+- [x] B9: [passive ad-platform reporting recipes](docs/ad-platform-recipes.md) for Meta Pixel / sGTM CAPI and Google Ads custom variables; the stape-io Facebook Conversion API parameter mapping was checked in a real sGTM container. Consent follows the site; labels never drive optimization, exclusions or bidding changes.
 - [ ] Merge to `main` and release after Phase 1 meets its exit criterion
 
 ## Later (ideas, not commitments)

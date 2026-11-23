@@ -1,0 +1,269 @@
+import type { Operator, ReverseDnsRule } from './types.js';
+const checked = '2026-11-20';
+function dns(
+  uaTokens: string[],
+  suffixes: string[],
+  source: string,
+  ipv4Only = false,
+): ReverseDnsRule[] {
+  return [{ uaTokens, suffixes, source, checked, ipv4Only }];
+}
+export const additionalOperators: Operator[] = [
+  {
+    operator: 'kimi',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://www.kimi.ai/policies/kimi-crawlers',
+    extraUaTokens: ['KimiBot', 'Kimi-SearchBot', 'Kimi-User'],
+    ipLists: [
+      { name: 'kimibot', url: 'https://www.kimi.ai/policies/kimibot.json', uaTokens: ['KimiBot'] },
+      {
+        name: 'kimi-searchbot',
+        url: 'https://www.kimi.ai/policies/kimi-searchbot.json',
+        uaTokens: ['Kimi-SearchBot'],
+      },
+      {
+        name: 'kimi-user',
+        url: 'https://www.kimi.ai/policies/kimi-user.json',
+        uaTokens: ['Kimi-User'],
+      },
+    ],
+  },
+  {
+    operator: 'commoncrawl',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://commoncrawl.org/ccbot',
+    extraUaTokens: ['CCBot'],
+    ipLists: [
+      { name: 'ccbot', url: 'https://index.commoncrawl.org/ccbot.json', uaTokens: ['CCBot'] },
+    ],
+    reverseDns: dns(['CCBot'], ['crawl.commoncrawl.org'], 'https://commoncrawl.org/ccbot', true),
+  },
+  {
+    operator: 'seznam',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/',
+    extraUaTokens: ['SeznamBot'],
+    ipLists: [
+      {
+        name: 'seznambot',
+        url: 'https://search.seznam.cz/ipranges/seznambot.json',
+        uaTokens: ['SeznamBot'],
+      },
+    ],
+    reverseDns: dns(
+      ['SeznamBot'],
+      ['seznam.cz'],
+      'https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/',
+    ),
+  },
+  {
+    operator: 'naver',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://searchadvisor.naver.com/guide/seo-basic-firewall',
+    extraUaTokens: ['Yeti', 'Ads-Naver', 'Blueno'],
+    ipLists: [
+      {
+        name: 'naverbot',
+        url: 'https://searchadvisor.naver.com/doc/naverbot.json',
+        uaTokens: ['Yeti', 'Ads-Naver', 'Blueno'],
+      },
+    ],
+    reverseDns: dns(
+      ['Yeti', 'Ads-Naver', 'Blueno'],
+      ['naver.com'],
+      'https://searchadvisor.naver.com/guide/seo-basic-firewall',
+    ),
+  },
+  {
+    operator: 'kagi',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://kagi.com/bot',
+    extraUaTokens: ['Kagibot'],
+    ipLists: [],
+    staticPrefixes: [
+      '216.18.205.234/32',
+      '35.212.27.76/32',
+      '104.254.65.50/32',
+      '209.151.156.194/32',
+    ],
+    reverseDns: dns(['Kagibot'], ['kagibot.org'], 'https://kagi.com/bot'),
+  },
+  {
+    operator: 'baidu',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://help.baidu.com/question?class=476&id=2996&prod_id=99',
+    extraUaTokens: ['Baiduspider'],
+    ipLists: [],
+    reverseDns: dns(
+      ['Baiduspider'],
+      ['baidu.com', 'baidu.jp'],
+      'https://help.baidu.com/question?class=476&id=2996&prod_id=99',
+    ),
+  },
+  {
+    operator: 'petal',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://webmaster.petalsearch.com/site/petalbot',
+    extraUaTokens: ['PetalBot'],
+    ipLists: [],
+    reverseDns: dns(
+      ['PetalBot'],
+      ['petalsearch.com', 'aspiegel.com'],
+      'https://webmaster.petalsearch.com/site/petalbot',
+    ),
+  },
+  {
+    operator: 'yandex',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://yandex.com/support/webmaster/en/robot-workings/check-yandex-robots',
+    extraUaTokens: ['YandexBot', 'YandexAdditional'],
+    ipLists: [],
+    reverseDns: dns(
+      ['YandexBot', 'YandexAdditional'],
+      ['yandex.ru', 'yandex.net', 'yandex.com'],
+      'https://yandex.com/support/webmaster/en/robot-workings/check-yandex-robots',
+    ),
+  },
+  {
+    operator: 'amazon',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://developer.amazon.com/docs/amazonbot/amazonbot.html',
+    extraUaTokens: ['Amazonbot', 'Amzn-SearchBot', 'Amzn-User'],
+    ipLists: [],
+    // Published addresses are currently HTML-wrapped; no guessed JSON endpoint or DNS suffix.
+  },
+  {
+    operator: 'amazonads',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://adbot.amazon.com/',
+    extraUaTokens: ['AmazonAdBot'],
+    ipLists: [],
+    reverseDns: dns(['AmazonAdBot'], ['amazonadbot.com'], 'https://adbot.amazon.com/'),
+  },
+  // Crawler claims below are not verification capabilities. Muse has separate provisional signing evidence.
+  {
+    operator: 'meta',
+    poppyClientId: 'https://muse.ai/poppy/agent.json',
+    poppyJwksUri: 'https://muse.ai/poppy/jwks.json',
+    verifiedByCapture: false,
+    checked: '2026-11-22',
+    source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
+    extraUaTokens: ['meta-externalagent', 'meta-externalfetcher', 'meta-webindexer'],
+    // Provisional Muse signing identity; Meta has not documented it.
+    // Any future crawler IP/rDNS evidence needs its own purpose mappings.
+    signatureAgent: 'https://muse.ai',
+    directoryUrl: 'https://muse.ai/.well-known/http-message-signatures-directory',
+    evidence: [
+      {
+        level: 'documented',
+        source: 'https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers',
+        checked,
+        note: 'Documented UA claims; no published verification feed or suffix confirmed for these tokens.',
+      },
+      {
+        level: 'observed',
+        source:
+          'https://ppc.land/metas-muse-agent-gains-a-signed-id-in-a-quiet-test-datadome-finds/',
+        checked: '2026-11-22',
+        note: 'DataDome observed Muse signing only part of its requests with Web Bot Auth and moving from www.meta.com to muse.ai (7-9 Nov 2026); Meta has not announced it. Live muse.ai directory checked 2026-11-22 (two Ed25519 keys, valid directory signatures). No local request capture.',
+      },
+      {
+        level: 'documented',
+        source: 'https://muse.ai/blog/poppy-personal-agent-protocol',
+        checked: '2026-11-22',
+        note: 'Muse is a personal agent acting for its user; the post does not mention Web Bot Auth.',
+      },
+    ],
+    ipLists: [],
+  },
+  {
+    operator: 'you',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://radar.cloudflare.com/bots/directory/youbot',
+    evidence: [
+      {
+        level: 'observed',
+        source: 'https://radar.cloudflare.com/bots/directory/youbot',
+        checked,
+        note: 'Observed UA claim; former operator documentation docs.you.com/youbot is unavailable. No verification method established.',
+      },
+    ],
+    extraUaTokens: ['YouBot'],
+    ipLists: [],
+  },
+  {
+    operator: 'sogou',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://www.sogou.com/docs/help/webmasters.htm',
+    extraUaTokens: ['Sogou'],
+    ipLists: [],
+  },
+  {
+    operator: 'bytedance',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://zhanzhang.toutiao.com/',
+    extraUaTokens: ['Bytespider', 'TikTokSpider'],
+    ipLists: [],
+  },
+  {
+    operator: 'deepseek',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://www.deepseek.com/',
+    extraUaTokens: ['DeepSeekBot'],
+    ipLists: [],
+  },
+  {
+    operator: 'zhipu',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://chatglm.cn/',
+    extraUaTokens: ['ChatGLM-Spider'],
+    ipLists: [],
+  },
+  {
+    operator: 'shenma',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://zhanzhang.sm.cn/',
+    extraUaTokens: ['YisouSpider'],
+    ipLists: [],
+  },
+  {
+    operator: 'qihoo',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://www.so.com/help/spider_ip.html',
+    extraUaTokens: ['360Spider'],
+    ipLists: [],
+  },
+  {
+    operator: 'diffbot',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://docs.diffbot.com/reference/crawl-faq',
+    extraUaTokens: ['Diffbot'],
+    ipLists: [],
+  },
+  {
+    operator: 'timpi',
+    verifiedByCapture: false,
+    checked,
+    source: 'https://timpi.io/',
+    extraUaTokens: ['Timpibot'],
+    ipLists: [],
+  },
+];
