@@ -48,6 +48,86 @@ export async function runContracts(detectorSource) {
     try { await fn(); results.push({name, status: 'PASS'}); }
     catch (error) { results.push({name, status: 'FAIL', error: String(error)}); }
   }
+  const consent = (value, kind = 'update', asArguments = false) => asArguments
+    ? (function () { return arguments; })('consent', kind, {analytics_storage: value})
+    : ['consent', kind, {analytics_storage: value}];
+  const publications = (f, name = 'dataLayer') => f.window[name].filter(e => e.event === 'traffic_class');
+  await test('B8: denied to granted after final replays exactly once, arrays and Arguments', () => {
+    for (const asArguments of [false, true]) {
+      const f = fixture();
+      f.window.dataLayer.push(consent('denied', 'default', asArguments));
+      f.advance(8000);
+      const final = publications(f).at(-1), expected = JSON.parse(JSON.stringify(final));
+      const stored = JSON.stringify([...f.store]), snapshot = f.window.__visitorVerdict;
+      f.window.dataLayer.push(consent('granted', 'update', asArguments));
+      const events = publications(f), replay = events.at(-1);
+      assert.equal(events.length, 3);
+      assert.deepEqual(JSON.parse(JSON.stringify(replay)), {...expected, traffic_replay: 'consent'});
+      assert.equal(replay.traffic_phase, 'final');
+      assert.equal(JSON.stringify([...f.store]), stored, 'Replay must not renew provenance');
+      assert.equal(f.window.__visitorVerdict, snapshot, 'Replay must not rewind public lifecycle');
+      f.window.dataLayer.push(consent('granted'), consent('denied'), consent('granted'));
+      f.emit('pagehide'); f.advance(8000);
+      assert.equal(publications(f).length, 3);
+    }
+  });
+  await test('B8: grant before final, queued grant, missing updates and disabled replay publish nothing extra', () => {
+    for (const mode of ['early', 'queued', 'absent', 'disabled', 'default', 'other']) {
+      const f = fixture({config: {replayOnConsent: mode !== 'disabled'}, modify: ({window}) => {
+        if (mode === 'queued') window.dataLayer = [consent('granted', 'default', true)];
+      }});
+      if (mode === 'early') f.window.dataLayer.push(consent('granted'));
+      f.advance(8000);
+      if (mode !== 'absent') f.window.dataLayer.push(mode === 'default' ? consent('granted', 'default') :
+        mode === 'other' ? ['consent', 'update', {ad_storage: 'granted'}] : consent('granted'));
+      assert.equal(publications(f).length, 2, mode);
+    }
+  });
+  await test('B8: custom and default layers observe late consent and publish only to custom', () => {
+    for (const source of ['custom', 'dataLayer']) {
+      const f = fixture({config: {dataLayerName: 'custom'}});
+      f.window[source].push(consent('denied'));
+      f.emit('visibilitychange'); f.document.visibilityState = 'hidden'; f.emit('visibilitychange');
+      f.window[source].push(consent('granted', 'update', true));
+      assert.deepEqual(Array.from(publications(f, 'custom'), e => e.traffic_phase), ['initial', 'final', 'final']);
+      assert.equal(publications(f, 'dataLayer').length, 0);
+      f.window.dataLayer.push(consent('denied'), consent('granted'));
+      assert.equal(publications(f, 'custom').length, 3);
+    }
+  });
+  await test('B8: private replay payload resists consumer mutations and reentrant grants', () => {
+    const f = fixture({modify: ({window}) => {
+      window.dataLayer = [];
+      window.dataLayer.push = function (...items) {
+        const result = Array.prototype.push.apply(this, items);
+        for (const event of items) if (event.traffic_phase === 'final') {
+          event.traffic_class = 'alien'; event.traffic_signals?.push('FAKE');
+          if (event.traffic_replay) this.push(consent('denied'), consent('granted'));
+        }
+        return result;
+      };
+    }});
+    f.advance(8000); f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).length, 3);
+    // Consumer mutates its received objects; retained originals are never reused.
+    assert.equal(publications(f).at(-1).traffic_signals.filter(s => s === 'FAKE').length, 1);
+  });
+  await test('B8: processing an early grant may finalize synchronously without replay', () => {
+    let finalize;
+    const f = fixture({modify: ({window}) => {
+      window.dataLayer = [];
+      window.dataLayer.push = function (...items) {
+        const result = Array.prototype.push.apply(this, items);
+        if (items.some(e => e[0] === 'consent')) finalize?.();
+        return result;
+      };
+    }});
+    finalize = () => f.emit('pagehide');
+    f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).length, 2);
+    f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).length, 2);
+  });
   await test('Audit: non-declared publications explicitly clear sticky GTM identity', () => {
     for (const kind of ['human', 'suspicious', 'automated']) {
       const f = fixture({modify: ({navigator, store}) => {
@@ -193,7 +273,7 @@ export async function runContracts(detectorSource) {
     // The deliberate DevTools scenario uses the original descriptor unchanged.
     assert.equal(device.userAgent, 'device UA');
   });
-  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.4.1', async () => {
+  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.5.0', async () => {
     const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
     for (const object of [c.container, ...c.tag, ...c.trigger, ...c.variable, ...c.folder]) assert.ok(object.name.startsWith('VV - '), object.name);
     assert.equal(c.tag.length, 2, 'Import creates detector and event tags only');
@@ -220,7 +300,7 @@ export async function runContracts(detectorSource) {
     const final = c.tag.find(t => t.name === 'VV - GA4 traffic_class');
     const mappings = key => final.parameter.find(p => p.key === key).list.map(row =>
       Object.fromEntries(row.map.map(p => [p.key, p.value])));
-    const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent', 'traffic_webmcp', 'traffic_agent_claim'];
+    const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent', 'traffic_webmcp', 'traffic_agent_claim', 'traffic_replay'];
     assert.deepEqual(mappings('eventSettingsTable'), fields.map(name => ({parameter: name, parameterValue: '{{VV - DLV ' + name + '}}'})));
     assert.ok(!final.parameter.some(p => p.key === 'userProperties'));
     for (const name of fields) {
@@ -235,6 +315,16 @@ export async function runContracts(detectorSource) {
       assert.equal(trigger.filter[0].parameter.find(p => p.key === 'arg1').value, phase);
       assert.equal(final.firingTriggerId.includes(trigger.triggerId), phase === 'final');
     }
+    const replayFixture = fixture(); replayFixture.advance(8000);
+    replayFixture.window.dataLayer.push(consent('granted'));
+    const replay = publications(replayFixture).at(-1);
+    const matches = c.trigger.filter(t => final.firingTriggerId.includes(t.triggerId)).filter(t =>
+      [...t.customEventFilter, ...t.filter].every(filter => {
+        const [left, right] = filter.parameter.map(p => p.value);
+        const value = left === '{{_event}}' ? replay.event : replay[left.slice(11, -2)];
+        return filter.type === 'EQUALS' ? value === right : new RegExp(right).test(value);
+      }));
+    assert.deepEqual(matches.map(t => t.name), ['VV - final'], 'Replay matches exactly one firing trigger');
     const timer = c.trigger.find(t => t.name === 'VV - timer fallback 1s');
     const hard = c.trigger.find(t => t.name === 'VV - initial hard');
     assert.equal(hard.type, 'CUSTOM_EVENT');
@@ -256,7 +346,7 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(final.firingTriggerId, [c.trigger.find(t => t.name === 'VV - final').triggerId, hard.triggerId, agent.triggerId]);
     const ids = [...c.variable.map(v => v.variableId), ...c.trigger.map(t => t.triggerId), ...c.tag.map(t => t.tagId), ...c.folder.map(f => f.folderId)];
     assert.equal(new Set(ids).size, ids.length, 'Unique object IDs');
-    assert.deepEqual(['4', '5', '6', '7', '14', '16', '17'].map(id => c.variable.find(v => v.variableId === id).name),
+    assert.deepEqual(['4', '5', '6', '7', '14', '16', '17', '18'].map(id => c.variable.find(v => v.variableId === id).name),
       fields.map(name => 'VV - DLV ' + name), 'Earlier IDs stay stable; traffic_webmcp is appended');
     assert.equal(final.tagFiringOption, 'ONCE_PER_EVENT', 'Allow both initial hard and final publications');
     const optional = c.folder.find(f => f.name === 'VV - OPTIONAL page_view readiness (OR, once per page)');
@@ -327,7 +417,7 @@ export async function runContracts(detectorSource) {
   await test('v1 snapshots are frozen, replaced per publication, and immune to public/data-layer poisoning', () => {
     const f = fixture();
     const initial = f.window.__visitorVerdict;
-    assert.ok(Object.isFrozen(initial)); assert.equal(initial.version, '1.4.1');
+    assert.ok(Object.isFrozen(initial)); assert.equal(initial.version, '1.5.0');
     assert.deepEqual(Object.keys(initial).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     const descriptor = Object.getOwnPropertyDescriptor(f.window, '__visitorVerdict');
     assert.equal(descriptor.configurable, false); assert.equal(descriptor.set, undefined);
@@ -344,7 +434,7 @@ export async function runContracts(detectorSource) {
     assert.equal(initial.phase, 'initial'); assert.equal(final.phase, 'final');
     assert.equal(final.class, 'human'); assert.equal(final.score, 3);
     assert.ok(!f.signals.includes('WD'));
-    assert.equal(f.window.dataLayer[1].traffic_version, '1.4.1');
+    assert.equal(f.window.dataLayer[1].traffic_version, '1.5.0');
     vm.runInContext(source, f.context); f.emit('pagehide'); f.advance(8000);
     assert.equal(f.window.dataLayer.length, 2);
   });
@@ -352,7 +442,7 @@ export async function runContracts(detectorSource) {
     for (const value of [{__tcDetector: true, __vvDetector: true, class: 'alien', score: Infinity, phase: 'final'}, {class: 'automated', score: 100}]) {
       const f = fixture({modify: ({window}) => {window.__visitorVerdict = value;}});
       assert.equal(f.window.__visitorVerdict.class, 'human');
-      assert.equal(f.window.dataLayer[0].traffic_version, '1.4.1');
+      assert.equal(f.window.dataLayer[0].traffic_version, '1.5.0');
       vm.runInContext(source, f.context); f.advance(8000); assert.equal(f.window.dataLayer.length, 2);
     }
     for (const descriptor of [{value: {class: 'alien', score: Infinity}}, {get() {return true;}}]) {
@@ -415,11 +505,11 @@ export async function runContracts(detectorSource) {
     const {summarize, paths} = await import('./adversarial/report.mjs');
     const events = paths.flatMap(path => ['initial', 'final'].map(phase => ({path, event: {
       event: 'traffic_class', traffic_class: 'human', traffic_phase: phase, traffic_score: 0,
-      traffic_version: '1.4.1', traffic_signals: []
+      traffic_version: '1.5.0', traffic_signals: []
     }})));
     const report = summarize({events});
     assert.equal(report.status, 'COMPLETE');
-    assert.ok(report.pages.every(p => p.initial.traffic_version === '1.4.1' && p.final.traffic_version === '1.4.1'));
+    assert.ok(report.pages.every(p => p.initial.traffic_version === '1.5.0' && p.final.traffic_version === '1.5.0'));
     delete events[0].event.traffic_version;
     assert.equal(summarize({events}).status, 'ERROR');
   });
@@ -433,7 +523,7 @@ export async function runContracts(detectorSource) {
     }});
     f.emit('pagehide'); vm.runInContext(source, f.context); f.advance(8000);
     assert.deepEqual(events.map(e => e.traffic_phase), ['initial', 'final']);
-    assert.ok(events.every(e => e.traffic_class === 'human' && Number.isFinite(e.traffic_score) && e.traffic_version === '1.4.1'));
+    assert.ok(events.every(e => e.traffic_class === 'human' && Number.isFinite(e.traffic_score) && e.traffic_version === '1.5.0'));
     assert.equal(f.window.__visitorVerdict.phase, 'final');
   });
   await test('Initial synchronous; final once after 8000 visible ms; idle alone stays human', () => {
@@ -1919,6 +2009,47 @@ export async function runContracts(detectorSource) {
   });
   const operators = [['claude-agent-glow-border', 'anthropic'], ['claude-phantom-cursor', 'anthropic'], ['codex-agent-overlay-root', 'openai']];
   const phases = f => Array.from(f.window.dataLayer, e => e.traffic_phase);
+  await test('B8: latest agent result replays as final, total limit four, carry consumed once', () => {
+    for (const order of ['agent-first', 'replay-first']) {
+      const dom = markerDOM(), f = fixture({modify: dom.modify});
+      f.advance(8000);
+      if (order === 'agent-first') dom.insert('codex-agent-overlay-root');
+      const latest = JSON.parse(JSON.stringify(publications(f).at(-1)));
+      const stored = f.store.get('visitor_verdict');
+      f.window.dataLayer.push(consent('granted'));
+      const replay = publications(f).at(-1);
+      assert.deepEqual(JSON.parse(JSON.stringify(replay)), {...latest, traffic_phase: 'final', traffic_replay: 'consent'});
+      assert.equal(f.store.get('visitor_verdict'), stored);
+      if (order === 'replay-first') {
+        dom.insert('codex-agent-overlay-root');
+        assert.equal(publications(f).at(-1).traffic_replay, undefined, 'Clear sticky replay metadata');
+      }
+      f.window.dataLayer.push(consent('denied'), consent('granted'));
+      f.emit('pagehide'); f.advance(9000);
+      assert.equal(publications(f).length, 4);
+      const next = fixture({store: f.store}); next.advance(8000);
+      const third = fixture({store: f.store});
+      assert.equal(next.window.__visitorVerdict.class, 'declared_agent');
+      assert.equal(third.window.__visitorVerdict.class, 'human');
+    }
+  });
+  await test('B8: consent command finishes processing before replay and aliases wrap once', () => {
+    let processed = false, replayCalls = 0;
+    const f = fixture({config: {dataLayerName: 'custom'}, modify: ({window}) => {
+      window.custom = window.dataLayer = [];
+      window.custom.push = function (...items) {
+        for (const item of items) {
+          if (item[0] === 'consent') processed = true;
+          if (item.traffic_replay) { assert.equal(processed, true); replayCalls++; }
+        }
+        return Array.prototype.push.apply(this, items);
+      };
+    }});
+    f.advance(8000);
+    assert.equal(f.window.custom.push(consent('granted')), 3, 'Preserve push return value');
+    assert.equal(replayCalls, 1);
+    assert.equal(publications(f, 'custom').length, 3);
+  });
   await test('DM: agent UI marker present at load is declared_agent with operator in both phases, no watcher', () => {
     for (const [id, operator] of operators) {
       const dom = markerDOM([[id]]);
@@ -1953,11 +2084,11 @@ export async function runContracts(detectorSource) {
       assert.deepEqual(phases(f), ['initial', 'agent']);
       const event = f.window.dataLayer[1];
       assert.deepEqual({...event, traffic_signals: undefined}, {event: 'traffic_class', traffic_class: 'declared_agent', traffic_phase: 'agent',
-        traffic_score: 100, traffic_version: '1.4.1', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_agent_claim: 'dom_marker', traffic_signals: undefined});
+        traffic_score: 100, traffic_version: '1.5.0', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_agent_claim: 'dom_marker', traffic_signals: undefined});
       assert.ok(event.traffic_signals.includes('DM'));
       const snapshot = f.window.__visitorVerdict;
       assert.notEqual(snapshot, initial); assert.ok(Object.isFrozen(snapshot));
-      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.1', webmcp: 'none', webmcpCount: 0, agent: operator, claim: 'dom_marker'});
+      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.5.0', webmcp: 'none', webmcpCount: 0, agent: operator, claim: 'dom_marker'});
       assert.equal(initial.class, 'human', 'Earlier snapshot keeps its values');
       assert.equal(dom.active, 0, 'Disconnected once found');
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator, claim: 'dom_marker'}, 'Persisted immediately');
@@ -1979,7 +2110,7 @@ export async function runContracts(detectorSource) {
     assert.equal(f.timers.size, 0);
     f.advance(30000); dom.insert('codex-agent-overlay-root');
     assert.deepEqual(phases(f), ['initial', 'final', 'agent']);
-    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.1', webmcp: 'none', webmcpCount: 0, agent: 'openai', claim: 'dom_marker'});
+    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.5.0', webmcp: 'none', webmcpCount: 0, agent: 'openai', claim: 'dom_marker'});
     assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'openai', claim: 'dom_marker'});
     assert.equal(dom.active, 0);
     assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);

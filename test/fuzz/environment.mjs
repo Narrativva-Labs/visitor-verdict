@@ -202,5 +202,5 @@ if (spec.poisonSnapshot) {
 export const snapshot = `nativeJSON.stringify({events:captured,writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
   beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
   readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
-  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.4.1',
+  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.5.0',
   previous:window.__visitorVerdictLast})`;

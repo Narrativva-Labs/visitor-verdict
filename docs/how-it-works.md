@@ -123,6 +123,7 @@ Load `src/visitor-verdict.js` after optionally setting:
 window.visitorVerdictConfig = {
   idleMs: 8000,
   finalOnHidden: true,
+  replayOnConsent: true,
   fastNavMs: 2000,
   fastNavCount: 3,
   suspiciousThreshold: 6,
@@ -154,7 +155,7 @@ Both identity keys are own properties even when undefined; consumers must test t
   traffic_class: 'human', // human | suspicious | automated | declared_agent
   traffic_phase: 'initial', // initial | agent | final
   traffic_score: 0,
-  traffic_version: '1.4.1',
+  traffic_version: '1.5.0',
   traffic_agent_claim: undefined, // declaration evidence when applicable; explicitly cleared otherwise
   traffic_webmcp: 'none', // none | capable | used; informational only
   traffic_webmcp_count: 0, // trusted lifecycle events, capped at 255
@@ -163,6 +164,10 @@ Both identity keys are own properties even when undefined; consumers must test t
 ```
 
 There is at most one initial, one agent and one final detector publication per document. Initial always comes first; agent (a `declared_agent` escalation from an agent UI marker) can come before or after final. `traffic_agent` is set only when the class is `declared_agent` and an agent UI marker in this document, or the carried result of the previous document, names the operator; a UA token alone never sets it, and `automated` never carries it. `traffic_version` is static release metadata, never a visitor identifier. With `debug: true`, events additionally contain `traffic_signals`, an array of short signal codes; keep debug disabled in production.
+
+Since 1.5.0, `replayOnConsent` defaults to true. The detector watches consent commands on both the configured data layer and the default `dataLayer` (one wrapper when aliased). It accepts arrays and the Arguments objects produced by gtag. Queued `default`/`update` commands initialize only the analytics grant bit. A live `update` changing `analytics_storage` from denied/unknown to granted after final publishes one copy of the latest publication, with `traffic_phase: 'final'` and `traffic_replay: 'consent'`. All other published fields, including debug signals, are copied from private state before consumers can mutate them; later agent results are eligible too. GTM processes the consent command before the replay push. Early grants, repeated updates, other consent fields and CMP-specific events produce no replay.
+
+The total limit is four publications (initial + agent + final + one replay), or the existing three with `replayOnConsent: false`. A later ordinary agent publication explicitly clears the GTM v2 sticky `traffic_replay` field. Replay never recalculates scores, changes the public snapshot, writes sessionStorage or renews CA/CD/CS provenance. Only a transient analytics grant boolean and replay guard are kept; no other consent fields are read or stored. Wrappers remain for the document lifetime, including after hidden final, without polling or a BFCache reset. Data-layer replacement or a later push override that does not delegate to the previous push cannot be observed. Consent replay is publication metadata, not a scoring signal; the signal registry inventory is unchanged.
 
 The detector exposes `window.__visitorVerdict` through a read-only, non-configurable accessor. Each publication produces a new frozen snapshot with `{class, score, phase, version, webmcp, webmcpCount}` and, only with class `declared_agent` when the operator is known from a marker, `agent` (`'openai'` or `'anthropic'`), plus optional evidence `claim` (`dom_marker`, `dom_host`, `ua_token`). `phase` is `'initial'`, `'agent'` or `'final'`. Re-read the global when you need the latest phase or WebMCP information; an earlier snapshot keeps its original values. Debug signals are absent from the public snapshot.
 

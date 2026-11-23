@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-11-23
+
+- Replay the latest final result once on a late analytics consent grant (`traffic_replay: 'consent'`); configurable with `replayOnConsent` (default true). Observe configured/default data layers and gtag Arguments without storing consent or renewing session carry. Maximum four publications per document.
+- Add GTM DLV ID 18 and GA4 event mapping for `traffic_replay`; keep the final trigger and Once per event. Rebuild ES5 dist, SRI and pinned README snippet.
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
-  "registryVersion": "1.4.1",
-  "detectorVersion": "1.4.1",
-  "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit.",
+  "registryVersion": "1.5.0",
+  "detectorVersion": "1.5.0",
+  "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit. Consent replay is publication metadata only: one late analytics_storage grant update can replay the latest result as final with traffic_replay=consent; no scoring signal or persisted consent state.",
   "signals": [
     {
       "id": "WD",

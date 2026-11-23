@@ -78,7 +78,7 @@ const container = {
       {...ids, tagId: '2', name: 'VV - GA4 traffic_class', type: 'gaawe',
         parameter: [
           parameter('sendEcommerceData', 'false', 'BOOLEAN'),
-          table('eventSettingsTable', [...fields, agentField, webmcpField, claimField].map(name => [
+          table('eventSettingsTable', [...fields, agentField, webmcpField, claimField, 'traffic_replay'].map(name => [
             ['parameter', name], ['parameterValue', dlv(name)]
           ])),
           parameter('eventName', 'traffic_class'),
@@ -108,6 +108,7 @@ const container = {
       dlvVariable('14', agentField),
       dlvVariable('16', webmcpField),
       dlvVariable('17', claimField),
+      dlvVariable('18', 'traffic_replay'),
       {...ids, variableId: '9', name: 'VV - GA4 measurement ID', type: 'c',
         parameter: [parameter('value', 'G-XXXXXXXXXX')]}
     ]

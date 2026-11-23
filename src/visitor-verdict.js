@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.4.1', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.5.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -76,7 +76,7 @@
   }
   function start() {
     var config = {
-      idleMs: 8000, finalOnHidden: true, fastNavMs: 2000, fastNavCount: 3,
+      idleMs: 8000, finalOnHidden: true, replayOnConsent: true, fastNavMs: 2000, fastNavCount: 3,
       suspiciousThreshold: 6, debug: false, webgl: false, worker: false, dataLayerName: 'dataLayer',
       agentTokens: [
         'ChatGPT-User', 'OAI-SearchBot', 'OAI-AdsBot', 'GPTBot',
@@ -422,6 +422,60 @@
         (families.pointer || signals.indexOf('SY') !== -1 ||
         (env >= 2 && (families.interaction || families.navigation)));
     }
+    // Consent is only a transient transition bit, never persisted or scored.
+    var analyticsGranted = false, consentReplayed = false, lastPublication = null;
+    function copyPublication(event) {
+      var copy = {}, name;
+      for (name in event) {
+        if (own.call(event, name)) {
+          copy[name] = name === 'traffic_signals' ? event[name].slice(0) : event[name];
+        }
+      }
+      return copy;
+    }
+    function pushPublication(event) {
+      try {
+        var layer = w[config.dataLayerName];
+        if (layer === undefined || layer === null) { layer = w[config.dataLayerName] = []; }
+        if (typeof layer.length === 'number' && isFinite(layer.length) && layer.length >= 0 &&
+            Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); }
+      } catch (ignore) {}
+    }
+    function consentCommand(command, historical, afterFinal) {
+      try {
+        var kind = tag.call(command);
+        if ((kind !== '[object Array]' && kind !== '[object Arguments]') || command[0] !== 'consent' ||
+            (command[1] !== 'default' && command[1] !== 'update') || !command[2]) { return; }
+        var value = command[2].analytics_storage;
+        if (value !== 'granted' && value !== 'denied') { return; }
+        var changed = !analyticsGranted && value === 'granted';
+        analyticsGranted = value === 'granted';
+        if (historical || !afterFinal || command[1] !== 'update' || !changed || !finalPublished ||
+            consentReplayed || !lastPublication) { return; }
+        // Guard before calling consumers: replay cannot reenter itself or renew carry.
+        consentReplayed = true;
+        var event = copyPublication(lastPublication);
+        event.traffic_phase = 'final'; event.traffic_replay = 'consent';
+        pushPublication(event);
+      } catch (ignore) {}
+    }
+    function watchConsent(name) {
+      try {
+        var layer = w[name];
+        if (layer === undefined || layer === null) { layer = w[name] = []; }
+        if (tag.call(layer) !== '[object Array]' || typeof layer.push !== 'function') { return; }
+        // Read queued commands before initial publication; do not retain their objects.
+        for (var j = 0; j < layer.length; j++) { consentCommand(layer[j], true); }
+        var push = layer.push;
+        layer.push = function () {
+          // GTM must process consent first so consent-blocked tags can receive replay.
+          var afterFinal = finalPublished;
+          var result = push.apply(this, arguments);
+          for (var k = 0; k < arguments.length; k++) { consentCommand(arguments[k], false, afterFinal); }
+          return result;
+        };
+      } catch (ignore) {}
+    }
     function publish(phase) {
       // One initial, at most one agent escalation and one final, in any order after initial.
       if (phase === 'initial' ? initialPublished : !initialPublished ||
@@ -448,17 +502,15 @@
       }
       if (agentClaim && result === 'declared_agent') { state.claim = event.traffic_agent_claim = agentClaim; }
       snapshot = Object.freeze(state);
+      // Clear GTM v2 sticky replay metadata on a later agent publication.
+      if (consentReplayed) { event.traffic_replay = undefined; }
       if (config.debug) { event.traffic_signals = signals.slice(0); }
       // Only current evidence can seed one grace document. CA/CD/CS alone store no
       // provenance, so a carried class cannot seed another grace document.
       // A marker seen at load is stored at once, as later phases are.
       if (phase !== 'initial' || marked) { save(provenance(result)); }
-      try {
-        var layer = w[config.dataLayerName];
-        if (layer === undefined || layer === null) { layer = w[config.dataLayerName] = []; }
-        if (typeof layer.length === 'number' && isFinite(layer.length) && layer.length >= 0 &&
-            Math.floor(layer.length) === layer.length && typeof layer.push === 'function') { layer.push(event); }
-      } catch (ignore) {}
+      if (config.replayOnConsent) { lastPublication = copyPublication(event); }
+      pushPublication(event);
       return result;
     }
     function provenance(result) {
@@ -807,6 +859,10 @@
         if (!addListener(inputTarget, events[i], interact, listenerOptions)) { observesInput = false; }
       }
       canHide = addListener(w, 'pagehide', hide, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
+      if (config.replayOnConsent) {
+        watchConsent(config.dataLayerName);
+        if (config.dataLayerName !== 'dataLayer' && w.dataLayer !== w[config.dataLayerName]) { watchConsent('dataLayer'); }
+      }
       watchWebmcp(); visibility();
       var operator = marker();
       if (operator) { mark(operator); }
