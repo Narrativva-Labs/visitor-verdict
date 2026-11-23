@@ -2161,8 +2161,20 @@ export async function runContracts(detectorSource) {
   });
   return results;
 }
+
+// README snippet must carry the hash of the built file and the current version tag.
+export async function readmeSriContract() {
+  const { readFile } = await import('node:fs/promises');
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const sri = (await readFile(new URL('../dist/visitor-verdict.min.js.sri', import.meta.url), 'utf8')).trim();
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  if (!readme.includes(sri)) throw new Error('README integrity does not match dist/visitor-verdict.min.js.sri');
+  if (!readme.includes(`visitor-verdict@v${pkg.version}/dist/visitor-verdict.min.js`)) throw new Error(`README CDN snippet is not pinned to v${pkg.version}`);
+}
+
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const results = await runContracts();
+  try { await readmeSriContract(); results.push({status:'PASS', name:'README SRI and CDN pin match the build'}); } catch (e) { results.push({status:'FAIL', name:'README SRI and CDN pin match the build', error:e.message}); }
   for (const row of results) console.log(`${row.status}: ${row.name}${row.error ? ' — ' + row.error : ''}`);
   if (results.some(r => r.status !== 'PASS')) process.exitCode = 1;
 }

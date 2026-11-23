@@ -44,7 +44,7 @@ An alternative to the GTM detector tag. Set `window.visitorVerdictConfig` before
 
 ```html
 <script src="https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@v1.4.0/dist/visitor-verdict.min.js"
-        integrity="sha384-M0pJ24udEZasyuMT6H8sSsULQCfT4fxXzPA87kVVPS7Wo2JTOzTraQg8k5GIo/8I"
+        integrity="sha384-YJmun7+N1IJOyE+XD/8mDxR276DUA9Up/J69O+9y8cHVSpFeqmixDUwOgMudwLje"
         crossorigin="anonymous"></script>
 ```
 
