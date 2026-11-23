@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
-  "registryVersion": "1.4.0",
-  "detectorVersion": "1.4.0",
+  "registryVersion": "1.4.1",
+  "detectorVersion": "1.4.1",
   "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit.",
   "signals": [
     {
@@ -670,11 +670,11 @@
       "kind": "code",
       "code": "WK",
       "family": "environment",
-      "check": "worker: true: supported nonempty UA, boolean webdriver, nonempty languages joined with |, or positive hardwareConcurrency differs between main and dedicated worker; reply before final. Missing/blocked fields unknown.",
+      "check": "worker: true: supported nonempty UA, boolean webdriver or positive hardwareConcurrency differs between main and dedicated worker; reply before final. Missing/blocked fields unknown. Languages are not compared or scored. WK contributes weight but never opens the suspicious gate by itself.",
       "weight": 2,
       "hardness": "soft",
       "status": "experimental",
-      "lastChecked": "2026-11-22",
+      "lastChecked": "2026-11-23",
       "sources": [
         "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
         "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
@@ -693,6 +693,13 @@
           "result": "Main en-US versus worker en-US,en observed; not unique to this product.",
           "kind": "field-observation",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/research/agents-and-tells.md#field-observations-v10-2026-11-19"
+        },
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.4.1",
+          "result": "Synthetic regression contracts verify guards and queued-event sensitivity; physical browser keystrokes during a busy loop were not tested.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [
@@ -705,11 +712,11 @@
       "kind": "code",
       "code": "UB",
       "family": "environment",
-      "check": "worker: true: main has a nonempty UA-CH brand string, worker exposes userAgentData but null/undefined value or empty brands array. Absent API, malformed shapes, denied getter or failed worker unknown. Final directly suspicious without normal gate; never hard provenance.",
+      "check": "worker: true: main has a nonempty UA-CH brand string, worker exposes userAgentData but null/undefined value or empty brands array. Absent API, malformed shapes, denied getter or failed worker unknown. Final directly suspicious without normal gate; never hard provenance. CS carry is stored only when evidence excluding UB independently meets the ordinary suspicious gate.",
       "weight": 6,
       "hardness": "direct-suspicious",
       "status": "experimental",
-      "lastChecked": "2026-11-22",
+      "lastChecked": "2026-11-23",
       "sources": [
         "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/src/visitor-verdict.js",
         "https://github.com/Narrativva-Labs/visitor-verdict/blob/0d532d9c5629aa878a36c77d4b8383e20e0d5bb8/test/contracts.mjs"
@@ -1681,11 +1688,11 @@
       "kind": "code",
       "code": "BT",
       "family": "behaviour",
-      "check": "At least 3 trusted non-composing insertText events on the same control within 5 ms with positive elapsed time. Uses event creation timestamps, falling back to performance.now() or Date.now(). Final only; interaction cap 2.",
+      "check": "At least 3 trusted non-composing insertText events on the same control paired with distinct trusted keydown events spanning positive time up to 5 ms. Uses keydown.timeStamp only; missing/invalid key timing, repeat, modifier shortcuts and unpaired input are ignored. Final only; interaction cap 2.",
       "weight": 2,
       "hardness": "soft",
       "status": "experimental",
-      "lastChecked": "2026-11-22",
+      "lastChecked": "2026-11-23",
       "sources": [
         "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
       ],
@@ -1696,6 +1703,13 @@
           "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
           "kind": "field-observation",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
+        },
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.4.1",
+          "result": "Synthetic regression contracts verify guards and queued-event sensitivity; physical browser keystrokes during a busy loop were not tested.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [
@@ -1708,11 +1722,11 @@
       "kind": "code",
       "code": "UC",
       "family": "behaviour",
-      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, with no trusted page input in the preceding 2000 ms. Never hidden or text fields. Final only; interaction cap 2.",
+      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, after previous trusted page input more than 2000 ms ago, with nonempty getClientRects(). Initialization without prior trusted input, hidden or text fields never qualify. Final only; interaction cap 2.",
       "weight": 2,
       "hardness": "soft",
       "status": "experimental",
-      "lastChecked": "2026-11-22",
+      "lastChecked": "2026-11-23",
       "sources": [
         "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
       ],
@@ -1723,6 +1737,13 @@
           "result": "Host: 4/4 controlled runs vs 0/2 controls. Burst: 3/3 typing runs. Untrusted select change: 2/2 select runs. Extension assets/agent-visual-indicator.js read locally 2026-11-22; no broader release coverage established.",
           "kind": "field-observation",
           "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/claude-host-experiment.md"
+        },
+        {
+          "product": "Visitor Verdict",
+          "versions": "1.4.1",
+          "result": "Synthetic regression contracts verify guards and queued-event sensitivity; physical browser keystrokes during a busy loop were not tested.",
+          "kind": "code-review",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/main/test/contracts.mjs"
         }
       ],
       "falsePositives": [

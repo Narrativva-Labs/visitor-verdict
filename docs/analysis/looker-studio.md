@@ -6,7 +6,7 @@ Use [bigquery.sql](bigquery.sql) as the transformation. Set the export dataset, 
 
 In Looker Studio, **Create → Data source → BigQuery**, choose the reporting table, then **Connect / Add to report**. Repeat per result. Set `session_day` (or event `day` for A/F2) as Date and the date-range dimension. See [Google's BigQuery connector](https://cloud.google.com/looker/docs/studio/connect-to-google-bigquery).
 
-Collection requires `traffic_class={{VV - current class}}` on other GA4 event tags (`gaawe`), evaluated at fire time. The variable reads the validated current `window.__visitorVerdict` snapshot then the startup previous-class string `window.__visitorVerdictLast`; it never reads storage. The dedicated **VV - GA4 traffic_class** event instead maps class/phase/score/version/agent (five DLVs) and its class user property from the corresponding `VV - DLV …` variables.
+Collection requires `traffic_class={{VV - current class}}` on other GA4 event tags (`gaawe`), evaluated at fire time. The variable prefers verified B7 server agents over browser human/suspicious (excluding crawler/intermediary), preserving browser automated/declared precedence, then falls back to the startup previous-class string `window.__visitorVerdictLast`; it never reads storage. The dedicated **VV - GA4 traffic_class** event instead maps class/phase/score/version/agent/webmcp/claim (seven event DLVs) from the corresponding `VV - DLV …` variables.
 
 Container 1.1.0 sends `automated`/`declared_agent` on initial publication, the `declared_agent` escalation on the agent phase and all classes on final. Several hits can carry the same class. Use sessions with any matching hit; classification-event counts measure delivery volume, not visits or detection recall.
 
@@ -35,7 +35,7 @@ Connect each result at its own grain. Do not blend B/C/D on date/cohort: multipl
 
 Keep missing-ID/cookieless pings in F2 as event-level totals, never fabricated sessions. Never join via IP/UA, coalesce missing IDs to one visitor, or retroactively link pre-consent pings. JS-less traffic is generally absent even here. Raw observed BigQuery totals can differ from GA4 modeled UI reporting.
 
-Display labels: `human` = **no automation detected**, `suspicious` = uncertain evidence, `automated` = automation evidence rather than intent, `declared_agent` = unverified claim. Score is not a probability. User property `traffic_class` is last observed class, applies from set time and is never session-exclusion evidence. Never mark `traffic_class` as a key event.
+Display labels: `human` = **no automation detected**, `suspicious` = uncertain evidence, `automated` = automation evidence rather than intent, `declared_agent` = unverified claim. Score is not a probability. Version 1.4.1 no longer sets User Property `traffic_class`; remove legacy tag mappings and use event evidence. Historical user-property values must not determine session classification. Never mark `traffic_class` as a key event.
 
 ## Campaign dashboard: AI agents and bots in campaigns
 

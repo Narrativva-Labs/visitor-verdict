@@ -77,7 +77,7 @@ function evaluate(spec, script = detector) {
     }
     if (!classes.includes(event.traffic_class) || typeof event.traffic_score !== 'number' || !Number.isFinite(event.traffic_score)) fail('class/score', `invalid event: ${JSON.stringify(event).slice(0,250)}`);
     if (spec.expectedClass && event.traffic_class !== spec.expectedClass) fail('class/score', `expected ${spec.expectedClass}, got ${event.traffic_class}`);
-    if (event.traffic_version !== '1.4.0') fail('class/score', 'missing/invalid traffic_version');
+    if (event.traffic_version !== '1.4.1') fail('class/score', 'missing/invalid traffic_version');
     if (!['initial','agent','final'].includes(event.traffic_phase)) fail('phase-uniqueness', `invalid phase ${event.traffic_phase}`);
     if (Object.hasOwn(event,'traffic_agent_claim') && (!claims.includes(event.traffic_agent_claim) || (event.traffic_agent_claim === 'dom_host' && event.traffic_agent !== 'anthropic') || event.traffic_class !== 'declared_agent')) fail('payload-privacy','invalid host claim');
     if (Object.hasOwn(event,'traffic_agent') && !agents.includes(event.traffic_agent)) fail('payload-privacy', `invalid traffic_agent ${event.traffic_agent}`);
@@ -88,7 +88,7 @@ function evaluate(spec, script = detector) {
   if (state && Object.hasOwn(state,'claim') && (!claims.includes(state.claim) || (state.claim === 'dom_host' && state.agent !== 'anthropic') || state.class !== 'declared_agent')) fail('payload-privacy','invalid snapshot claim');
   if (state && Object.hasOwn(state,'signals')) fail('payload-privacy','__visitorVerdict exposes debug signals');
   if (!result.beforeFrozen || !result.finalFrozen || !result.readOnly || !result.initialIntact) fail('snapshot-immutability', 'snapshots or public descriptor are writable/changed');
-  if (state && (state.version !== '1.4.0' || !['class,phase,score,version,webmcp,webmcpCount','claim,class,phase,score,version,webmcp,webmcpCount','agent,class,phase,score,version,webmcp,webmcpCount','agent,claim,class,phase,score,version,webmcp,webmcpCount'].includes(Object.keys(state).sort().join(',')) ||
+  if (state && (state.version !== '1.4.1' || !['class,phase,score,version,webmcp,webmcpCount','claim,class,phase,score,version,webmcp,webmcpCount','agent,class,phase,score,version,webmcp,webmcpCount','agent,claim,class,phase,score,version,webmcp,webmcpCount'].includes(Object.keys(state).sort().join(',')) ||
       (Object.hasOwn(state,'agent') && (!agents.includes(state.agent) || state.class !== 'declared_agent')))) fail('payload-privacy', 'invalid public snapshot fields/version');
   if (result.previous !== undefined && !classes.includes(result.previous)) fail('class/score', 'invalid previous class');
   if (!state || !classes.includes(state.class) || typeof state.score !== 'number' || !Number.isFinite(state.score)) fail('class/score','missing/invalid __visitorVerdict class or score');
@@ -277,7 +277,7 @@ if (args.includes('--self-test')) {
     ['payload-privacy','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0,raw:"oops"});'],
     ['class/score','window.dataLayer.push({event:"traffic_class",traffic_class:"alien",traffic_phase:"initial",traffic_score:Infinity});'],
     ['phase-uniqueness','window.dataLayer.push({event:"traffic_class",traffic_class:"human",traffic_phase:"initial",traffic_score:0});'],
-    ['snapshot-immutability','window.__visitorVerdict = {class:"human",score:0,phase:"initial",version:"1.4.0"};'],
+    ['snapshot-immutability','window.__visitorVerdict = {class:"human",score:0,phase:"initial",version:"1.4.1"};'],
     ['storage-bounds','window.sessionStorage.setItem("forbidden","{}");'],
     ['named-property-pollution','window.dataLayer.push({event:"traffic_class",traffic_class:window.__playwright__binding__ ? "automated" : "human",traffic_phase:"initial",traffic_score:100});']
   ];

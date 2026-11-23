@@ -48,6 +48,75 @@ export async function runContracts(detectorSource) {
     try { await fn(); results.push({name, status: 'PASS'}); }
     catch (error) { results.push({name, status: 'FAIL', error: String(error)}); }
   }
+  await test('Audit: non-declared publications explicitly clear sticky GTM identity', () => {
+    for (const kind of ['human', 'suspicious', 'automated']) {
+      const f = fixture({modify: ({navigator, store}) => {
+        if (kind === 'automated') navigator.webdriver = true;
+        if (kind === 'suspicious') store.set('visitor_verdict', JSON.stringify({lastClass: {value: kind, direct: true}}));
+      }});
+      const model = {traffic_agent: 'openai', traffic_agent_claim: 'server_signature'};
+      f.advance(8000);
+      for (const event of f.window.dataLayer) {
+        assert.equal(event.traffic_class, kind);
+        for (const key of ['traffic_agent', 'traffic_agent_claim']) {
+          assert.ok(Object.hasOwn(event, key)); assert.equal(event[key], undefined);
+        }
+        Object.assign(model, event);
+        assert.equal(model.traffic_agent, undefined); assert.equal(model.traffic_agent_claim, undefined);
+      }
+    }
+  });
+  await test('Audit: UC requires earlier trusted page input and nonempty client rects', () => {
+    for (const mode of ['startup', 'hidden', 'missing', 'throws', 'visible']) {
+      const f = fixture(), target = {tagName: 'SELECT', getClientRects() {
+        if (mode === 'throws') throw Error('detached');
+        return mode === 'hidden' ? [] : [{}];
+      }};
+      if (mode === 'missing') delete target.getClientRects;
+      if (mode !== 'startup') { f.emit('click', {isTrusted: true}); f.advance(2001); }
+      f.emit('change', {target, isTrusted: false}); f.advance(8000);
+      assert.equal(f.signals.includes('UC'), mode === 'visible', mode);
+    }
+  });
+  await test('Audit: BT uses paired keydown time when input creation is compressed after a stall', () => {
+    for (const mode of ['queued', 'burst', 'unpaired']) {
+      const f = fixture(), target = {tagName: 'INPUT'};
+      for (let i = 0; i < 3; i++) {
+        if (mode !== 'unpaired') f.emit('keydown', {target, isTrusted: true, timeStamp: i * (mode === 'queued' ? 100 : 2)});
+        f.emit('input', {target, isTrusted: true, inputType: 'insertText', timeStamp: 500 + i * 2});
+      }
+      f.advance(8000); assert.equal(f.signals.includes('BT'), mode === 'burst', mode);
+    }
+  });
+  await test('Audit: server verified identity wins over human/suspicious browser class', async () => {
+    const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
+    const script = '(' + c.variable.find(v => v.name === 'VV - current class').parameter[0].value + ')()';
+    for (const browser of ['human', 'suspicious']) {
+      for (const server of [
+        {class: 'declared_agent', operator: 'openai', claim: 'server_signature'},
+        {v: 1, type: 'agent_verified', operator: 'openai', verification: 'signature_valid', purpose: 'user_directed'}
+      ]) assert.equal(vm.runInNewContext(script, {window: {__visitorVerdict: {class: browser}, __visitorVerdictServer: server}}), 'declared_agent');
+    }
+  });
+  await test('Audit: server precedence excludes unverified, crawler, intermediary and malformed identity', async () => {
+    const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
+    const script = '(' + c.variable.find(v => v.name === 'VV - current class').parameter[0].value + ')()';
+    const verified = {v: 1, type: 'agent_verified', operator: 'manus', verification: 'ip_match', purpose: 'user_directed'};
+    const evaluate = window => vm.runInNewContext(script, {window});
+    for (const change of [{type: 'crawler_verified', purpose: 'crawler'}, {purpose: 'intermediary'},
+      {verification: 'invalid'}, {operator: ''}, {operator: {}}, {v: 2}, {type: 'agent_unverified'}]) {
+      assert.equal(evaluate({__visitorVerdict: {class: 'human'}, __visitorVerdictServer: {...verified, ...change}}), 'human');
+    }
+    for (const change of [{claim: 'server_intermediary'}, {claim: 'dom_marker'}, {operator: null}]) {
+      assert.equal(evaluate({__visitorVerdict: {class: 'suspicious'}, __visitorVerdictServer:
+        {class: 'declared_agent', operator: 'manus', claim: 'server_ip', ...change}}), 'suspicious');
+    }
+    assert.equal(evaluate({__visitorVerdictServer: verified}), 'declared_agent');
+    assert.equal(evaluate({__visitorVerdict: {class: 'automated'}, __visitorVerdictServer: verified}), 'automated');
+    const window = {__visitorVerdict: {class: 'human'}};
+    Object.defineProperty(window, '__visitorVerdictServer', {get() {throw Error('blocked');}});
+    assert.equal(evaluate(window), 'human');
+  });
   await test('Mobile human context preserves device geometry/touch without any UA override', () => {
     const device = {userAgent: 'device UA', defaultBrowserType: 'chromium', viewport: {width: 393, height: 727},
       screen: {width: 393, height: 851}, deviceScaleFactor: 2.75, isMobile: true, hasTouch: true};
@@ -62,7 +131,7 @@ export async function runContracts(detectorSource) {
     // The deliberate DevTools scenario uses the original descriptor unchanged.
     assert.equal(device.userAgent, 'device UA');
   });
-  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.4.0', async () => {
+  await test('GTM publication mappings, initial hard wiring, and optional readiness set match container 1.4.1', async () => {
     const {containerVersion: c} = JSON.parse(await readFile(new URL('../gtm/container-import.json', import.meta.url), 'utf8'));
     for (const object of [c.container, ...c.tag, ...c.trigger, ...c.variable, ...c.folder]) assert.ok(object.name.startsWith('VV - '), object.name);
     assert.equal(c.tag.length, 2, 'Import creates detector and event tags only');
@@ -91,7 +160,7 @@ export async function runContracts(detectorSource) {
       Object.fromEntries(row.map.map(p => [p.key, p.value])));
     const fields = ['traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_agent', 'traffic_webmcp', 'traffic_agent_claim'];
     assert.deepEqual(mappings('eventSettingsTable'), fields.map(name => ({parameter: name, parameterValue: '{{VV - DLV ' + name + '}}'})));
-    assert.deepEqual(mappings('userProperties'), [{name: 'traffic_class', value: '{{VV - DLV traffic_class}}'}]);
+    assert.ok(!final.parameter.some(p => p.key === 'userProperties'));
     for (const name of fields) {
       const v = c.variable.find(v => v.name === 'VV - DLV ' + name);
       assert.equal(v.type, 'v'); assert.equal(v.parameter.find(p => p.key === 'name').value, name);
@@ -196,7 +265,7 @@ export async function runContracts(detectorSource) {
   await test('v1 snapshots are frozen, replaced per publication, and immune to public/data-layer poisoning', () => {
     const f = fixture();
     const initial = f.window.__visitorVerdict;
-    assert.ok(Object.isFrozen(initial)); assert.equal(initial.version, '1.4.0');
+    assert.ok(Object.isFrozen(initial)); assert.equal(initial.version, '1.4.1');
     assert.deepEqual(Object.keys(initial).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     const descriptor = Object.getOwnPropertyDescriptor(f.window, '__visitorVerdict');
     assert.equal(descriptor.configurable, false); assert.equal(descriptor.set, undefined);
@@ -213,7 +282,7 @@ export async function runContracts(detectorSource) {
     assert.equal(initial.phase, 'initial'); assert.equal(final.phase, 'final');
     assert.equal(final.class, 'human'); assert.equal(final.score, 3);
     assert.ok(!f.signals.includes('WD'));
-    assert.equal(f.window.dataLayer[1].traffic_version, '1.4.0');
+    assert.equal(f.window.dataLayer[1].traffic_version, '1.4.1');
     vm.runInContext(source, f.context); f.emit('pagehide'); f.advance(8000);
     assert.equal(f.window.dataLayer.length, 2);
   });
@@ -221,7 +290,7 @@ export async function runContracts(detectorSource) {
     for (const value of [{__tcDetector: true, __vvDetector: true, class: 'alien', score: Infinity, phase: 'final'}, {class: 'automated', score: 100}]) {
       const f = fixture({modify: ({window}) => {window.__visitorVerdict = value;}});
       assert.equal(f.window.__visitorVerdict.class, 'human');
-      assert.equal(f.window.dataLayer[0].traffic_version, '1.4.0');
+      assert.equal(f.window.dataLayer[0].traffic_version, '1.4.1');
       vm.runInContext(source, f.context); f.advance(8000); assert.equal(f.window.dataLayer.length, 2);
     }
     for (const descriptor of [{value: {class: 'alien', score: Infinity}}, {get() {return true;}}]) {
@@ -284,11 +353,11 @@ export async function runContracts(detectorSource) {
     const {summarize, paths} = await import('./adversarial/report.mjs');
     const events = paths.flatMap(path => ['initial', 'final'].map(phase => ({path, event: {
       event: 'traffic_class', traffic_class: 'human', traffic_phase: phase, traffic_score: 0,
-      traffic_version: '1.4.0', traffic_signals: []
+      traffic_version: '1.4.1', traffic_signals: []
     }})));
     const report = summarize({events});
     assert.equal(report.status, 'COMPLETE');
-    assert.ok(report.pages.every(p => p.initial.traffic_version === '1.4.0' && p.final.traffic_version === '1.4.0'));
+    assert.ok(report.pages.every(p => p.initial.traffic_version === '1.4.1' && p.final.traffic_version === '1.4.1'));
     delete events[0].event.traffic_version;
     assert.equal(summarize({events}).status, 'ERROR');
   });
@@ -302,7 +371,7 @@ export async function runContracts(detectorSource) {
     }});
     f.emit('pagehide'); vm.runInContext(source, f.context); f.advance(8000);
     assert.deepEqual(events.map(e => e.traffic_phase), ['initial', 'final']);
-    assert.ok(events.every(e => e.traffic_class === 'human' && Number.isFinite(e.traffic_score) && e.traffic_version === '1.4.0'));
+    assert.ok(events.every(e => e.traffic_class === 'human' && Number.isFinite(e.traffic_score) && e.traffic_version === '1.4.1'));
     assert.equal(f.window.__visitorVerdict.phase, 'final');
   });
   await test('Initial synchronous; final once after 8000 visible ms; idle alone stays human', () => {
@@ -746,15 +815,15 @@ export async function runContracts(detectorSource) {
       assert.deepEqual([...f.signals], ['UB']);
       assert.equal(f.window.__visitorVerdict.class, 'suspicious');
       assert.equal(f.window.__visitorVerdict.score, 6);
-      assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'suspicious', direct: true});
+      assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'suspicious');
       const next = fixture({store: f.store, now: 11000});
-      assert.equal(next.window.__visitorVerdict.class, 'suspicious');
-      assert.ok(next.signals.includes('CS')); next.advance(8000);
+      assert.equal(next.window.__visitorVerdict.class, 'human');
+      assert.ok(!next.signals.includes('CS')); next.advance(8000);
       assert.equal(fixture({store: f.store, now: 21000}).window.__visitorVerdict.class, 'human');
       assert.equal(record.terminated, 1); assert.equal(record.revoked, 1);
     }
   });
-  await test('CS with fresh UB renews suspicious provenance without hard or declaration carry', () => {
+  await test('CS with fresh UB alone never renews suspicious provenance', () => {
     let worker;
     const f = fixture({config: {debug: true, worker: true}, modify: objects => {
       objects.store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'suspicious', direct: true}}));
@@ -764,10 +833,31 @@ export async function runContracts(detectorSource) {
     worker.reply({...workerNav, userAgentData: {brands: []}});
     f.emit('keydown', {isTrusted: true}); f.advance(8000);
     assert.equal(f.window.__visitorVerdict.class, 'suspicious');
-    assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'suspicious', direct: true});
+    assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'suspicious');
     const next = fixture({store: f.store, now: 21000}); next.emit('pagehide');
-    assert.equal(next.window.__visitorVerdict.class, 'suspicious');
+    assert.equal(next.window.__visitorVerdict.class, 'human');
     assert.equal(fixture({store: f.store, now: 31000}).window.__visitorVerdict.class, 'human');
+  });
+  await test('UB carry requires suspicious evidence even after removing its score and family contribution', () => {
+    for (const mode of ['ub-weight', 'wk-weight', 'independent']) {
+      let worker;
+      const f = fixture({modify: objects => {
+        worker = fakeWorker(objects); objects.navigator.userAgentData = {brands: chromeBrands};
+        objects.document.createElement = () => ({getContext: () => ({getExtension: () => null})});
+        if (mode === 'wk-weight') objects.window.screen = {width: 800, height: 600};
+        if (mode === 'independent') {
+          objects.window.screen = {width: 800, height: 600};
+          objects.store.set('visitor_verdict', JSON.stringify({timestamps: [9000, 9500]}));
+        }
+      }});
+      worker.reply({...workerNav, userAgent: mode === 'wk-weight' ? 'Chrome/141.0 Desktop' : workerNav.userAgent, userAgentData: {brands: []}});
+      f.emit('mousemove', {isTrusted: false}); f.advance(8000);
+      assert.equal(f.window.__visitorVerdict.class, 'suspicious');
+      const saved = JSON.parse(f.store.get('visitor_verdict')).lastClass;
+      assert.equal(saved.direct === true, mode === 'independent');
+      const next = fixture({store: f.store, now: 21000});
+      assert.equal(next.signals.includes('CS'), mode === 'independent');
+    }
   });
   await test('Opting out of hidden final preserves pending worker/permissions and trusted TR decay on return', async () => {
     let worker, permissions;
@@ -859,7 +949,7 @@ export async function runContracts(detectorSource) {
       f.emit('keydown', {isTrusted: true}); f.advance(8000);
       assert.equal(f.window.__visitorVerdict.class, kind === 'AG' ? 'declared_agent' : kind === 'production' ? 'suspicious' : 'automated');
       assert.equal(f.window.__visitorVerdict.score, kind === 'production' ? 6 : 100);
-      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', ...(kind === 'AG' ? ['traffic_agent_claim'] : []), 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
+      assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_agent', 'traffic_agent_claim', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
       assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), [...(kind === 'AG' ? ['claim'] : []), 'class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
     }
   });
@@ -889,7 +979,7 @@ export async function runContracts(detectorSource) {
       let record;
       const f = fixture({modify: objects => {record = fakeWorker(objects); objects.navigator.webdriver = false;}});
       record.reply({...workerNav, ...change}); f.advance(8000);
-      assert.equal(f.signals.includes('WK'), Object.keys(change).length > 0);
+      assert.equal(f.signals.includes('WK'), Object.keys(change).length > 0 && !('languages' in change));
     }
   });
   await test('WK: HeadlessChrome in worker is final hard HL and overrides initial declaration', () => {
@@ -927,7 +1017,7 @@ export async function runContracts(detectorSource) {
     f.emit('pagehide'); late({data: {h: true, m: true, b: true}});
     assert.equal(f.window.dataLayer.length, 2);
     assert.equal(f.window.__visitorVerdict.class, 'human');
-    assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
+    assert.deepEqual(Object.keys(f.window.dataLayer[1]).sort(), ['event', 'traffic_agent', 'traffic_agent_claim', 'traffic_class', 'traffic_phase', 'traffic_score', 'traffic_version', 'traffic_webmcp', 'traffic_webmcp_count']);
     assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
   });
   await test('TR: TP writes a bounded counter immediately, once per document, no exported counter', () => {
@@ -1180,12 +1270,12 @@ export async function runContracts(detectorSource) {
     let worker;
     const stealth = fixture({modify: objects => {
       worker = fakeWorker(objects); objects.window.screen = {width: 800, height: 600};
-      // No WG: GS + NI + FN + WK still has positive worker evidence.
+      // No WG: WK contributes points but does not open the gate with only GS.
       objects.document.createElement = () => ({getContext: () => ({getExtension: () => null})});
       objects.store.set('visitor_verdict', JSON.stringify({timestamps: [9000, 9500]}));
     }});
     worker.reply({...workerNav, userAgent: 'Chrome/141.0 Desktop'}); stealth.advance(8000);
-    assert.equal(stealth.window.__visitorVerdict.class, 'suspicious');
+    assert.equal(stealth.window.__visitorVerdict.class, 'human');
     assert.deepEqual([...stealth.signals].sort(), ['FN', 'GS', 'NI', 'WK']);
     const sy = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({timestamps: [9000, 9500]}))});
     sy.emit('mousemove', {isTrusted: false}); sy.advance(8000);
@@ -1644,16 +1734,16 @@ export async function runContracts(detectorSource) {
       f.emit('change',{target:{tagName:'SELECT'},isTrusted:false}); f.advance(8000); assert.ok(!f.signals.includes('UC'),type);
     }
     for (const type of ['checkbox','radio']) {
-      const f=fixture(); f.emit('change',{target:{tagName:'INPUT',type},isTrusted:false}); f.advance(8000); assert.ok(f.signals.includes('UC'));
+      const f=fixture(); f.emit('click',{isTrusted:true}); f.advance(2001); f.emit('change',{target:{tagName:'INPUT',type,getClientRects:()=>[{}]},isTrusted:false}); f.advance(8000); assert.ok(f.signals.includes('UC'));
     }
   });
-  await test('BT: queued events, coarse clocks, composition, performance clock and interaction cap', () => {
+  await test('BT: input-only events, coarse clocks, composition and performance fallback cannot supply key timing', () => {
     for (const mode of ['queued','coarse','composition','performance']) {
       let clock=0;
       const f=fixture({modify:({window})=>{window.performance={now:()=>clock};}}), target={tagName:'INPUT'};
       for (let i=0;i<3;i++) {clock=i*2; f.emit('input',{target,isTrusted:true,inputType:'insertText',isComposing:mode==='composition',
         ...(mode==='performance'?{}:{timeStamp:mode==='queued'?i*100:0})});}
-      f.advance(8000); assert.equal(f.signals.includes('BT'),mode==='performance',mode);
+      f.advance(8000); assert.equal(f.signals.includes('BT'),false,mode);
       assert.ok(f.window.__visitorVerdict.score <= 3, 'NI/BT interaction family cap remains 2');
     }
   });
@@ -1737,6 +1827,7 @@ export async function runContracts(detectorSource) {
     for (const mode of ['burst', 'normal', 'paste', 'autofill', 'untrusted', 'different', 'composition']) {
       const f = fixture();
       for (let i = 0; i < 3; i++) {
+        f.emit('keydown', {target, isTrusted: true, timeStamp: i * (mode === 'normal' ? 100 : 2)});
         f.emit('input', {target: mode === 'different' ? {tagName: 'INPUT'} : target,
           isTrusted: mode !== 'untrusted', isComposing: mode === 'composition',
           inputType: mode === 'paste' ? 'insertFromPaste' : mode === 'autofill' ? 'insertReplacementText' : 'insertText'});
@@ -1754,10 +1845,10 @@ export async function runContracts(detectorSource) {
         const f = fixture();
         if (mode === 'recent' || mode === 'expired') f.emit('keydown', {isTrusted: true});
         if (mode === 'expired') f.advance(2001);
-        f.emit(type, {target: {tagName: mode === 'other' ? 'DIV' : tagName},
+        f.emit(type, {target: {tagName: mode === 'other' ? 'DIV' : tagName, getClientRects: () => [{}]},
           isTrusted: mode === 'trusted' ? true : mode === 'missing' ? undefined : false});
         f.advance(8000);
-        assert.equal(f.signals.includes('UC'), tagName === 'SELECT' && type === 'change' && ['untrusted', 'expired'].includes(mode), mode);
+        assert.equal(f.signals.includes('UC'), tagName === 'SELECT' && type === 'change' && mode === 'expired', mode);
         assert.equal(f.window.__visitorVerdict.class, 'human');
       }
     }
@@ -1788,7 +1879,7 @@ export async function runContracts(detectorSource) {
       const dom = markerDOM();
       const f = fixture({modify: dom.modify});
       const initial = f.window.__visitorVerdict;
-      assert.equal(initial.class, 'human'); assert.ok(!('agent' in initial)); assert.ok(!('traffic_agent' in f.window.dataLayer[0]));
+      assert.equal(initial.class, 'human'); assert.ok(!('agent' in initial)); assert.ok((f.window.dataLayer[0].traffic_agent === undefined));
       assert.equal(dom.active, 1);
       const [observer] = dom.observers;
       assert.deepEqual(observer.targets.map(t => [t.target.name, JSON.stringify(t.opts)]),
@@ -1798,11 +1889,11 @@ export async function runContracts(detectorSource) {
       assert.deepEqual(phases(f), ['initial', 'agent']);
       const event = f.window.dataLayer[1];
       assert.deepEqual({...event, traffic_signals: undefined}, {event: 'traffic_class', traffic_class: 'declared_agent', traffic_phase: 'agent',
-        traffic_score: 100, traffic_version: '1.4.0', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_agent_claim: 'dom_marker', traffic_signals: undefined});
+        traffic_score: 100, traffic_version: '1.4.1', traffic_webmcp: 'none', traffic_webmcp_count: 0, traffic_agent: operator, traffic_agent_claim: 'dom_marker', traffic_signals: undefined});
       assert.ok(event.traffic_signals.includes('DM'));
       const snapshot = f.window.__visitorVerdict;
       assert.notEqual(snapshot, initial); assert.ok(Object.isFrozen(snapshot));
-      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.0', webmcp: 'none', webmcpCount: 0, agent: operator, claim: 'dom_marker'});
+      assert.deepEqual({...snapshot}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.1', webmcp: 'none', webmcpCount: 0, agent: operator, claim: 'dom_marker'});
       assert.equal(initial.class, 'human', 'Earlier snapshot keeps its values');
       assert.equal(dom.active, 0, 'Disconnected once found');
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: operator, claim: 'dom_marker'}, 'Persisted immediately');
@@ -1824,7 +1915,7 @@ export async function runContracts(detectorSource) {
     assert.equal(f.timers.size, 0);
     f.advance(30000); dom.insert('codex-agent-overlay-root');
     assert.deepEqual(phases(f), ['initial', 'final', 'agent']);
-    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.0', webmcp: 'none', webmcpCount: 0, agent: 'openai', claim: 'dom_marker'});
+    assert.deepEqual({...f.window.__visitorVerdict}, {class: 'declared_agent', score: 100, phase: 'agent', version: '1.4.1', webmcp: 'none', webmcpCount: 0, agent: 'openai', claim: 'dom_marker'});
     assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'declared_agent', direct: true, agent: 'openai', claim: 'dom_marker'});
     assert.equal(dom.active, 0);
     assert.equal(Object.keys(f.listeners).filter(name => !['visitor-verdict:claim', 'toolactivated', 'toolcancel', 'pagehide'].includes(name)).length, 0);
@@ -1850,7 +1941,7 @@ export async function runContracts(detectorSource) {
     dom.insert('codex-agent-overlay-root', dom.body);
     f.advance(8000);
     assert.deepEqual(phases(f), ['initial', 'final']);
-    assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'human' && !('traffic_agent' in e)));
+    assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'human' && (e.traffic_agent === undefined)));
     assert.ok(!f.signals.includes('DM')); assert.equal(dom.active, 1, 'Still watching');
     assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
   });
@@ -1860,7 +1951,7 @@ export async function runContracts(detectorSource) {
       const f = fixture(dom ? {modify: dom.modify} : {});
       f.advance(8000); f.emit('pagehide');
       assert.deepEqual(phases(f), ['initial', 'final']);
-      assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'human' && !('traffic_agent' in e)));
+      assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'human' && (e.traffic_agent === undefined)));
       assert.deepEqual(Object.keys(f.window.__visitorVerdict).sort(), ['class', 'phase', 'score', 'version', 'webmcp', 'webmcpCount']);
       assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'human');
       assert.equal(Object.keys(f.listeners).filter(name => name !== 'visitor-verdict:claim').length, 0);
@@ -1896,13 +1987,13 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(phases(h), ['initial', 'agent']); assert.equal(h.window.__visitorVerdict.agent, 'openai');
     const declared = markerDOM();
     const k = fixture({modify: m => {declared.modify(m); m.navigator.userAgent = 'ChatGPT-User';}});
-    assert.ok(!('traffic_agent' in k.window.dataLayer[0]), 'UA token alone has no operator');
+    assert.ok((k.window.dataLayer[0].traffic_agent === undefined), 'UA token alone has no operator');
     declared.insert('codex-agent-overlay-root');
     assert.deepEqual(phases(k), ['initial', 'agent'], 'Operator becomes known');
     for (const agent of ['evil', '', 'OpenAI', ['openai'], {value: 'openai'}, 1]) {
       const forged = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', direct: true, agent}}))});
       assert.equal(forged.window.__visitorVerdict.class, 'declared_agent');
-      assert.ok(!('agent' in forged.window.__visitorVerdict)); assert.ok(!('traffic_agent' in forged.window.dataLayer[0]));
+      assert.ok(!('agent' in forged.window.__visitorVerdict)); assert.ok((forged.window.dataLayer[0].traffic_agent === undefined));
     }
     const plain = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'declared_agent', agent: 'openai', claim: 'dom_marker'}}))});
     assert.equal(plain.window.__visitorVerdict.class, 'human', 'Operator without direct provenance never carries');
@@ -1914,7 +2005,7 @@ export async function runContracts(detectorSource) {
       if (late) {f.advance(2000); dom.insert('claude-agent-glow-border');}
       f.advance(8000);
       assert.deepEqual(phases(f), ['initial', 'final']);
-      assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'automated' && !('traffic_agent' in e)), 'No operator with automated');
+      assert.ok(f.window.dataLayer.every(e => e.traffic_class === 'automated' && (e.traffic_agent === undefined)), 'No operator with automated');
       assert.ok(!('agent' in f.window.__visitorVerdict), 'Operator only with declared_agent');
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value: 'automated', direct: true});
     }
@@ -1945,7 +2036,7 @@ export async function runContracts(detectorSource) {
       second.advance(8000);
       if (late === 'after') { second.advance(5000); dom.insert('codex-agent-overlay-root'); }
       second.emit('pagehide');
-      assert.ok(second.window.dataLayer.every(e => e.traffic_class === 'automated' && !('traffic_agent' in e)), label);
+      assert.ok(second.window.dataLayer.every(e => e.traffic_class === 'automated' && (e.traffic_agent === undefined)), label);
       assert.ok(second.window.dataLayer[0].traffic_signals.includes('CA'), label);
       assert.ok(!('agent' in second.window.__visitorVerdict), label);
       const stored = JSON.parse(first.store.get('visitor_verdict')).lastClass;
@@ -1961,7 +2052,7 @@ export async function runContracts(detectorSource) {
     for (const agent of ['openai', 'anthropic']) {
       const forged = fixture({modify: ({store}) => store.set('visitor_verdict', JSON.stringify({lastClass: {value: 'automated', direct: true, agent}}))});
       assert.equal(forged.window.__visitorVerdict.class, 'automated');
-      assert.ok(!('agent' in forged.window.__visitorVerdict) && !('traffic_agent' in forged.window.dataLayer[0]), 'automated record carries no operator');
+      assert.ok(!('agent' in forged.window.__visitorVerdict) && (forged.window.dataLayer[0].traffic_agent === undefined), 'automated record carries no operator');
     }
   });
   await test('DM watcher: no subtree; body attached when it appears; late id on a new direct child; capped id watches', () => {

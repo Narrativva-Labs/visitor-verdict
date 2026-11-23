@@ -24,7 +24,7 @@ All imported named objects use `VV - `. The import creates two tags, eight varia
 | VV - OPTIONAL page_view readiness (OR, once per page) | Folder containing VV - initial and VV - timer fallback 1s; attach both manually as ordinary OR firing triggers |
 | VV - timer fallback 1s | Timer `gtm.timer`, 1000ms, limit 1, enabled on all pages |
 | VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version / traffic_agent / traffic_webmcp / traffic_agent_claim | Seven Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default (`traffic_agent` is absent on most events and then not sent) |
-| VV - current class | Validated live snapshot class, then startup previous class, then `undefined` |
+| VV - current class | Browser automated/declared class, then verified B7 agent, then browser human/suspicious, then startup previous class, then `undefined` |
 | VV - GA4 measurement ID | Constant holding your destination ID |
 
 ### Optional first page_view timing and rollback
@@ -62,7 +62,7 @@ The `agent` event can arrive after final, for example when an agent takes over a
 
 1. Add **VV - initial hard**: Custom Event name `traffic_class`; fire on some custom events where `{{VV - DLV traffic_phase}}` **equals** `initial` AND `{{VV - DLV traffic_class}}` **matches RegEx** `^(automated|declared_agent)$`.
 2. Add it as a second ordinary firing trigger to the existing **VV - GA4 traffic_class** tag, keeping **VV - final**. Keep **Once per event**, allowing initial and final to send independently.
-3. Ensure event parameter `traffic_phase={{VV - DLV traffic_phase}}` exists alongside the existing class/score/version mappings. Keep the publication DLVs and class user property.
+3. Ensure event parameter `traffic_phase={{VV - DLV traffic_phase}}` exists alongside the existing class/score/version mappings. Keep the publication DLVs; remove any legacy class User Property mapping.
 4. Optionally apply the first-page-view recipe above. Preview a hard initial result before closing the browser, all final classes, both readiness paths and one pageview per page, then publish through the site's usual review process. No detector JavaScript update is needed; `traffic_version` remains `1.0.0`.
 
 Initial and final hits for the same hard class are expected. Use **session-level any-hit evidence**; do not interpret `traffic_class` event counts as bot visits. Initial delivery improves short-visit coverage but remains subject to browser, network and consent timing. Measured on 21 November 2026 with Chrome (headless and headed) on the demo shop, recording each GA4 request in page storage at send time: GA4 batches events, but leaving the page flushes the batch. With 0.7 s and 1.5 s per page, every page sent `page_view` and the initial `traffic_class` (usually also final, which the detector publishes on page hide). Automation listeners such as Playwright `request` events miss these unload requests, so do not conclude from them that hits were lost. An unflushed batch remains possible when the browser process is killed without leaving the page. The first-page-view recipe additionally puts the class on `page_view` itself.
@@ -80,9 +80,8 @@ The dedicated event describes one data-layer publication. Use these exact mappin
 | Event parameter `traffic_agent` | `{{VV - DLV traffic_agent}}` |
 | Event parameter `traffic_webmcp` | `{{VV - DLV traffic_webmcp}}` |
 | Event parameter `traffic_agent_claim` | `{{VV - DLV traffic_agent_claim}}` |
-| User property `traffic_class` | `{{VV - DLV traffic_class}}` |
 
-All current detector phases contain `traffic_version: '1.4.0'`. `traffic_agent` is `openai` or `anthropic` when known from DOM evidence or its one-document CD carry, with class `declared_agent`. `traffic_agent_claim` distinguishes `dom_marker`, observed `dom_host`, and `ua_token`; older stored records may lack a claim. Claude in Chrome 1.0.107 is detected by the guarded host pattern, based on limited observed evidence. Debug codes are not mapped to GA4.
+All current detector phases contain `traffic_version: '1.4.1'`. `traffic_agent` is `openai` or `anthropic` when known from DOM evidence or its one-document CD carry, with class `declared_agent`. `traffic_agent_claim` distinguishes `dom_marker`, observed `dom_host`, and `ua_token`; older stored records may lack a claim. Claude in Chrome 1.0.107 is detected by the guarded host pattern, based on limited observed evidence. Debug codes are not mapped to GA4.
 
 ### Manual installation
 
@@ -92,14 +91,26 @@ The imported **VV - current class** Custom JavaScript variable uses:
 
 ```javascript
 function() {
-  var c;
+  var c, server;
   function valid(v) {
     return v === 'human' || v === 'suspicious' || v === 'automated' || v === 'declared_agent';
   }
   try {
     c = window.__visitorVerdict && window.__visitorVerdict['class'];
-    if (valid(c)) { return c; }
   } catch (e) {}
+  if (c === 'automated' || c === 'declared_agent') { return c; }
+  try {
+    server = window.__visitorVerdictServer;
+    // B7 exposes the verified wire verdict; accept its normalized echo too.
+    if (server && server.type !== 'crawler_verified' && server.purpose !== 'crawler' &&
+        server.purpose !== 'intermediary' && server.claim !== 'server_intermediary' &&
+        typeof server.operator === 'string' && /^[a-z][a-z0-9_]{0,31}$/.test(server.operator) &&
+        (server['class'] === 'declared_agent' && /^(server_signature|server_ip)$/.test(server.claim) ||
+         server.v === 1 && server.type === 'agent_verified' && /^(signature_valid|ip_match)$/.test(server.verification))) {
+      return 'declared_agent';
+    }
+  } catch (e) {}
+  if (valid(c)) { return c; }
   try {
     c = window.__visitorVerdictLast;
     if (valid(c)) { return c; }
@@ -108,13 +119,15 @@ function() {
 }
 ```
 
+The B7 snapshot may use its native `v/type/operator/verification/purpose` shape or normalized `class/operator/claim` shape. Verified agents override browser human/suspicious; crawler and intermediary verdicts do not. The variable returns only the class; it does not restore identity DLVs or alter the browser snapshot. Every browser publication explicitly clears `traffic_agent` and `traffic_agent_claim` to `undefined` unless applicable to its declared-agent result, preventing stale GTM model identity. The GA4 tag no longer sets a traffic_class User Property; remove that mapping from existing tags during upgrade. Classification remains an event parameter.
+
 It never reads or writes storage. `__visitorVerdictLast` is the validated previous final class captured once at startup, not a live storage lookup. Unknown remains undefined, never default human. Re-read `window.__visitorVerdict` for the latest frozen snapshot; previously held snapshots do not update.
 
 ## CSP-safe current-class variable
 
 For a variable without GTM Custom JavaScript evaluation, open **Templates → Variable Templates → New → Import** and choose [gtm/templates/vv-current-class.tpl](../gtm/templates/vv-current-class.tpl). Save it, then create a variable using the **VV - current class** template. Replace the imported Custom JavaScript variable, preserving or updating every reference.
 
-The template uses `copyFromWindow('__visitorVerdict.class')` then `copyFromWindow('__visitorVerdictLast')`, with strict enum validation. Its sole permission is read access to those two global paths; it has no write, execute, storage or network permissions. This covers the variable only: the detector's script deployment must still satisfy site CSP. Do not weaken CSP for the Custom JavaScript fallback. The template has local structural/behavioural contract coverage; an authenticated GTM Template Editor import has not yet been verified. See Google's [template API reference](https://developers.google.com/tag-platform/tag-manager/templates/api), [permission reference](https://developers.google.com/tag-platform/tag-manager/templates/permissions), and [template import instructions](https://developers.google.com/tag-platform/tag-manager/templates#export_and_import).
+This alternative template currently covers browser evidence only; use the imported Custom JavaScript variable for B7 server precedence. The template uses `copyFromWindow('__visitorVerdict.class')` then `copyFromWindow('__visitorVerdictLast')`, with strict enum validation. Its sole permission is read access to those two global paths; it has no write, execute, storage or network permissions. This covers the variable only: the detector's script deployment must still satisfy site CSP. Do not weaken CSP for the Custom JavaScript fallback. The template has local structural/behavioural contract coverage; an authenticated GTM Template Editor import has not yet been verified. See Google's [template API reference](https://developers.google.com/tag-platform/tag-manager/templates/api), [permission reference](https://developers.google.com/tag-platform/tag-manager/templates/permissions), and [template import instructions](https://developers.google.com/tag-platform/tag-manager/templates#export_and_import).
 
 ## Consent and timing
 
@@ -124,7 +137,7 @@ The readiness pattern makes an initial class available to the Google tag's first
 
 Shared event settings are evaluated when the Google tag fires, once for that document. Automatic `page_view`, `user_engagement` and enhanced-measurement events can retain that startup value; later final classifications do not refresh it. Other explicitly tagged GA4 events re-evaluate `VV - current class` when they fire. An initial human label can therefore coexist with later final automation evidence. Use any observed automated/declared evidence for whole-session reporting; a later human never cancels it.
 
-Keep the dedicated event on initial hard, agent and final even if no later interactions occur: initial hard can reach GA4 before a short-lived browser closes without publishing final, while final provides coverage and final class/phase/score/version. One page can send up to three `traffic_class` hits (initial, agent, final), for example a declared UA token at start, a late agent UI marker and final; count sessions with any matching hit rather than summing classification events. Never mark `traffic_class` as a key event. The user property means **last observed class**, applies from set time, may persist into later visits, and is not a stable visitor attribute. Never use it for session exclusion or backfill. The detector cannot retract collected events.
+Keep the dedicated event on initial hard, agent and final even if no later interactions occur: initial hard can reach GA4 before a short-lived browser closes without publishing final, while final provides coverage and final class/phase/score/version. One page can send up to three `traffic_class` hits (initial, agent, final), for example a declared UA token at start, a late agent UI marker and final; count sessions with any matching hit rather than summing classification events. Never mark `traffic_class` as a key event. The import sets no traffic_class User Property. Legacy values may persist; remove the old mapping and use event evidence. The detector cannot retract collected events.
 
 ## Reporting
 
@@ -135,7 +148,6 @@ In **Admin → Data display → Custom definitions**, create:
 | Traffic class (event) | Event | Event parameter `traffic_class` |
 | Traffic agent (event) | Event | Event parameter `traffic_agent` |
 | Traffic agent claim (event) | Event | Event parameter `traffic_agent_claim` |
-| Traffic class (user — last observed) | User | User property `traffic_class` |
 | Traffic phase (event), optional | Event | Event parameter `traffic_phase` |
 
 Optionally register event-scoped `traffic_version` to distinguish release/configuration intervals. This is static release metadata.

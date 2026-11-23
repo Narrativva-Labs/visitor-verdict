@@ -35,14 +35,26 @@ const matchRegex = (left, right) => ({type: 'MATCH_REGEX', parameter: [
 const table = (key, rows) => ({type: 'LIST', key,
   list: rows.map(row => ({type: 'MAP', map: row.map(([name, value]) => parameter(name, value))}))});
 const currentClass = `function() {
-  var c;
+  var c, server;
   function valid(v) {
     return v === 'human' || v === 'suspicious' || v === 'automated' || v === 'declared_agent';
   }
   try {
     c = window.__visitorVerdict && window.__visitorVerdict['class'];
-    if (valid(c)) { return c; }
   } catch (e) {}
+  if (c === 'automated' || c === 'declared_agent') { return c; }
+  try {
+    server = window.__visitorVerdictServer;
+    // B7 exposes the verified wire verdict; accept its normalized echo too.
+    if (server && server.type !== 'crawler_verified' && server.purpose !== 'crawler' &&
+        server.purpose !== 'intermediary' && server.claim !== 'server_intermediary' &&
+        typeof server.operator === 'string' && /^[a-z][a-z0-9_]{0,31}$/.test(server.operator) &&
+        (server['class'] === 'declared_agent' && /^(server_signature|server_ip)$/.test(server.claim) ||
+         server.v === 1 && server.type === 'agent_verified' && /^(signature_valid|ip_match)$/.test(server.verification))) {
+      return 'declared_agent';
+    }
+  } catch (e) {}
+  if (valid(c)) { return c; }
   try {
     c = window.__visitorVerdictLast;
     if (valid(c)) { return c; }
@@ -69,7 +81,6 @@ const container = {
           table('eventSettingsTable', [...fields, agentField, webmcpField, claimField].map(name => [
             ['parameter', name], ['parameterValue', dlv(name)]
           ])),
-          table('userProperties', [[['name', 'traffic_class'], ['value', dlv('traffic_class')]]]),
           parameter('eventName', 'traffic_class'),
           parameter('measurementIdOverride', reference('VV - GA4 measurement ID'))
         ],

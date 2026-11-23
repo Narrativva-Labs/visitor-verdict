@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.4.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.4.1', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -185,7 +185,7 @@
         webmcpWatching = addListener(w, 'toolcancel', webmcpEvent, listenerOptions) || webmcpWatching;
       }
     }
-    var burst = false, untrustedControl = false, lastTrusted = -Infinity, typingField = null, typingTimes = [];
+    var burst = false, untrustedControl = false, lastTrusted = -Infinity, typingField = null, typingTimes = [], keyField = null, keyTime = null;
     var active = false, synthetic = false, mismatch = false, timestamps = [], fast = false;
     var inputTarget = canListen(w) ? w : canListen(d) ? d : null, observesInput = true;
     var visibilityTarget = canListen(d) ? d : w;
@@ -223,7 +223,6 @@
         var code = 'onmessage=function(e){var a=e.data,n=navigator,m=false,b=false;' +
           'try{if(a.ua&&n.userAgent&&a.ua!==n.userAgent)m=true;' +
           'if(typeof a.wd==="boolean"&&typeof n.webdriver==="boolean"&&a.wd!==n.webdriver)m=true;' +
-          'if(a.la&&a.la.length&&n.languages&&n.languages.length&&a.la.join("|")!==Array.prototype.join.call(n.languages,"|"))m=true;' +
           'if(a.hc>0&&n.hardwareConcurrency>0&&a.hc!==n.hardwareConcurrency)m=true;' +
           // An absent API (Firefox/Safari), malformed shape or denied getter is
           // unknown. An exposed API with no value/brands contradicts main UA-CH.
@@ -248,7 +247,7 @@
         workerTimer = w.setTimeout(stopWorker, Math.min(1500, config.idleMs));
         worker.postMessage({ua: n.userAgent || '', wd: n.webdriver,
           ub: hasBrands,
-          la: n.languages ? Array.prototype.slice.call(n.languages) : null, hc: n.hardwareConcurrency});
+          hc: n.hardwareConcurrency});
         ready = true;
       } catch (ignore) {} finally { if (!ready) { stopWorker(); } }
     }
@@ -406,14 +405,21 @@
       // Called once per document, in click capture, before navigation/pagehide.
       if (!save(null, 'tp')) { tpPages = 1; }
     }
-    function suspicious() {
-      var env = 0, family;
+    function suspicious(withoutUB) {
+      var env = 0, family, total = score, count = Object.keys(families).length;
+      if (withoutUB && workerBrands) {
+        // Test independent evidence, including the worker-family cap, not UB's
+        // six points. WK may remain as ordinary corroboration.
+        var remainingWorker = signals.indexOf('WK') !== -1 ? 2 : 0;
+        total -= (families.worker || 0) - remainingWorker;
+        if (!remainingWorker) { count--; }
+      }
       for (family in families) {
         if (/^(geometry|language|plugins|graphics|chrome|permissions)$/.test(family)) { env++; }
       }
       // UB is a direct suspicious rule, never hard proof or carry provenance.
-      return workerBrands || score >= config.suspiciousThreshold && Object.keys(families).length >= 3 &&
-        (families.pointer || signals.indexOf('SY') !== -1 || families.worker ||
+      return !withoutUB && workerBrands || total >= config.suspiciousThreshold && count >= 3 &&
+        (families.pointer || signals.indexOf('SY') !== -1 ||
         (env >= 2 && (families.interaction || families.navigation)));
     }
     function publish(phase) {
@@ -435,7 +441,7 @@
       var state = {'class': result, score: total, phase: phase, version: version,
         webmcp: webmcpState(), webmcpCount: webmcpCount};
       var event = {event: 'traffic_class', traffic_class: result, traffic_phase: phase,
-        traffic_score: total, traffic_version: version,
+        traffic_score: total, traffic_version: version, traffic_agent: undefined, traffic_agent_claim: undefined,
         traffic_webmcp: webmcpState(), traffic_webmcp_count: webmcpCount};
       // The operator is exposed only together with declared_agent; automated wins without it.
       if (agent && result === 'declared_agent') { state.agent = event.traffic_agent = agent;
@@ -457,7 +463,7 @@
     }
     function provenance(result) {
       // Preserve the reported class; only fresh evidence seeds another grace page.
-      if (result === 'suspicious') { return suspicious() ? {value: result, direct: true} : result; }
+      if (result === 'suspicious') { return suspicious(true) ? {value: result, direct: true} : result; }
       // Only direct hard evidence stores automated. A direct declaration stores
       // declared_agent even when carried CA made this document automated.
       // Only a marker seen in this document renews the stored operator.
@@ -701,15 +707,24 @@
       if (done || d.visibilityState === 'hidden') { return; }
       var now = Date.now(), type = event.type;
       pointer(event, now);
+      if (type === 'keydown') {
+        keyField = null; keyTime = null;
+        if (event.isTrusted === true && !event.isComposing && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey &&
+            typeof event.timeStamp === 'number' && isFinite(event.timeStamp) && event.timeStamp >= 0) {
+          keyField = event.target; keyTime = event.timeStamp;
+        }
+      } else if (/^(keyup|focusin|pointerdown|touchstart)$/.test(type)) { keyField = null; keyTime = null; }
+
       if (event.isTrusted === true &&
           /^(keydown|keyup|pointerdown|pointerup|touchstart|touchend|click|focusin|input|change|mousemove|pointermove|touchmove|scroll|wheel)$/.test(type)) { lastTrusted = now; }
       if (type === 'input' || type === 'change') {
         var field = event.target, name = field && String(field.tagName).toUpperCase();
         var control = name === 'INPUT' || name === 'SELECT' || name === 'TEXTAREA';
-        var clock = w.performance && typeof w.performance.now === 'function' ? w.performance.now() : now;
-        // Event creation time prevents queued human keystrokes looking like a burst.
-        if (typeof event.timeStamp === 'number' && isFinite(event.timeStamp) && event.timeStamp >= 0) { clock = event.timeStamp; }
-        if (type === 'input' && control && event.isTrusted === true && event.inputType === 'insertText' && !event.isComposing) {
+        // Only a paired keydown supplies physical-key timing. Input is created
+        // during editing and can be compressed after queued key dispatch.
+        var clock = keyField === field ? keyTime : null;
+        keyField = null; keyTime = null;
+        if (type === 'input' && control && event.isTrusted === true && event.inputType === 'insertText' && !event.isComposing && clock !== null) {
           if (typingField !== field) { typingField = field; typingTimes = []; }
           typingTimes.push(clock);
           if (typingTimes.length > 3) { typingTimes.shift(); }
@@ -717,7 +732,9 @@
         } else if (type === 'input') { typingField = null; typingTimes = []; }
         if (type === 'change' && field && !field.disabled && !field.readOnly &&
             (name === 'SELECT' || name === 'INPUT' && /^(checkbox|radio)$/i.test(field.type)) &&
-            event.isTrusted === false && now - lastTrusted > 2000) { untrustedControl = true; }
+            event.isTrusted === false && lastTrusted !== -Infinity && now - lastTrusted > 2000) {
+          try { if (field.getClientRects().length > 0) { untrustedControl = true; } } catch (ignore) {}
+        }
         return;
       }
       if ((event.isTrusted === true || event.isTrusted === undefined) && type !== 'pointercancel') { active = true; }
@@ -755,14 +772,14 @@
       try { tpPages = boundedTP(readStore().tpPages); } catch (ignore) { tpPages = teleport ? 1 : 0; }
       if (active && !teleport) { save(null, 'decay'); }
       if (tpPages >= 2) { add('TR', 2, 'pointer'); }
-      move = clicked = typingField = null; typingTimes = []; pointerKind = '';
+      move = clicked = typingField = keyField = null; keyTime = null; typingTimes = []; pointerKind = '';
       try { publish('final'); } finally { signals = []; families = {}; }
     }
     var wasVisible = d.visibilityState !== 'hidden';
     function visibility() {
       var becameHidden = wasVisible && d.visibilityState === 'hidden';
       wasVisible = d.visibilityState !== 'hidden';
-      pointerKind = '';
+      pointerKind = ''; keyField = null; keyTime = null; typingField = null; typingTimes = [];
       if (wasVisible && observer && !marked) { check(); }
       if (done) { return; }
       exposure();

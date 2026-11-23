@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1
+
+- Explicitly clear non-applicable agent and claim fields on every browser data-layer publication to avoid stale GTM identity.
+- Require prior trusted page input and visible client rects for UC; pair BT input with trusted keydown timestamps to avoid compressed input creation times (synthetic regression; physical stall test pending).
+- Exclude language-only worker differences from WK and stop WK alone from opening the suspicious gate. DH remains unchanged. UB still directly labels suspicious but cannot seed CS without independent suspicious evidence; remove the GTM traffic_class User Property mapping.
+- Prefer verified B7 server agents over browser human/suspicious in the imported GTM current-class variable, with crawler/intermediary exclusions.
+- Update signal registry, generated catalogue, distribution, SRI and README v1.4.1 pin.
+
 ### 1.3.0 review corrections (2026-11-23)
 
 - Guard WebMCP callbacks and register model contexts through EventTarget prototypes; require Event instances and strict trusted flags.
