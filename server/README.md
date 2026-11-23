@@ -515,7 +515,6 @@ Platform-default release source: [Chrome 92 Enterprise release notes, upcoming C
 
 See [CHANGELOG.md](CHANGELOG.md).
 
-
 ### Static rules for server-side GTM
 
 From the repository root, run `npm --prefix server run build` followed by
