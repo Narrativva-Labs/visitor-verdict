@@ -28,7 +28,7 @@ for (const [results, presented, ip, expected] of [
   [['none'], true, undefined, 'none'],
   [['signature_invalid', 'none'], true, { operator: 'test' }, 'signature_invalid'],
   [['none', 'signature_invalid', 'signature_valid'], true, undefined, 'signature_valid'],
-  [[], true, undefined, 'signature_invalid'],
+  [[], true, undefined, 'none'],
 ])
   test('selectOutcome table: ' + results + '/' + presented, () => {
     const signatures = results.map((result, i) => ({ label: String(i), result, reason: result }));

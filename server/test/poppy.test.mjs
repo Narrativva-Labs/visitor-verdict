@@ -650,3 +650,81 @@ test('absolute deadline crossed during synchronous crypto never consumes replay'
     'signature_valid',
   );
 });
+
+test('audit: shared Poppy replay store covers multiple verifier instances and fails indeterminate', async () => {
+  const seen = new Set();
+  const replayStore = {
+    async insertIfAbsent(key, ttl) {
+      assert.ok(ttl > 0 && ttl <= 120);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    },
+  };
+  const a = verifier({ poppy: { enabled: true, replayStore } }).v;
+  const b = verifier({ poppy: { enabled: true, replayStore } }).v;
+  const results = await Promise.all([a.verify(request()), b.verify(request())]);
+  assert.deepEqual(results.map((x) => x.verification).sort(), ['none', 'signature_valid']);
+  const broken = verifier({
+    poppy: {
+      enabled: true,
+      replayStore: {
+        insertIfAbsent: async () => {
+          throw Error('offline');
+        },
+      },
+    },
+  }).v;
+  assert.equal((await broken.verify(request())).verification, 'none');
+});
+test('audit: Poppy root mismatch refreshes known kid before spoofing and cooldown is indeterminate', async () => {
+  let n = 0;
+  const { v } = verifier({
+    fetcher: async (url) =>
+      Response.json(
+        url === client ? agent : { keys: [{ ...pub(++n === 1 ? wrong : root), kid: 'root' }] },
+      ),
+  });
+  await v.warm();
+  assert.equal((await v.verify(request())).verification, 'signature_valid');
+  assert.equal(n, 2);
+  const bad = verifier({
+    fetcher: async (url) => {
+      if (url !== client && ++n > 1) throw Error('offline');
+      return Response.json(url === client ? agent : { keys: [{ ...pub(wrong), kid: 'root' }] });
+    },
+  }).v;
+  n = 0;
+  await bad.warm();
+  for (let i = 0; i < 2; i++) assert.equal((await bad.verify(request())).verification, 'none');
+});
+test('audit: external Poppy replay timeout and cache-only avoid verification', async () => {
+  let calls = 0;
+  const replayStore = {
+    insertIfAbsent: async () => {
+      calls++;
+      return new Promise(() => {});
+    },
+  };
+  const { v } = verifier({ fetchTimeoutMs: 5, poppy: { enabled: true, replayStore } });
+  await v.warm();
+  assert.equal((await v.verify(request(), { cacheOnly: true })).verification, 'none');
+  assert.equal(calls, 0);
+  assert.equal((await v.verify(request())).verification, 'none');
+  assert.equal(calls, 1);
+});
+test('audit: concurrent Poppy root rotation uses a single refresh', async () => {
+  let calls = 0;
+  const { v } = verifier({
+    fetcher: async (url) =>
+      Response.json(
+        url === client ? agent : { keys: [{ ...pub(++calls === 1 ? wrong : root), kid: 'root' }] },
+      ),
+  });
+  await v.warm();
+  const results = await Promise.all(
+    Array.from({ length: 10 }, (_, i) => v.verify(request({ p: { jti: 'rotation-' + i } }))),
+  );
+  assert.ok(results.every((v) => v.verification === 'signature_valid'));
+  assert.equal(calls, 2);
+});

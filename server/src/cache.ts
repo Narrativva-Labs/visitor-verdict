@@ -96,7 +96,14 @@ export async function fetchBounded(
 export const FEED_CACHE_SIZE = 32;
 export const DIRECTORY_CACHE_SIZE = 128;
 /** Cached modes never join a fetch; a miss starts a background refresh and returns cache_miss. */
-export type LoadMode = 'request' | 'forced' | 'warm' | 'ahead' | 'cached' | 'cached-forced';
+export type LoadMode =
+  | 'request'
+  | 'forced'
+  | 'warm'
+  | 'ahead'
+  | 'cached'
+  | 'cached-forced'
+  | 'mismatch';
 export interface CacheOptions {
   /** Hard maximum age of retained data since its fetch; 0 disables stale serving. */
   staleMaxSeconds?: number;
@@ -202,7 +209,7 @@ export class AgentCache {
   ): Promise<T> {
     const cacheKey = kind + ':' + url;
     const entry = this.touch(cacheKey, kind);
-    const force = mode === 'forced' || mode === 'cached-forced';
+    const force = mode === 'forced' || mode === 'cached-forced' || mode === 'mismatch';
     const cacheOnly = mode === 'cached' || mode === 'cached-forced';
     const request = mode === 'request' || mode === 'cached';
     const usable = entry.data !== undefined && now < entry.staleUntil;
@@ -223,6 +230,7 @@ export class AgentCache {
       return pending as Promise<T>;
     }
     if (now < entry.cooldown) {
+      if (mode === 'mismatch') throw new Failure('directory_unavailable', true);
       if (usable && now < entry.until) return entry.data as T;
       throw new Failure(cacheOnly ? 'cache_miss' : 'directory_unavailable', true);
     }

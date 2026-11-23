@@ -12,7 +12,7 @@ export interface AgentRequest {
   host: string;
   headers: HeadersInput;
   clientIp?: string;
-  /** External transport security from a trusted adapter; false skips header diagnostics. */
+  /** External transport security from a trusted adapter; false makes WBA context insufficient. */
   secure?: boolean;
   /** Disable weak diagnostics behind stripping proxies or privacy/enterprise policies. */
   headerDiagnostics?: boolean;
@@ -93,7 +93,7 @@ export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 /** Verification evidence. No client IP, raw headers, signature bytes or nonce are returned. */
 export interface AgentVerdict {
   /** Weak local diagnostics; never identity or verification evidence. */
-  evidence?: readonly 'header_mismatch'[];
+  evidence?: readonly ('header_mismatch' | 'shared_ip_range')[];
   agent_purpose: AgentPurpose;
   claimed: { uaTokens: string[]; signatureAgents: string[]; poppySession?: boolean };
   poppy?: import('./poppy.js').PoppyResult;
@@ -124,7 +124,8 @@ export interface SignatureResult {
 }
 /** Construction-time configuration. Clock values are Unix seconds. */
 export interface VerifierOptions {
-  poppy?: { enabled: boolean };
+  /** Poppy replay defaults to one local verifier; inject shared atomic storage for replicas. */
+  poppy?: { enabled: boolean; replayStore?: NonceStore };
   registry: Registry;
   authorities: readonly string[];
   fetcher?: Fetcher;

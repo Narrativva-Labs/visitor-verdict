@@ -14,7 +14,7 @@ try{
  }
  let r=run();assert.equal(r.status,0,r.stderr);
  const original=await readFile(output,'utf8'), feed=JSON.parse(original);
- assert.equal(feed.complete,true);assert.ok(Buffer.byteLength(original)<=200000);assert.deepEqual(feed.missing,[]);
+ assert.equal(feed.schema,1);assert.equal(new Date(feed.generated_at).toISOString(),feed.generated_at);assert.ok(Date.now()-Date.parse(feed.generated_at)<60000);assert.equal(feed.complete,true);assert.ok(Buffer.byteLength(original)<=200000);assert.deepEqual(feed.missing,[]);
  const group=feed.groups.find(g=>g.list==='chatgpt-user');assert.deepEqual(group.v4,[[3221225984,3221226239],[3325256746,3325256746]]);assert.deepEqual(group.v6,[['20010db8000000000000000000000000',33]]);
  assert.equal(feed.tokens[group.tokens[0]],'ChatGPT-User');assert.equal(feed.operators[group.operator].id,'openai');
  const sail=feed.groups.find(g=>g.list==='sail');assert.equal(sail.v4.length,1);assert.ok(sail.tokens.length);

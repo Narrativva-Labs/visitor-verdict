@@ -50,7 +50,7 @@ test('mismatch never suppresses page markers or invalid-signature precedence', a
     headers: { ...headers, signature: 'bad' },
   });
   assert.deepEqual(invalid.evidence, ['header_mismatch']);
-  assert.equal(visitorLabels({ verdict: invalid }).vv_type, 'bot_spoofed');
+  assert.equal(visitorLabels({ verdict: invalid }).vv_type, 'pending');
 });
 
 const ua = (v) => `Mozilla/5.0 (X11; Linux x86_64) Chrome/${v}.0.0.0 Safari/537.36`;

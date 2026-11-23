@@ -76,3 +76,19 @@ const role: PurposePolicy = {
   uaTokens: { Bot: 'intermediary' },
 };
 void role;
+
+const automationType: VisitorType = 'automation_verified';
+visitorLabels({ browserAgentClaim: 'dom_host' });
+createVerifier({
+  registry: [],
+  authorities: ['example.com'],
+  poppy: {
+    enabled: true,
+    replayStore: {
+      async insertIfAbsent() {
+        return true;
+      },
+    },
+  },
+  fetcher: async () => new Response('{}'),
+});

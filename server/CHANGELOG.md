@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-11-23
+
+- Reserve spoofing labels for cryptographic mismatches against trusted identities; incomplete, expired and replayed proofs remain indeterminate.
+- Refresh mutable WBA aliases and Poppy root kids once on mismatch with single-flight and cooldown; require secure WBA context.
+- Treat nonexclusive SAIL ranges as weak evidence and support shared atomic Poppy replay storage.
+- Preserve browser `dom_host` claims via `browserAgentClaim`; add ISO `generated_at` to sGTM rule exports without changing schema 1.
+- Add `automation_verified` for verified intermediary platforms, retaining purpose `intermediary`. Suggested collector rank 4.75 sits above unverified claims (3), below direct agent verification (5), because the platform identity is established but its downstream agent is unknown. Update consumer type allowlists.
+- Update server version, egress hosts, capture limitations, cache revocation and single-replica replay guidance. Traffic is only labelled, never blocked or excluded.
+
 ## 0.6.0 — 2026-11-23
 
 - Add opt-in Poppy 1.0 signed-out web operator verification: ES256 sessions, ES256/PS384 delegated keys, pinned Muse metadata/JWKS, bounded cache and replay protection. No account or action authorization.

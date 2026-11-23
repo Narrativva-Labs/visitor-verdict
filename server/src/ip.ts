@@ -40,12 +40,19 @@ export function matchesIp(ip: string, prefixes: unknown): boolean {
     return false;
   }
 }
-export function decodeSail(data: unknown): Map<string, BlockList> {
+export function decodeSail(data: unknown): Map<string, BlockList & { shared: BlockList }> {
   const doc = data as SailDocument;
   let count = 0;
   for (const prefixes of doc.services.values()) count += prefixes.length;
   if (count > 8192) throw new Failure('invalid_ip_list', true);
-  return new Map([...doc.services].map(([name, prefixes]) => [name, compilePrefixes(prefixes)]));
+  return new Map(
+    [...doc.services].map(([name, prefixes]) => [
+      name,
+      Object.assign(compilePrefixes(prefixes.filter((prefix) => prefix.exclusive !== false)), {
+        shared: compilePrefixes(prefixes.filter((prefix) => prefix.exclusive === false)),
+      }),
+    ]),
+  );
 }
 export function staticBlocks(registry: Registry): Map<string, BlockList> {
   return new Map(
@@ -65,7 +72,12 @@ export async function ipEvidence(
   now: number,
   staticRanges?: Map<string, BlockList>,
   cacheOnly = false,
-): Promise<{ ip?: AgentVerdict['ip']; unavailable: boolean; cacheMiss?: boolean }> {
+): Promise<{
+  ip?: AgentVerdict['ip'];
+  unavailable: boolean;
+  cacheMiss?: boolean;
+  shared?: boolean;
+}> {
   if (typeof ip !== 'string' || !isIP(ip)) return { unavailable: false };
   for (const operator of registry) {
     if (!operator.extraUaTokens?.some((token) => ua.includes(token))) continue;
@@ -73,6 +85,7 @@ export async function ipEvidence(
       return { ip: { operator: operator.operator, list: 'published_static' }, unavailable: false };
   }
   const tasks: Promise<AgentVerdict['ip']>[] = [];
+  let shared = false;
   for (const operator of registry)
     for (const list of operator.ipLists) {
       if (list.uaTokens && !list.uaTokens.some((token) => ua.includes(token))) continue;
@@ -83,6 +96,7 @@ export async function ipEvidence(
               .then((services) => {
                 const block = services.get(list.service!);
                 if (!block) throw new Failure('invalid_sail', true);
+                if (block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')) shared = true;
                 return block;
               })
           : cache.load(list.url, 'ip', now, decodeList, cacheOnly ? 'cached' : 'request')
@@ -97,6 +111,7 @@ export async function ipEvidence(
     if (result.status === 'fulfilled' && result.value)
       return { ip: result.value, unavailable: false };
   return {
+    shared,
     unavailable: results.some((result) => result.status === 'rejected'),
     cacheMiss: results.some(
       (result) => result.status === 'rejected' && failure(result.reason).reason === 'cache_miss',

@@ -249,10 +249,16 @@ export function validateConfig(options: VerifierOptions) {
     throw new TypeError('Invalid staleMaxSeconds');
   if (options.poppy !== undefined && (!options.poppy || typeof options.poppy.enabled !== 'boolean'))
     throw new TypeError('Invalid Poppy options');
+  if (
+    options.poppy?.replayStore !== undefined &&
+    typeof options.poppy.replayStore?.insertIfAbsent !== 'function'
+  )
+    throw new TypeError('Invalid Poppy replayStore');
   if (options.poppy?.enabled && !options.fetcher)
     throw new TypeError('Poppy requires an injected fetcher');
   return {
     poppy: options.poppy?.enabled === true,
+    poppyReplayStore: options.poppy?.replayStore,
     maxLifetimeSeconds,
     staleMaxSeconds,
     registry,

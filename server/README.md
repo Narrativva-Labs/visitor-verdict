@@ -1,4 +1,4 @@
-# Visitor Verdict server verifier
+# Visitor Verdict server verifier (0.6.1)
 
 An internal TypeScript package in the public MIT Visitor Verdict repository. Node 22+, ESM. Its purpose is analytics and conversion hygiene. It labels traffic using operator evidence, never humanity, consent, purchase approval or application authorization. The library does not itself withhold anything; conversion policy belongs to the integrator.
 
@@ -13,7 +13,7 @@ npm run format:check
 npm run tokens # regenerate only when browser defaults change
 ```
 
-The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.5.0.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
+The package is marked `private: true` to prevent accidental npm publication. `files` includes the built `dist`, documentation and licence; `prepare` builds it when packaging. npm cannot install a git dependency directly from this repository’s server/ subfolder. From a checkout, run `npm pack` inside server/, then install the resulting tarball in the consuming application (`npm install /path/to/visitor-verdict-server-0.6.1.tgz`). Do not point npm at the repository root and expect it to select this package. pnpm/yarn subdirectory syntax is a separate package-manager capability; check its version-specific documentation. `server/dist` and node_modules are ignored. CI runs server tests, typechecking and formatting on Node 22 and 24, independently of browser checks.
 
 Dependencies are pinned: runtime **structured-headers 2.1.1 (MIT)** for SF parsing/serialization; dev TypeScript 5.6.3, Node declarations 22.20.1 and Prettier 3.3.3. Crypto uses only `node:crypto`; CIDR matching uses `node:net.BlockList`. A linear lexical guard checks duplicates, base64 alphabet (accepting omitted padding and nonzero pad bits per RFC 8941 §4.2.7), and integer timestamp types before the SF parser can lose that information. UA token regexes are compiled once per verifier from generated browser defaults plus registry `extraUaTokens`. The drift test keeps the generated browser list unchanged and checks it remains a subset; bingbot is explicitly server-only. No DOM lib is required. The test suite also compiles a public API consumer against Node 22 declarations without DOM or skipLibCheck.
 
@@ -173,56 +173,60 @@ The verdict contains claimed known UA tokens and parsed Signature-Agent strings;
 | verification        | Meaning / reasons                                                                                                                                                                                                                                                                                                                                                |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `signature_valid`   | A trusted signature passes policy and crypto: verified.                                                                                                                                                                                                                                                                                                          |
-| `signature_invalid` | A WBA signature was presented and demonstrably failed: crypto_mismatch, expired, missing_keyid, signature_agent_not_covered, etc. Never returned merely for an unsigned visitor.                                                                                                                                                                                 |
+| `signature_invalid` | Cryptographic mismatch of a relevant WBA member against a trusted identity/key (`crypto_mismatch`), or a trusted Poppy proof (`poppy_signature_invalid`). Incomplete, orphan, expired, replayed and unrelated proofs do not establish spoofing.                                                                                                                  |
 | `none`              | Indeterminate/untrusted/context failure: untrusted_signature_agent, unknown_keyid, unsupported_component, insufficient_context, unknown_authority, invalid_clock, internal_error, replay_capacity_exhausted, nonce_store_timeout, directory_timeout, deadline_exceeded, ip_evidence_unavailable, cache_miss, reverse_dns_unavailable, ambiguous_signature_agent. |
 | `no_signature`      | No WBA signature and no official IP match: signature_headers_absent, ignored_non_wba or reverse_dns_not_confirmed. A relevant failed feed with no match instead returns none/ip_evidence_unavailable. UA alone never verifies.                                                                                                                                   |
 | `ip_match`          | No WBA signature presented and a relevant operator-published range matches: official_ip_range_match, or optional FCrDNS: reverse_dns_match.                                                                                                                                                                                                                      |
 
 Other/absent signature tags are reported per-label as none/ignored_non_wba and do not suppress IP matching or override an indeterminate WBA peer. A malformed SF header can still fail before tag selection.
 
-Selection is pure and tested: a valid direct signature wins; otherwise definitive invalid (replay first) wins over a valid intermediary, followed by indeterminate. An invalid presented signature never becomes ip_match, though independent IP evidence is attached after evaluable signature failures. Early malformed/resource/context failures avoid further fetches. Unknown WBA Signature-Agent identities trigger no network I/O. Identity claims attached only to ignored non-WBA signatures do not restrict independent IP checks. Unsupported dictionary members are untrusted for their label without poisoning valid peers.
+Selection is pure and tested: a valid direct signature wins; otherwise a definitive cryptographic mismatch wins over a valid intermediary, followed by indeterminate. An invalid presented signature never becomes ip_match, though independent IP evidence is attached after evaluable signature failures. Early malformed/resource/context failures avoid further fetches. Unknown WBA Signature-Agent identities trigger no network I/O. Identity claims attached only to ignored non-WBA signatures do not restrict independent IP checks. Unsupported dictionary members are untrusted for their label without poisoning valid peers.
 
-Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabels({ verdict?, browserClass?, browserPhase?, browserAgent? })` (`browserAgent` since 0.3.5). It returns exactly two GA4 event parameters; register both as **event-scoped custom dimensions** (`customEvent:vv_type` and `customEvent:vv_detail` in the Data API).
+Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabels({ verdict?, browserClass?, browserPhase?, browserAgent?, browserAgentClaim? })` (`browserAgent` since 0.3.5). It returns exactly two GA4 event parameters; register both as **event-scoped custom dimensions** (`customEvent:vv_type` and `customEvent:vv_detail` in the Data API).
 
-| `vv_type`          | First matching evidence                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| `bot_spoofed`      | Server `signature_invalid`                                                                      |
-| `agent_verified`   | Server `signature_valid`/`ip_match`, purpose `user_directed`, `intermediary` or `unknown`       |
-| `crawler_verified` | Server `signature_valid`/`ip_match`, purpose `crawler`                                          |
-| `bot_automation`   | Browser `automated`                                                                             |
-| `agent_unverified` | Browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent claim |
-| `bot_suspicious`   | Browser `suspicious`                                                                            |
-| `human`            | Browser `human`                                                                                 |
-| `pending`          | No browser class or qualifying server evidence                                                  |
+| `vv_type`             | First matching evidence                                                                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bot_spoofed`         | Server `signature_invalid`                                                                                                                                                       |
+| `agent_verified`      | Server `signature_valid`/`ip_match`, purpose `user_directed` or `unknown`. `verifiedByCapture: false` integrations lack local wire confirmation; identity does not prove intent. |
+| `automation_verified` | Trusted intermediary signature: platform identity (Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf); downstream agent and purpose unknown.                        |
+| `crawler_verified`    | Server `signature_valid`/`ip_match`, purpose `crawler`                                                                                                                           |
+| `bot_automation`      | Browser `automated`                                                                                                                                                              |
+| `agent_unverified`    | Browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent/`poppy_session` claim                                                                  |
+| `bot_suspicious`      | Browser `suspicious`                                                                                                                                                             |
+| `human`               | Browser `human`                                                                                                                                                                  |
+| `pending`             | No browser class or qualifying server evidence                                                                                                                                   |
 
-Every verified result (`signature_valid` or `ip_match`) with unknown purpose yields `agent_verified`, never `pending`, even if browser evidence exists. The purpose segment remains `unknown`: `agent_verified` confirms identity and does not by itself establish a user-directed product role. An `intermediary` purpose also yields `agent_verified`: verified signed automation whose agent is not identified. Only an explicit crawler purpose yields `crawler_verified`. Since 0.4.0 an unlisted purpose value in a hand-built verdict becomes `unknown` and is never copied into the label.
+**Capture limitation:** 8 of the 9 default WBA signers have `verifiedByCapture: false`: directory checks and synthetic tests do not confirm their actual visitor wire format. Platform signatures can represent QA or scraper workloads; `automation_verified` does not establish an AI shopping agent.
 
-`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, e.g. `openai|signature_valid|user_directed|signature_agent|human|final`. Missing segments are `-`, unknown operator is `none`. With a verdict, claim is `signature_agent` (takes precedence), `ua_token` or `none`; `dom_marker` when a browser page marker supplies the operator (below); unverified purpose is `unknown`; verified purposes are `user_directed`, `crawler`, `intermediary` or `unknown`. Browser classes are `human`, `suspicious`, `automated`, `declared_agent`; phases `initial`, `final`, `agent`. Invalid browser values become `-`. Operators must begin with a lowercase ASCII letter, followed by at most 23 lowercase ASCII letters, digits or underscores; invalid/long configured names become `none`, never truncated. Detail is at most 100 characters, with no version segment or raw claims.
+Every verified result (`signature_valid` or `ip_match`) with unknown purpose yields `agent_verified`, never `pending`, even if browser evidence exists. The purpose segment remains `unknown`: `agent_verified` confirms identity and does not by itself establish a user-directed product role. An `intermediary` purpose yields `automation_verified`: the automation platform is verified, while its downstream agent remains unidentified. Older 0.6.0 consumers may still group intermediaries under `agent_verified`; update their allowlists before upgrading. Only an explicit crawler purpose yields `crawler_verified`. Since 0.4.0 an unlisted purpose value in a hand-built verdict becomes `unknown` and is never copied into the label.
 
-`browserAgent` (since 0.3.5) is the operator a browser detector observed from a page marker, for example an in-browser agent's own DOM element. Only `openai` and `anthropic` are accepted; any other value is ignored. `openai` comes from OpenAI's agent overlay (confirmed in the ChatGPT desktop app's Chrome plugin); `anthropic` only from older Claude in Chrome versions, because the current extension (1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not detected. A marker is observed evidence, never verification, and it never changes `vv_type`. Operator precedence:
+`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`, e.g. `openai|signature_valid|user_directed|signature_agent|human|final`. Missing segments are `-`, unknown operator is `none`. With a verdict, claim is `signature_agent` for WBA, `poppy_session` for Poppy, `ua_token` or `none`; `dom_marker` or `dom_host` when a browser page observation supplies the operator (below); unverified purpose is `unknown`; verified purposes are `user_directed`, `crawler`, `intermediary` or `unknown`. Browser classes are `human`, `suspicious`, `automated`, `declared_agent`; phases `initial`, `final`, `agent`. Invalid browser values become `-`. Operators must begin with a lowercase ASCII letter, followed by at most 23 lowercase ASCII letters, digits or underscores; invalid/long configured names become `none`, never truncated. Detail is at most 100 characters, with no version segment or raw claims.
+
+`browserAgent` (since 0.3.5) is the operator a browser detector observed from a page marker, for example an in-browser agent's own DOM element. Only `openai` and `anthropic` are accepted; any other value is ignored. `browserAgentClaim: 'dom_host'` preserves the experimental browser host heuristic separately from an exact `dom_marker`; omitted or unknown claims retain the legacy `dom_marker` value. Both require `declared_agent` and an accepted browser operator, remain unverified and never override server evidence. The host heuristic can have false positives and should be analyzed separately. Operator precedence:
 
 1. A verified identity (`signature_valid` or `ip_match`) always supplies the operator and the claim from server evidence. A conflicting marker is ignored: an OpenAI signature with an Anthropic marker stays `openai|signature_valid|…|signature_agent|…`, `agent_verified`.
 2. `signature_invalid` stays `bot_spoofed` with operator `none`; a marker does not name an operator for a failed signature.
-3. Otherwise, with browser class `declared_agent` and an accepted marker, the marker supplies the operator and claim becomes `dom_marker`, replacing an unverified UA or Signature-Agent claim, so the claim segment names the source of the operator. The type stays `agent_unverified`. Example without server evidence: `openai|-|-|dom_marker|declared_agent|agent`.
+3. Otherwise, with browser class `declared_agent` and an accepted marker, the marker supplies the operator and claim becomes `dom_host` when explicitly supplied, otherwise `dom_marker`, replacing an unverified UA or Signature-Agent claim, so the claim segment names the source of the operator. The type stays `agent_unverified`. Example without server evidence: `openai|-|-|dom_marker|declared_agent|agent`.
 4. A marker with any other browser class is ignored.
 
-The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, bot_spoofed=4.5, intermediary agent_verified=4.75, direct crawler_verified=agent_verified=5. Fresh equal-rank evidence replaces the earlier type, operator and verified purpose. An intermediary never replaces active direct evidence. Same-type/same-operator/same-purpose renewal never shortens active expiry; lower-ranked inherited hits do not extend it. Verified sticky expiry is capped to the accepted proof deadline and the configured TTL. A detected replay overrides active verified memory for that hit only; malformed headers or other invalid signatures can inherit active verified evidence without extending it. Verification, claim and browser detail describe the current hit; an inherited verified operator also carries its purpose (including intermediary). Detail can use a previously known operator (verified, or since 0.3.5 a page marker's operator inherited with a stronger `agent_unverified` type). Scope full events to client_id + session_id and denied pings to page_id + client_id, with a bounded memory-only LRU/TTL and no stored IPs.
+The helper is stateless. Collectors can retain the strongest type per session without delaying hits: ranks are pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4, bot_spoofed=4.5, automation_verified=4.75, direct crawler_verified=agent_verified=5. Fresh equal-rank evidence replaces the earlier type, operator and verified purpose. An intermediary never replaces active direct evidence. Same-type/same-operator/same-purpose renewal never shortens active expiry; lower-ranked inherited hits do not extend it. Verified sticky expiry is capped to the accepted proof deadline and the configured TTL. A collector may give detected replay its own per-hit retention policy; replay is now `none`, and malformed or incomplete proofs do not assert spoofing. Existing collectors must review their sticky evidence rules. Verification, claim and browser detail describe the current hit; an inherited verified operator also carries its purpose (including intermediary). Detail can use a previously known operator (verified, or since 0.3.5 a page marker's operator inherited with a stronger `agent_unverified` type). Scope full events to client_id + session_id and denied pings to page_id + client_id, with a bounded memory-only LRU/TTL and no stored IPs.
 
 ### Evidence versus identity (0.4.0)
 
 The operator segment has exactly two sources in `visitorLabels`, and the same detail always says which:
 
-| Operator source                            | Verification segment                                               | Claim segment                                           | `vv_type`                             |
-| ------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------- |
-| Verified signature                         | `signature_valid`                                                  | `signature_agent`                                       | `agent_verified` / `crawler_verified` |
-| Verified IP range or FCrDNS                | `ip_match`                                                         | `ua_token` (the claim that selected the feed) or `none` | `agent_verified` / `crawler_verified` |
-| Browser page marker (observed, unverified) | anything except `signature_valid`, `ip_match`, `signature_invalid` | `dom_marker`                                            | `agent_unverified`                    |
-| Nothing else                               | any                                                                | any                                                     | operator is `none`                    |
+| Operator source                            | Verification segment                                               | Claim segment                                           | `vv_type`                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------- |
+| Verified WBA signature                     | `signature_valid`                                                  | `signature_agent`                                       | `agent_verified` / `crawler_verified` / `automation_verified` |
+| Verified IP range or FCrDNS                | `ip_match`                                                         | `ua_token` (the claim that selected the feed) or `none` | `agent_verified` / `crawler_verified`                         |
+| Verified Poppy session                     | `signature_valid`                                                  | `poppy_session`                                         | `agent_verified`                                              |
+| Browser page marker (observed, unverified) | anything except `signature_valid`, `ip_match`, `signature_invalid` | `dom_marker` or `dom_host`                              | `agent_unverified`                                            |
+| Nothing else                               | any                                                                | any                                                     | operator is `none`                                            |
 
 A UA token or an unverified Signature-Agent value is a claim: it sets the claim segment and can make the type `agent_unverified`, but it **never** names an operator. An exhaustive test enforces this table. A collector that keeps a sticky operator per session (Vanilla does) inherits it together with the stronger type that established it, so on such a hit the type, not the current hit's verification segment, tells the source: `agent_verified`/`crawler_verified` means a verified operator; `agent_unverified` with an operator means a page marker.
 
-**Count verified operators with `vv_type = agent_verified` or `crawler_verified`**, or per hit with the verification segment `signature_valid` or `ip_match`. Exclude purpose `intermediary` when counting the agents themselves. `vv_detail` beginning with `openai|` alone also matches marker-named sessions. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')` and its source with
-`CASE WHEN vv_type IN ('agent_verified','crawler_verified') THEN 'verified' WHEN REGEXP_EXTRACT(vv_detail, '^([^|]+)') != 'none' THEN 'dom_marker' ELSE 'none' END`.
+**Count verified operators with `vv_type` in `agent_verified`, `crawler_verified`, `automation_verified`**, or per hit with the verification segment `signature_valid` or `ip_match`. Exclude purpose `intermediary` when counting the agents themselves. `vv_detail` beginning with `openai|` alone also matches marker-named sessions. In Looker Studio derive operator with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')` and its source with
+`CASE WHEN vv_type IN ('agent_verified','crawler_verified','automation_verified') THEN 'verified' WHEN REGEXP_EXTRACT(vv_detail, '^([^|]+)') != 'none' THEN 'browser_claim' ELSE 'none' END`.
 Browser/GTM-only sites keep `traffic_class` for now; their `traffic_agent` is always a page marker, never verification.
 
 Do not forward the entire diagnostic verdict or raw requests to GA4/sGTM. Do not use these signals for pre-consent advertising.
@@ -242,7 +246,7 @@ Directories may contain up to 32 keys. Structural problems, ambiguous aliases, o
 
 Default analytics verification stores no nonce. Optional NonceStore receives a 64-character hex SHA-256 digest of the JSON tuple of identity, thumbprint and nonce only after crypto success, TTL through expires + 30 seconds. It is caller-owned storage and an explicit change to default privacy/replay behavior. Use atomic shared storage across instances and do not log keys. Calls are time-boxed; the interface cannot forcibly cancel external store work already started. Missing nonce/replay fail; store exceptions are indeterminate. No signature proves integrity of components it does not cover.
 
-A valid direct signature wins over intermediary signatures regardless of header order. Since 0.4.1, if only an intermediary verifies, any definitive invalid WBA peer takes precedence (replay first), yielding signature_invalid and bot_spoofed with operator none. Per-label successes remain available in signatures; signing infrastructure cannot hide a failed direct identity. A valid direct signature still wins over invalid peers.
+A valid direct signature wins over intermediary signatures regardless of header order. Since 0.6.1, if only an intermediary verifies, only a trusted cryptographic mismatch in a WBA peer takes precedence, yielding signature_invalid and bot_spoofed with operator none. Replay and incomplete evidence do not override a valid intermediary. Per-label successes remain available in signatures; signing infrastructure cannot hide a failed direct identity. A valid direct signature still wins over invalid peers.
 
 ## Network, retention and resource limits
 
@@ -271,9 +275,13 @@ suffix mismatch, or forward ENODATA/ENOTFOUND, yields
 
 **Privacy:** PTR queries disclose the client IP to the configured DNS resolver. Opting in also retains IPs as bounded in-memory cache keys; this is an explicit exception to the default no-IP-retention behavior. It runs only for bot claims with configured DNS rules, never ordinary browser traffic. Results are network attribution, not human detection, authorization or proof of the exact bot process. Google-owned DNS zones can include user-controlled cloud infrastructure; common-crawler claims use only googlebot.com, not googleusercontent.com. DNS is not DNSSEC authentication and depends on resolver trust. Nothing is logged by this library. The integrator decides whether this disclosure and retention fit the deployment.
 
-## Upgrade to 0.4.1
+## Upgrade to 0.6.x
 
-The default registry grew from five key directories in 0.3.5 to six in 0.4.0. Allow outbound HTTPS to muse.ai for its /.well-known/http-message-signatures-directory, alongside the existing five directory hosts. Blocking it leaves health at 5/6 and records a failed refresh; traffic continues to be labelled and forwarded. Muse remains a **provisional**, third-party-observed Meta signing identity, not confirmed by Meta or a local request capture; directory self-signatures do not establish that attribution. Deployments can omit that entry from a custom registry.
+Version 0.6.1 has nine WBA directories, plus two Poppy documents when enabled (11 warm targets). Permit outbound HTTPS on port 443 to these exact hosts as needed by the default registry:
+
+`agent.bot.goog`, `api.manus.im`, `assistbot.duckduckgo.com`, `chatgpt.com`, `claude.com`, `cloudsurf.shopify.io`, `developers.google.com`, `duckduckgo.com`, `index.commoncrawl.org`, `mistral.ai`, `muse.ai`, `openai.com`, `search.developer.apple.com`, `search.seznam.cz`, `searchadvisor.naver.com`, `web-bot-auth.cloudflare-browser-rendering-085.workers.dev`, `www.bing.com`, `www.browserbase.com`, `www.kernel.sh`, `www.kimi.ai`, `www.perplexity.ai`.
+
+Poppy uses only the pinned `muse.ai` metadata and JWKS URLs. DNS egress to the configured resolver is needed only when reverse DNS is enabled. Blocked sources produce incomplete evidence; traffic remains labelled and forwarded. Muse attribution remains provisional and may be omitted from a custom registry.
 
 Browserbase uses intermediary: true rather than a purpose mapping: purposePolicies.browserbase and its default-registry purposes field were removed in 0.4.0. PurposePolicy now excludes intermediary at compile time as it already did at runtime. The flag applies to signature evidence only; separate IP/rDNS evidence, if configured, follows its own documented product mappings. A simultaneous signature purpose mapping and intermediary flag is rejected. Meta crawler UA claims share the meta operator entry with Muse but have no IP/rDNS verification configured; future feeds must use separate per-feed/per-token purpose mappings, not Muse's signature purpose.
 
@@ -419,8 +427,8 @@ clock can expire that history prematurely, so all callers must share a compatibl
 receive the usual relative TTL and must use a compatible clock. They remain
 unavailable in cache-only verification. Local inserts need no timeout timer.
 
-Valid signatures take precedence; otherwise replay failures precede other invalid
-candidates. Successful signature evidence includes `verified.expiresAt` (Unix
+Valid direct signatures take precedence; otherwise cryptographic mismatches precede
+intermediary evidence, followed by indeterminate candidates (replay first). Successful signature evidence includes `verified.expiresAt` (Unix
 seconds without skew), so callers can cap derived evidence.
 
 ## Header consistency (0.5.0)
@@ -479,7 +487,7 @@ fixtures. No signed visitor request has been captured: `verifiedByCapture: false
 
 Each exact directory URL appends `/.well-known/http-message-signatures-directory`
 to the listed origin. All three set `intermediary: true`: valid signatures report
-`agent_verified` with purpose `intermediary`, identifying infrastructure rather
+`automation_verified` with purpose `intermediary`, identifying infrastructure rather
 than the customer's agent. Unsigned UA/Signature-Agent or page-marker claims never
 replace this purpose; valid direct signatures retain precedence. Kernel Search
 has a separate direct crawler identity and is outside this addition. No custom kid
@@ -505,8 +513,8 @@ hostname needs an explicitly reviewed registry update; no redirects or automatic
 origin migration are trusted. No real signed visitor captures exist for these three
 operators; synthetic tests and directory proofs do not establish their wire format.
 
-GA4 reports must split `agent_verified` by the third `vv_detail` segment: exclude
-`intermediary` when measuring direct agents. Infrastructure signatures identify the
+GA4 reports distinguish `automation_verified` from direct `agent_verified` in 0.6.1.
+Historical data needs the third `vv_detail` segment to separate `intermediary`. Infrastructure signatures identify the
 browser service and may represent QA tools, scrapers or any customer workload.
 
 Platform-default release source: [Chrome 92 Enterprise release notes, upcoming Chrome 93](https://storage.googleapis.com/support-kms-prod/LrD0vGFF3FFxwwScrfThxc6dRMNG3bTBFJEF).
@@ -572,12 +580,12 @@ timeout and verification deadline, stale bounds, coalescing and 60-second failur
 backoff. Unsupported public JWKS entries are skipped; private key members reject
 the whole document. Supported root `KeyObject`s are imported once per refresh;
 delegated public `KeyObject`s use a bounded cache of 128 entries. Unknown key IDs
-trigger one throttled refresh. `warm()` includes the two
+trigger one throttled refresh. A mismatch of a known root kid also attempts one refresh before reporting a cryptographic failure. Failed, cooldown-suppressed or cache-only mismatch refreshes remain indeterminate. `warm()` includes the two
 pinned documents only when Poppy is enabled; cache-only mode can verify warmed
 keys. JWTs are limited to 16 KiB with bounded JSON depth and duplicate JSON members
 rejected. Process-local replay storage holds hashes through the acceptance window,
 with 10,000 total and 2,500 entries per operator; capacity failures are unverified.
-Each verifier owns this store; cross-process replay protection is not provided.
+By default each verifier owns this store, protecting only one long-lived verifier instance in one replica. Configure `poppy: { enabled: true, replayStore }` with the same atomic `NonceStore` interface as WBA for multiple workers/replicas. Keys use a `poppy:` namespace and hashed issuer, audience and jti; retain them for the supplied TTL. Store failures/timeouts return `none`; cache-only mode never calls an external store.
 Poppy runs after other asynchronous evidence. Its request signal and absolute
 monotonic deadline are checked between document/crypto stages and before replay
 insertion, so timed-out work cannot consume a nonce. A shared cache refresh may
@@ -596,7 +604,7 @@ action approval, session continuity/end-state lookup or browser-cookie validatio
 Authorization headers and `ath` claims remain unverified because OAuth client
 binding is unavailable. Signed-out sessions are fully eligible for operator
 verification. `agent_purpose` is conservatively `unknown` for Poppy.
-`vv_type` adds no values; `vv_detail` adds claim `poppy_session` (within 100
+Poppy itself adds no visitor types; 0.6.1 separately adds `automation_verified` for intermediaries; `vv_detail` adds claim `poppy_session` (within 100
 characters), while verification remains `signature_valid` / `signature_invalid`
 / `none`. This claim means header presence when unverified, never delegation of
 user authority. With a valid WBA winner, the claim is `signature_agent`, even if
@@ -608,3 +616,15 @@ operator's root `kid`; delegated per-user key fingerprints are never returned;
 never forward JWTs, subjects or Authorization values to logs or analytics.
 Vanilla and downstream sGTM detail allowlists must accept `poppy_session` before
 consuming this new claim; their packages are not changed here.
+
+## Verification policy in 0.6.1
+
+`automation_verified` has suggested collector rank **4.75**, above `agent_unverified` (3) and below directly verified agents/crawlers (5). A trusted platform signature is stronger than a copied claim, but does not identify the downstream agent. `visitorLabels` is stateless and does not implement session ranking. This label change affects analytics dictionaries only: the library never excludes or blocks traffic.
+
+WBA requires HTTPS context: explicit `secure: false` returns `none/insufficient_context`. Known mutable kid aliases get one single-flight directory refresh on crypto mismatch, subject to a 60-second cooldown. Without a completed refresh the result is indeterminate; immutable thumbprint keys do not need this rotation fallback. Expiration, retries/replay, malformed headers and missing members return `none`. A valid intermediary is not displaced by incomplete or unrelated members. SAIL `exclusive=false` ranges provide only weak `shared_ip_range` evidence, never `ip_match` or a verified label; `exhaustive=false` does not invalidate a positive exclusive match.
+
+Cache policy deliberately tolerates delayed revocation: HTTP soft TTL is clamped to 300–86400 seconds, including a 300-second minimum for no-cache/no-store. Default hard age is 86400 seconds; stale documents may verify while a background refresh runs. Removed keys/ranges stop verifying after replacement or hard expiry, not immediately when a publisher revokes them. Set `staleMaxSeconds: 0` to disable stale serving, or a small positive hard age to cap retention and soft TTL. This trades availability for a shorter revocation window; no option guarantees instantaneous revocation.
+
+Without WBA `nonceStore`, `agent_verified` confirms a reusable signed statement during its acceptance window, not a fresh client/hit or an unsigned target/IP. `MemoryNonceStore` protects only its owning instance/replica. For replay protection across replicas use a shared atomic store for WBA and Poppy, and keep each verifier long-lived. Legitimate HTTP retries can be replay results and are never by themselves proof of spoofing.
+
+The sGTM JSON exporter retains schema 1 and adds `generated_at` as an ISO serialization timestamp. This timestamp is not proof of feed freshness or revocation checks. Existing consumers can ignore the additive field. sGTM IP rules alone do not verify intermediary signatures; `automation_verified` is a server verification label.

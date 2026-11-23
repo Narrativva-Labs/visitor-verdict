@@ -4,6 +4,7 @@ export type VisitorType =
   | 'human'
   | 'pending'
   | 'agent_verified'
+  | 'automation_verified'
   | 'agent_unverified'
   | 'crawler_verified'
   | 'bot_automation'
@@ -17,6 +18,8 @@ export interface VisitorLabelsInput {
   browserPhase?: string;
   /** Browser-observed operator; used only with `declared_agent` and no verified identity. */
   browserAgent?: string;
+  /** Browser claim provenance; unknown values retain the legacy marker claim. */
+  browserAgentClaim?: string;
 }
 export interface VisitorLabels {
   vv_type: VisitorType;
@@ -39,6 +42,7 @@ export function visitorLabels({
   browserClass,
   browserPhase,
   browserAgent,
+  browserAgentClaim,
 }: VisitorLabelsInput = {}): VisitorLabels {
   const verification = verdict?.verification ?? '-';
   const verified = verification === 'signature_valid' || verification === 'ip_match';
@@ -62,7 +66,9 @@ export function visitorLabels({
       ? browserAgent!
       : undefined;
   const claim = marker
-    ? 'dom_marker'
+    ? browserAgentClaim === 'dom_host'
+      ? 'dom_host'
+      : 'dom_marker'
     : verification === 'signature_valid' &&
         verdict?.verified?.method === 'signature' &&
         verdict.claimed.signatureAgents.length > 0
@@ -79,10 +85,13 @@ export function visitorLabels({
   let type: VisitorType;
   if (verification === 'signature_invalid') type = 'bot_spoofed';
   else if (verified) {
-    // Unknown purpose retains verified identity without asserting a user-directed role. An
-    // intermediary is verified signing infrastructure: the type is agent_verified, the purpose
-    // segment `intermediary` says the operator is the infrastructure, not the agent.
-    type = purpose === 'crawler' ? 'crawler_verified' : 'agent_verified';
+    // Infrastructure proves its platform identity; the downstream agent remains unknown.
+    type =
+      purpose === 'crawler'
+        ? 'crawler_verified'
+        : purpose === 'intermediary'
+          ? 'automation_verified'
+          : 'agent_verified';
   } else if (browser === 'automated') type = 'bot_automation';
   else if (
     browser === 'declared_agent' ||

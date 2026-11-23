@@ -42,12 +42,12 @@ for (const [operator, o] of defaultRegistry.entries()) for (const list of o.ipLi
     if (sourceDir) body = await readFile(`${sourceDir}/${o.operator}--${list.name}.txt`,'utf8');
     else { const r = await fetch(list.url,{redirect:'error',signal:AbortSignal.timeout(15000)}); if (!r.ok) throw Error('HTTP '+r.status); body = await r.text(); }
     if (Buffer.byteLength(body)>2_000_000) throw Error('Source too large');
-    const prefixes = list.format === 'sail' ? parseSail(body).services.get(list.service) : JSON.parse(body).prefixes;
+    const prefixes = list.format === 'sail' ? parseSail(body).services.get(list.service)?.filter(p=>p.exclusive!==false) : JSON.parse(body).prefixes;
     if (!Array.isArray(prefixes) || prefixes.length>8192) throw Error('Invalid prefixes');
     groups.push({operator,list:list.name,tokens:tokenIds(list.uaTokens),...compile(prefixes)});
   } catch(e) { missing.push({operator:o.operator,list:list.name,url:list.url}); console.error(`${o.operator}/${list.name}: ${e.message}`); }
 }
 if (missing.length && !partial) throw Error('Missing public feeds; existing output unchanged. Use --source-dir for archived sources.');
-const rules = {schema:1,complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing};
+const rules = {schema:1,generated_at:new Date().toISOString(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing};
 const body = JSON.stringify(rules)+'\n'; if (Buffer.byteLength(body)>200_000) throw Error('Rules exceed 200 KB');
 const out = args.includes('--output') ? args[args.indexOf('--output')+1] : fileURLToPath(new URL('../dist/sgtm-rules.json',import.meta.url)); await mkdir(new URL('../dist/',import.meta.url),{recursive:true}); await writeFile(out,body); console.log(`${out}: ${Buffer.byteLength(body)} bytes; ${groups.length} groups; complete=${rules.complete}`);

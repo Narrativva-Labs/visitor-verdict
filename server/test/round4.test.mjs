@@ -337,14 +337,14 @@ test('interop: noncanonical base64 pad bits decode to the same valid signature',
   r.headers.signature = 's=:' + changed + ':';
   assert.equal((await makeVerifier().verify(r)).verification, 'signature_valid');
 });
-test('interop: ambiguous Signature-Agent is none while Signature duplicates remain invalid', async () => {
+test('interop: ambiguous Signature-Agent and duplicate Signature headers remain indeterminate', async () => {
   const r = signed();
   r.headers['signature-agent'] = ['s="https://agent.example"', 's="https://agent.example"'];
   assert.equal((await makeVerifier().verify(r)).reason, 'ambiguous_signature_agent');
   assert.equal((await makeVerifier().verify(r)).verification, 'none');
   const duplicate = signed();
   duplicate.headers.signature += ', ' + duplicate.headers.signature;
-  assert.equal((await makeVerifier().verify(duplicate)).verification, 'signature_invalid');
+  assert.equal((await makeVerifier().verify(duplicate)).verification, 'none');
 });
 for (const [target, query] of [
   ['/path', '?'],

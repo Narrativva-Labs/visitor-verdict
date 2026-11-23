@@ -73,7 +73,7 @@ test('signed identity wins over a different or contradictory unsigned UA claim',
   );
 });
 for (const [id, expected, type] of [
-  ['browserbase', 'intermediary', 'agent_verified'],
+  ['browserbase', 'intermediary', 'automation_verified'],
   ['manus', 'user_directed', 'agent_verified'],
   ['meta', 'user_directed', 'agent_verified'],
   ['duckduckgo', 'crawler', 'crawler_verified'],

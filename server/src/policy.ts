@@ -77,14 +77,15 @@ export function selectOutcome(
             reason: signatures.length ? 'ignored_non_wba' : 'signature_headers_absent',
           };
   const invalid =
-    relevant.find((s) => s.result === 'signature_invalid' && s.reason === 'replay') ??
+    relevant.find((s) => s.reason === 'crypto_mismatch' && s.result === 'signature_invalid') ??
     relevant.find((s) => s.result === 'signature_invalid');
   const selected =
     (intermediaryOnly ? invalid : undefined) ??
     relevant.find((s) => s.result === 'signature_valid') ??
     invalid ??
+    relevant.find((s) => s.reason === 'replay') ??
     relevant[0];
   return selected
     ? { verification: selected.result, reason: selected.reason }
-    : { verification: 'signature_invalid', reason: 'malformed_signature' };
+    : { verification: 'none', reason: 'malformed_signature' };
 }

@@ -150,7 +150,7 @@ for (const { name, identity, purpose, label = 'sig1' } of operators) {
     assert.equal(v.verified.keyidForm, name === 'google' ? 'kid' : 'thumbprint');
     assert.deepEqual(urls, [entry(identity).directoryUrl]);
     assert.deepEqual(visitorLabels({ verdict: v, browserClass: 'human', browserPhase: 'final' }), {
-      vv_type: 'agent_verified',
+      vv_type: purpose === 'intermediary' ? 'automation_verified' : 'agent_verified',
       vv_detail: `${name}|signature_valid|${purpose}|signature_agent|human|final`,
     });
   });
@@ -176,15 +176,15 @@ for (const { name, identity, purpose, label = 'sig1' } of operators) {
       expires: clock - 3600,
     });
     const expired = await verifier.verify(request(header, old));
-    assert.deepEqual([expired.verification, expired.reason], ['signature_invalid', 'expired']);
+    assert.deepEqual([expired.verification, expired.reason], ['none', 'expired']);
     assert.equal(visitorLabels({ verdict: expired }).vv_detail.split('|')[0], 'none');
     const store = new MemoryNonceStore(100, () => clock);
     const replaying = verifierWith({ fetcher, nonceStore: store });
     const once = labelled({ label, identity, members });
     assert.equal((await replaying.verify(request(header, once))).verification, 'signature_valid');
     const again = await replaying.verify(request(header, once));
-    assert.deepEqual([again.verification, again.reason], ['signature_invalid', 'replay']);
-    assert.equal(visitorLabels({ verdict: again }).vv_type, 'bot_spoofed');
+    assert.deepEqual([again.verification, again.reason], ['none', 'replay']);
+    assert.equal(visitorLabels({ verdict: again }).vv_type, 'agent_unverified');
   });
 
   test(`${name}: dictionary member with one key verifies with label attribution`, async () => {
@@ -261,10 +261,7 @@ test('D.2 outer signature binds inner signatures; absent members fail, lossy mem
   // Stripping a covered member is a definitive verification failure (RFC 9421 §2.1.2).
   const ghost = labelled({ label: 'ghost', identity: members.agent, members });
   const absent = await verifier.verify(request(dictionary(members), outerOver(ghost, 'ghost')));
-  assert.deepEqual(
-    [absent.verification, absent.reason],
-    ['signature_invalid', 'required_component_missing'],
-  );
+  assert.deepEqual([absent.verification, absent.reason], ['none', 'required_component_missing']);
   // A Decimal timestamp in the covered member would not re-serialize to the signed octets.
   const decimal = {
     ...inner,
@@ -295,7 +292,7 @@ test('intermediary alone is reported as infrastructure, never as the agent', asy
     browserClass: 'declared_agent',
     browserAgent: 'openai',
   });
-  assert.equal(labels.vv_type, 'agent_verified');
+  assert.equal(labels.vv_type, 'automation_verified');
   assert.equal(
     labels.vv_detail,
     'browserbase|signature_valid|intermediary|signature_agent|declared_agent|-',
@@ -420,7 +417,7 @@ test('intermediary flag is validated configuration', () => {
   assert.throws(() => make({ ...unsigned, intermediary: true }), TypeError);
 });
 
-test('an intermediary cannot hide forged or replayed direct signatures in either order', async () => {
+test('a forged direct proof overrides intermediary; replay alone does not', async () => {
   const members = { a: 'https://chatgpt.com', b: 'https://www.browserbase.com' };
   for (const reason of ['crypto_mismatch', 'replay']) {
     for (const reverse of [false, true]) {
@@ -449,15 +446,20 @@ test('an intermediary cannot hide forged or replayed direct signatures in either
       );
       assert.deepEqual(
         [v.verification, v.reason, v.verified, v.agent_purpose],
-        ['signature_invalid', reason, undefined, 'unknown'],
+        reason === 'replay'
+          ? ['signature_valid', 'verified', v.verified, 'intermediary']
+          : ['signature_invalid', reason, undefined, 'unknown'],
       );
       assert.equal(v.signatures.find((s) => s.label === 'b').result, 'signature_valid');
       assert.equal(
         visitorLabels({ verdict: v, browserClass: 'declared_agent', browserAgent: 'openai' })
           .vv_type,
-        'bot_spoofed',
+        reason === 'replay' ? 'automation_verified' : 'bot_spoofed',
       );
-      assert.equal(visitorLabels({ verdict: v }).vv_detail.split('|')[0], 'none');
+      assert.equal(
+        visitorLabels({ verdict: v }).vv_detail.split('|')[0],
+        reason === 'replay' ? 'browserbase' : 'none',
+      );
     }
   }
 });
@@ -483,13 +485,13 @@ test('covered members require byte sequences and string component identifiers', 
     const v = await verifierWith({ fetcher }).verify(r);
     assert.deepEqual(
       v.signatures.find((s) => s.label === 'b'),
-      { label: 'b', result: 'signature_invalid', reason: 'malformed_signature' },
+      { label: 'b', result: 'none', reason: 'malformed_signature' },
       `${field}=${value}`,
     );
   }
 });
 
-test('stripping either kind of covered signature member is a definitive failure', async () => {
+test('stripping either kind of covered signature member leaves insufficient evidence', async () => {
   const identity = 'https://www.browserbase.com';
   for (const name of ['signature-input', 'signature']) {
     const outer = labelled({
@@ -499,11 +501,8 @@ test('stripping either kind of covered signature member is a definitive failure'
     });
     const { fetcher } = network();
     const v = await verifierWith({ fetcher }).verify(request(JSON.stringify(identity), outer));
-    assert.deepEqual(
-      [v.verification, v.reason],
-      ['signature_invalid', 'required_component_missing'],
-    );
-    assert.equal(visitorLabels({ verdict: v }).vv_type, 'bot_spoofed');
+    assert.deepEqual([v.verification, v.reason], ['none', 'required_component_missing']);
+    assert.equal(visitorLabels({ verdict: v }).vv_type, 'agent_unverified');
   }
 });
 
@@ -610,7 +609,7 @@ test('short signatures stop before base construction or directory lookup, within
   });
   one.signature = 's=:AA==:';
   const v = await verifierWith({ fetcher }).verify(request(JSON.stringify(identity), one));
-  assert.deepEqual([v.verification, v.reason], ['signature_invalid', 'invalid_signature_length']);
+  assert.deepEqual([v.verification, v.reason], ['none', 'invalid_signature_length']);
   assert.deepEqual(urls, []);
   const oversize = request(
     JSON.stringify(identity),
@@ -734,7 +733,7 @@ test('weak header mismatch preserves a verified intermediary identity', async ()
   assert.equal(v.verification, 'signature_valid');
   assert.equal(v.verified.operator, 'browserbase');
   assert.equal(v.agent_purpose, 'intermediary');
-  assert.equal(visitorLabels({ verdict: v }).vv_type, 'agent_verified');
+  assert.equal(visitorLabels({ verdict: v }).vv_type, 'automation_verified');
 });
 
 for (const { name, identity } of operators.filter((o) => o.purpose === 'intermediary')) {

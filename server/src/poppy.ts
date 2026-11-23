@@ -7,8 +7,9 @@ import {
   type JsonWebKey,
 } from 'node:crypto';
 import { AgentCache } from './cache.js';
-import { MemoryNonceStore } from './replay.js';
-import type { AgentRequest, AgentVerdict, Registry } from './types.js';
+import { insertNonce } from './signature.js';
+import { MemoryNonceStore, isMemoryNonceStore } from './replay.js';
+import type { AgentRequest, AgentVerdict, Registry, NonceStore } from './types.js';
 
 export type PoppyReason =
   | 'poppy_valid'
@@ -166,15 +167,17 @@ function signed(jwt: ReturnType<typeof parsePoppyJwt>, key: KeyObject): boolean 
 }
 /** Only pinned registry URLs are fetched; no request-controlled network destinations. */
 export class PoppyVerifier {
-  private replay: MemoryNonceStore;
+  private replay: NonceStore;
   /** Bounded public-key cache; never exported as visitor diagnostics. */
   private delegatedKeys = new Map<string, KeyObject>();
   constructor(
     private registry: Registry,
     private cache: AgentCache,
     now: () => number,
+    replayStore?: NonceStore,
+    private replayTimeoutMs = 1000,
   ) {
-    this.replay = new MemoryNonceStore(10000, now);
+    this.replay = replayStore ?? new MemoryNonceStore(10000, now);
   }
   async evaluate(
     h: Map<string, string[]>,
@@ -248,10 +251,18 @@ export class PoppyVerifier {
       if (!active()) return fail('poppy_deadline');
       if (candidates.length !== 1) return fail('poppy_key_unavailable');
       reason = 'poppy_key_unavailable';
-      const root = candidates[0];
+      let root = candidates[0];
       if (root.alg !== dlg.h.alg) return fail('poppy_key_unavailable');
       diagnostic.kidFingerprint = hash(root.kid).slice(0, 16);
-      if (!signed(dlg, root.key)) return fail('poppy_signature_invalid', true);
+      if (!signed(dlg, root.key)) {
+        if (cacheOnly) return fail('poppy_key_unavailable');
+        keys = await this.cache.load(op.poppyJwksUri, 'directory', now, poppyKeys, 'mismatch');
+        if (!active()) return fail('poppy_deadline');
+        candidates = keys.filter((k) => k.kid === dlg.h.kid && k.alg === dlg.h.alg);
+        if (candidates.length !== 1) return fail('poppy_key_unavailable');
+        root = candidates[0];
+        if (!signed(dlg, root.key)) return fail('poppy_signature_invalid', true);
+      }
       if (!active()) return fail('poppy_deadline');
       if (
         dlg.p.iss !== jwt.p.iss ||
@@ -322,14 +333,20 @@ export class PoppyVerifier {
       const key = 'poppy:' + hash(JSON.stringify([jwt.p.iss, jwt.p.aud, jwt.p.jti]));
       const expires = Math.min(jwt.p.iat + 60, dlg.p.exp);
       if (!active()) return fail('poppy_deadline');
+      if (cacheOnly && !isMemoryNonceStore(this.replay)) return fail('poppy_replay_capacity');
       if (
-        !(await this.replay.insertIfAbsent(key, Math.max(1, expires - now), {
+        !(await insertNonce(
+          this.replay,
+          key,
+          Math.max(1, Math.ceil(expires - now)),
+          this.replayTimeoutMs,
+          op.operator,
+          expires,
           now,
-          scope: op.operator,
-          expiresAt: expires,
-        }))
+        ))
       )
         return fail('poppy_replay');
+      if (!active()) return fail('poppy_deadline');
       return {
         diagnostic: { ...diagnostic, result: 'signature_valid', reason: 'poppy_valid' },
         verified: { operator: op.operator, method: 'poppy', expiresAt: expires },

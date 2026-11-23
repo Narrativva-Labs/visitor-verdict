@@ -3,7 +3,7 @@ import { Failure } from './errors.js';
 
 export interface SailDocument {
   expiresAfter: number;
-  services: Map<string, Array<{ ipv4Prefix?: string; ipv6Prefix?: string }>>;
+  services: Map<string, Array<{ ipv4Prefix?: string; ipv6Prefix?: string; exclusive?: boolean }>>;
 }
 type Table = Record<string, unknown>;
 function invalid(): never {
@@ -140,7 +140,10 @@ export function parseSail(text: string): SailDocument {
     !services.length
   )
     invalid();
-  const prefixes = new Map<string, Array<{ ipv4Prefix?: string; ipv6Prefix?: string }>>();
+  const prefixes = new Map<
+    string,
+    Array<{ ipv4Prefix?: string; ipv6Prefix?: string; exclusive?: boolean }>
+  >();
   for (const table of sets) {
     if (
       typeof table.name !== 'string' ||
@@ -151,7 +154,7 @@ export function parseSail(text: string): SailDocument {
       !Array.isArray(table.ipv6_prefixes)
     )
       invalid();
-    const values: Array<{ ipv4Prefix?: string; ipv6Prefix?: string }> = [];
+    const values: Array<{ ipv4Prefix?: string; ipv6Prefix?: string; exclusive?: boolean }> = [];
     for (const [key, family, width] of [
       ['ipv4_prefixes', 4, 32],
       ['ipv6_prefixes', 6, 128],
@@ -169,7 +172,10 @@ export function parseSail(text: string): SailDocument {
         if (values.length > 8192) invalid();
       }
     }
-    prefixes.set(table.name, values);
+    prefixes.set(
+      table.name,
+      values.map((value) => ({ ...value, exclusive: table.exclusive as boolean })),
+    );
   }
   const result: SailDocument = { expiresAfter: top.expires_after as number, services: new Map() };
   for (const table of services) {
@@ -182,7 +188,7 @@ export function parseSail(text: string): SailDocument {
       !table.prefix_sets.length
     )
       invalid();
-    const values: Array<{ ipv4Prefix?: string; ipv6Prefix?: string }> = [];
+    const values: Array<{ ipv4Prefix?: string; ipv6Prefix?: string; exclusive?: boolean }> = [];
     const seen = new Set<string>();
     for (const name of table.prefix_sets as unknown[]) {
       if (typeof name !== 'string' || !prefixes.has(name) || seen.has(name)) invalid();

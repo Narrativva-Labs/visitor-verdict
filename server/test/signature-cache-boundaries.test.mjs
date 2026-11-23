@@ -42,7 +42,7 @@ test('empty nonce with a nonce store is missing_nonce, never valid', async () =>
   assert.equal((await v.verify(signedNonce('fresh'))).verification, 'signature_valid'); // signer sanity
   const verdict = await v.verify(signedNonce(''));
   assert.equal(verdict.reason, 'missing_nonce');
-  assert.equal(verdict.verification, 'signature_invalid');
+  assert.equal(verdict.verification, 'none');
 });
 
 test('"@authority" with a parameter does not satisfy the required coverage', async () => {
@@ -53,7 +53,7 @@ test('"@authority" with a parameter does not satisfy the required coverage', asy
     }),
   );
   assert.equal(verdict.reason, 'required_component_missing');
-  assert.equal(verdict.verification, 'signature_invalid');
+  assert.equal(verdict.verification, 'none');
 });
 
 test('cache-only during the post-failure cooldown still reports cache_miss', async () => {

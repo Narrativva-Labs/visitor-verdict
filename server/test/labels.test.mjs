@@ -41,7 +41,7 @@ for (const verification of verifications)
                       unknown: 'agent_verified',
                       crawler: 'crawler_verified',
                       user_directed: 'agent_verified',
-                      intermediary: 'agent_verified',
+                      intermediary: 'automation_verified',
                     }[purpose]
                   : fallback[bi][ci];
             const actual = visitorLabels({
@@ -226,7 +226,9 @@ test('evidence vs identity: every named operator states its source in the same d
               const [operator, verified, , source] = vv_detail.split('|');
               if (operator === 'none') continue;
               if (['signature_valid', 'ip_match'].includes(verified))
-                assert.ok(['agent_verified', 'crawler_verified'].includes(vv_type));
+                assert.ok(
+                  ['agent_verified', 'crawler_verified', 'automation_verified'].includes(vv_type),
+                );
               else {
                 assert.equal(source, 'dom_marker', vv_detail);
                 assert.equal(vv_type, 'agent_unverified', vv_detail);

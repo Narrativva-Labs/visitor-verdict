@@ -52,7 +52,15 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     now: config.now,
     onRefresh: config.onRefresh,
   });
-  const poppy = config.poppy ? new PoppyVerifier(config.registry, cache, config.now) : undefined;
+  const poppy = config.poppy
+    ? new PoppyVerifier(
+        config.registry,
+        cache,
+        config.now,
+        config.poppyReplayStore,
+        config.fetchTimeoutMs,
+      )
+    : undefined;
   const parseClaims = createClaimParser(config.registry);
   const staticRanges = staticBlocks(config.registry);
   const rdns = config.reverseDns
@@ -134,6 +142,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         throw new Failure('untrusted_signature_agent', true);
       if (poppy && h.has('poppy-session')) verdict.claimed.poppySession = true;
       if (presented) {
+        if (input.secure === false) throw new Failure('insufficient_context', true);
         if (!field(h, 'signature') || !field(h, 'signature-input'))
           throw new Failure('incomplete_signature_headers');
         const rawInput = field(h, 'signature-input');
@@ -192,6 +201,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           cacheOnly,
         );
         verdict.ip = evidence.ip;
+        if (evidence.shared) verdict.evidence = [...(verdict.evidence ?? []), 'shared_ip_range'];
         ipUnavailable = evidence.unavailable;
         ipCacheMiss = evidence.cacheMiss === true;
         if (
@@ -254,7 +264,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       }
     } catch (error) {
       const f = failure(error);
-      verdict.verification = presented && !f.indeterminate ? 'signature_invalid' : 'none';
+      verdict.verification = 'none';
       verdict.reason = f.reason;
       verdict.verified = undefined;
     }

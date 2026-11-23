@@ -29,7 +29,7 @@ interface SignatureContext {
 function checkActive(signal: AbortSignal) {
   if (signal.aborted) throw new Failure('deadline_exceeded', true);
 }
-async function insertNonce(
+export async function insertNonce(
   store: NonceStore,
   key: string,
   ttl: number,
@@ -129,10 +129,22 @@ export async function evaluateSignature(
         operator.allowKidAlias === true,
       );
     checkActive(env.signal);
-    const key = keys.get(keyid);
+    let key = keys.get(keyid);
     if (!key || !activeKey(key, env.now)) throw new Failure('unknown_keyid', true);
-    if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes))
-      throw new Failure('crypto_mismatch');
+    if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes)) {
+      if (keyid !== key.thumbprint) {
+        if (env.cacheOnly) throw new Failure('insufficient_context', true);
+        keys = withKidAliases(
+          await env.cache.load(operator.directoryUrl, 'directory', env.now, publicKeys, 'mismatch'),
+          operator.allowKidAlias === true,
+        );
+        checkActive(env.signal);
+        key = keys.get(keyid);
+        if (!key || !activeKey(key, env.now)) throw new Failure('unknown_keyid', true);
+        if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes))
+          throw new Failure('crypto_mismatch');
+      } else throw new Failure('crypto_mismatch');
+    }
     if (env.nonceStore) {
       if (env.cacheOnly && !isMemoryNonceStore(env.nonceStore))
         throw new Failure('insufficient_context', true);
@@ -168,7 +180,11 @@ export async function evaluateSignature(
   } catch (error) {
     const f = failure(error);
     return {
-      result: { label, result: f.indeterminate ? 'none' : 'signature_invalid', reason: f.reason },
+      result: {
+        label,
+        result: f.reason === 'crypto_mismatch' ? 'signature_invalid' : 'none',
+        reason: f.reason,
+      },
     };
   }
 }

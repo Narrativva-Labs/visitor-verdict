@@ -24,19 +24,19 @@ test('duplicate covered component is rejected', async () => {
     signed({ components: ['"@authority"', '"@method"', '"@method"', '"signature-agent"'] }),
   );
   assert.equal(v.reason, 'duplicate_component');
-  assert.equal(v.verification, 'signature_invalid');
+  assert.equal(v.verification, 'none');
 });
 
 test('signature that covers neither @authority nor @target-uri is rejected', async () => {
   const v = await verifier.verify(signed({ components: ['"@method"', '"signature-agent"'] }));
   assert.equal(v.reason, 'required_component_missing');
-  assert.equal(v.verification, 'signature_invalid');
+  assert.equal(v.verification, 'none');
 });
 
-test('empty keyid is missing_keyid (invalid), not unknown_keyid', async () => {
+test('empty keyid is indeterminate with missing_keyid', async () => {
   const v = await verifier.verify(signed({ kid: '' }));
   assert.equal(v.reason, 'missing_keyid');
-  assert.equal(v.verification, 'signature_invalid');
+  assert.equal(v.verification, 'none');
 });
 
 test('65-byte signature reports invalid_signature_length', async () => {

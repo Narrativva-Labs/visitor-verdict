@@ -65,7 +65,7 @@ test('int-1/sec-F5: replay all 32 captures through ONE verifier with REAL no-sto
       host: r.headers.host,
       headers: r.headers,
     });
-    assert.equal(v.verification, 'signature_invalid');
+    assert.equal(v.verification, 'none');
     assert.equal(v.reason, 'expired');
   }
 });
@@ -431,7 +431,7 @@ for (const options of [
   });
 for (const options of [{ created: clock - 100, expires: clock - 31 }, { expires: clock - 1 }])
   test('freshness failure: ' + JSON.stringify(options), async () => {
-    assert.equal((await verifier.verify(signed(options))).verification, 'signature_invalid');
+    assert.equal((await verifier.verify(signed(options))).verification, 'none');
   });
 test('constructor snapshots caller registry configuration', async () => {
   const entry = { ...operator, ipLists: [] };
