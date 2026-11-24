@@ -103,7 +103,8 @@ export type LoadMode =
   | 'ahead'
   | 'cached'
   | 'cached-forced'
-  | 'mismatch';
+  | 'mismatch'
+  | 'claim';
 export interface CacheOptions {
   /** Hard maximum age of retained data since its fetch; 0 disables stale serving. */
   staleMaxSeconds?: number;
@@ -212,9 +213,22 @@ export class AgentCache {
     const cacheKey = kind + ':' + url;
     const entry = this.touch(cacheKey, kind);
     const force = mode === 'forced' || mode === 'cached-forced' || mode === 'mismatch';
-    const cacheOnly = mode === 'cached' || mode === 'cached-forced';
+    const cacheOnly = mode === 'cached' || mode === 'cached-forced' || mode === 'claim';
     const request = mode === 'request' || mode === 'cached';
     const usable = entry.data !== undefined && now < entry.staleUntil;
+    if (mode === 'claim' && usable) {
+      if (
+        now - entry.fetched >= 600 &&
+        !entry.flight &&
+        !entry.forcedFlight &&
+        now >= entry.cooldown
+      ) {
+        entry.cooldown = now + COOLDOWN_SECONDS;
+        entry.flight = this.refresh(url, kind, now, entry, decode, 'flight');
+        entry.flight.catch(() => {});
+      }
+      return entry.data as T;
+    }
     if ((request || mode === 'warm') && usable && now < entry.until) return entry.data as T;
     const pending = force
       ? (entry.forcedFlight ?? entry.flight)

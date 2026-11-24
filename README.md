@@ -85,3 +85,5 @@ The integrity value comes from [dist/visitor-verdict.min.js.sri](dist/visitor-ve
 For local builds and checks, see [Contributing](CONTRIBUTING.md). Report human misclassifications with short debug codes and synthetic reproductions, without URLs, IPs or visitor data. See [Security](SECURITY.md) for private data-leak reports.
 
 [MIT](LICENSE). Copyright © 2026 František Bujnovský.
+
+Server 0.7.0 adds opt-in unsigned UA `ip_mismatch` evidence; see [server documentation](server/README.md#unsigned-ua-ip-mismatch-server-070).

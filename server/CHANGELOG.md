@@ -1,5 +1,11 @@
 # Changelog
 
+## Server 0.7.0 — 2026-11-24
+
+- Add opt-in `flagSpoofedClaims`, request `ipTrusted`, explicit OpenAI feed completeness/provenance and `ip_mismatch` labels for unsigned UA claims outside the operator IP union.
+- Retain negative decisions in memory with background refresh after ten minutes, bounded by hard cache expiry. Verified identity wins; mismatch precedes browser automation and claims. Trusted mismatch is bot_spoofed (collector rank 4.5), otherwise agent_unverified.
+- Cover opt-out, signatures, IP trust, operator union, missing and stale feeds; document analytics vocabulary and deployment assumptions.
+
 ## 0.6.1 — 2026-11-23
 
 - Reuse successfully fetched directories within a request to avoid duplicate refreshes and self-cooldown; preserve non-WBA IP fallback with insecure context. Refresh Poppy algorithm rotations and reject duplicate kid values consistently before and after refresh. Expand SAIL export and browser claim/precedence regressions.

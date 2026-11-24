@@ -218,6 +218,13 @@ export function validateConfig(options: VerifierOptions) {
         (typeof list.service !== 'string' || !list.service.length || list.service.length > 128)
       )
         throw new TypeError('Invalid SAIL service');
+      if (list.complete !== undefined && typeof list.complete !== 'boolean')
+        throw new TypeError('Invalid complete IP list flag');
+      if (list.complete) {
+        if (!list.uaTokens?.length || typeof list.checked !== 'string' || !list.checked.length)
+          throw new TypeError('Complete IP list requires tokens and provenance');
+        httpsUrl(list.source);
+      }
       httpsUrl(list.url);
       urls.add(list.url);
       return { ...list, uaTokens: list.uaTokens ? [...list.uaTokens] : undefined };
@@ -256,7 +263,10 @@ export function validateConfig(options: VerifierOptions) {
     throw new TypeError('Invalid Poppy replayStore');
   if (options.poppy?.enabled && !options.fetcher)
     throw new TypeError('Poppy requires an injected fetcher');
+  if (options.flagSpoofedClaims !== undefined && typeof options.flagSpoofedClaims !== 'boolean')
+    throw new TypeError('Invalid flagSpoofedClaims');
   return {
+    flagSpoofedClaims: options.flagSpoofedClaims === true,
     poppy: options.poppy?.enabled === true,
     poppyReplayStore: options.poppy?.replayStore,
     maxLifetimeSeconds,

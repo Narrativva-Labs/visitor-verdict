@@ -170,6 +170,7 @@ The verdict contains claimed known UA tokens and parsed Signature-Agent strings;
 | `none`              | Indeterminate/untrusted/context failure: untrusted_signature_agent, unknown_keyid, unsupported_component, insufficient_context, unknown_authority, invalid_clock, internal_error, replay_capacity_exhausted, nonce_store_timeout, directory_timeout, deadline_exceeded, ip_evidence_unavailable, cache_miss, reverse_dns_unavailable, ambiguous_signature_agent. |
 | `no_signature`      | No WBA signature and no official IP match: signature_headers_absent, ignored_non_wba or reverse_dns_not_confirmed. A relevant failed feed with no match instead returns none/ip_evidence_unavailable. UA alone never verifies.                                                                                                                                   |
 | `ip_match`          | No WBA signature presented and a relevant operator-published range matches: official_ip_range_match, or optional FCrDNS: reverse_dns_match.                                                                                                                                                                                                                      |
+| `ip_mismatch` | Opt-in unsigned UA claim outside the complete operator IP union: official_ip_range_mismatch. IP trust determines spoofed versus unverified type; never verified identity. |
 
 Other/absent signature tags are reported per-label as none/ignored_non_wba and do not suppress IP matching or override an indeterminate WBA peer. A malformed SF header can still fail before tag selection.
 
@@ -184,7 +185,7 @@ Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabe
 | `automation_verified` | Trusted intermediary signature: platform identity (Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf); downstream agent and purpose unknown.                        |
 | `crawler_verified`    | Server `signature_valid`/`ip_match`, purpose `crawler`                                                                                                                           |
 | `bot_automation`      | Browser `automated`                                                                                                                                                              |
-| `agent_unverified`    | Browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent/`poppy_session` claim                                                                  |
+| `agent_unverified`    | Untrusted-IP `ip_mismatch`, or browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent/`poppy_session` claim                                                                  |
 | `bot_suspicious`      | Browser `suspicious`                                                                                                                                                             |
 | `human`               | Browser `human`                                                                                                                                                                  |
 | `pending`             | No browser class or qualifying server evidence                                                                                                                                   |
@@ -213,7 +214,7 @@ The operator segment has exactly two sources in `visitorLabels`, and the same de
 | Verified WBA signature                     | `signature_valid`                                                  | `signature_agent`                                       | `agent_verified` / `crawler_verified` / `automation_verified` |
 | Verified IP range or FCrDNS                | `ip_match`                                                         | `ua_token` (the claim that selected the feed) or `none` | `agent_verified` / `crawler_verified`                         |
 | Verified Poppy session                     | `signature_valid`                                                  | `poppy_session`                                         | `agent_verified`                                              |
-| Browser page marker (observed, unverified) | anything except `signature_valid`, `ip_match`, `signature_invalid` | `dom_marker` or `dom_host`                              | `agent_unverified`                                            |
+| Browser page marker (observed, unverified) | anything except `signature_valid`, `ip_match`, `signature_invalid` | `dom_marker` or `dom_host`                              | `agent_unverified`, or `bot_spoofed` for trusted-IP `ip_mismatch` |
 | Nothing else                               | any                                                                | any                                                     | operator is `none`                                            |
 
 A UA token or an unverified Signature-Agent value is a claim: it sets the claim segment and can make the type `agent_unverified`, but it **never** names an operator. An exhaustive test enforces this table. A collector that keeps a sticky operator per session (Vanilla does) inherits it together with the stronger type that established it, so on such a hit the type, not the current hit's verification segment, tells the source: `agent_verified`/`crawler_verified`/`automation_verified` means a verified operator; `agent_unverified` with an operator means a browser observation (`dom_marker` or `dom_host`).
@@ -623,3 +624,43 @@ Without WBA `nonceStore`, `agent_verified` confirms a reusable signed statement 
 The sGTM JSON exporter retains schema 1 and adds `generated_at` as an ISO serialization timestamp. This timestamp is not proof of feed freshness or revocation checks. Existing consumers can ignore the additive field. sGTM IP rules alone do not verify intermediary signatures; `automation_verified` is a server verification label.
 
 A successful directory fetch awaited during the current request (cold load, joined fetch, forced rotation refresh or mismatch refresh) is reused across WBA members. A mismatch against that fresh document is definitive without a second fetch; its own cooldown never downgrades it. A cached document alone does not count as a fresh fetch. Poppy applies the same rule to its JWKS, requires a single candidate selected by kid before and after refresh, and permits a bounded refresh when the root algorithm changes. Explicit `secure:false` is checked only after selecting a WBA tag; unrelated signatures remain ignored and do not suppress independent IP or reverse-DNS evidence.
+
+## Unsigned UA IP mismatch (server 0.7.0)
+
+`createVerifier({ flagSpoofedClaims: true, ... })` opts into negative IP evidence;
+its default is false. Pass `ipTrusted: false` on requests whose client address the
+transport adapter cannot establish reliably; direct connections default to true.
+Only a recognized UA token with an explicitly `complete: true` IP list is eligible.
+`Signature-Agent` alone never triggers the rule. Any Signature or Signature-Input
+header suppresses it, even if empty or malformed; accepted Poppy proof also wins.
+
+Initially only OpenAI's ChatGPT-User, OAI-SearchBot, GPTBot and OAI-AdsBot mappings
+are marked complete, with source and check date on each feed. The
+[OpenAI crawler documentation](https://developers.openai.com/api/docs/bots)
+identifies these UAs and publishes their IP lists for site operators to verify
+requests. Treating those published lists as complete for those exact tokens is
+our explicit registry policy, not cryptographic proof or a claim about every
+OpenAI product. Other operators remain disabled. Check the union of **all** feeds
+of the claimed operator (and static ranges), including feeds for other UA tokens.
+Missing, empty, invalid or hard-expired feeds cannot establish a mismatch.
+
+`ip_mismatch` is the new second segment in
+`operator|verification|purpose|claim|browser|phase`. Example:
+`none|ip_mismatch|unknown|ua_token|-|-`. It names no verified operator and implies
+no verified purpose. Trusted IP yields `bot_spoofed`, untrusted IP yields
+`agent_unverified`. This is negative IP-range evidence, weaker than identity
+verification. Page markers retain their existing bounded operator/claim behavior.
+
+Direct valid signature / IP match outrank mismatch, which outranks UA/marker and
+browser automation evidence. Thus `automated` with mismatch still yields the
+IP-dependent type, matching the sGTM template. Unlike sGTM's current heuristic
+that any token-gated nonempty group is complete, this registry deliberately
+requires explicit completeness and enables it only for OpenAI. Sticky collectors
+rank spoofing at 4.5, below direct verified identity (5).
+
+Negative checks use memory only. Missing feeds start background fetches and do not
+assert mismatch; warm with `{ ipLists: true }` to preload the full union. After
+600 seconds retained lists trigger one throttled background refresh without
+waiting, even if their HTTP max-age is longer. Decisions use the retained list
+until the configured hard `staleMaxSeconds` limit (default 24 hours); no failed
+refresh extends it. This avoids adding network latency to a negative decision.

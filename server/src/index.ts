@@ -10,7 +10,7 @@ import { Failure, failure } from './errors.js';
 import { checkContext, selectOutcome } from './policy.js';
 import { evaluateSignature } from './signature.js';
 import { ReverseDnsVerifier } from './rdns.js';
-import { staticBlocks, ipEvidence, decodeList, decodeSail } from './ip.js';
+import { staticBlocks, ipEvidence, ipMismatch, decodeList, decodeSail } from './ip.js';
 import { publicKeys } from './keys.js';
 import { purposeFor, type DnsPurposeEvidence } from './purpose.js';
 import type {
@@ -263,6 +263,25 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
         } else if (verdict.verification === 'no_signature' && dnsNotConfirmed) {
           verdict.reason = 'reverse_dns_not_confirmed';
         }
+      }
+      if (
+        config.flagSpoofedClaims &&
+        !h.has('signature') &&
+        !h.has('signature-input') &&
+        !(poppy && h.has('poppy-session')) &&
+        !verdict.verified &&
+        (await ipMismatch(
+          input.clientIp,
+          claims.uaTokens,
+          config.registry,
+          cache,
+          now,
+          staticRanges,
+        ))
+      ) {
+        verdict.verification = 'ip_mismatch';
+        verdict.reason = 'official_ip_range_mismatch';
+        verdict.ipTrusted = input.ipTrusted !== false;
       }
     } catch (error) {
       const f = failure(error);

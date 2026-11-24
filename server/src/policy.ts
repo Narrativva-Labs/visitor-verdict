@@ -12,6 +12,8 @@ export function checkContext(input: AgentRequest, authorities: Set<string>): Con
     !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(input.method)
   )
     throw new Failure('insufficient_context', true);
+  if (input.ipTrusted !== undefined && typeof input.ipTrusted !== 'boolean')
+    throw new Failure('insufficient_context', true);
   const context = { method: input.method, authority, target: input.target };
   if (
     input.target !== undefined &&

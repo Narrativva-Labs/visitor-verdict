@@ -84,6 +84,8 @@ export function visitorLabels({
         : '-';
   let type: VisitorType;
   if (verification === 'signature_invalid') type = 'bot_spoofed';
+  else if (verification === 'ip_mismatch')
+    type = verdict?.ipTrusted !== false ? 'bot_spoofed' : 'agent_unverified';
   else if (verified) {
     // Infrastructure proves its platform identity; the downstream agent remains unknown.
     type =

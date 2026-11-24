@@ -118,3 +118,40 @@ export async function ipEvidence(
     ),
   };
 }
+
+/** Negative evidence requires an explicit complete UA mapping and the whole operator union. */
+export async function ipMismatch(
+  ip: string | undefined,
+  ua: string[],
+  registry: Registry,
+  cache: AgentCache,
+  now: number,
+  staticRanges: Map<string, BlockList>,
+): Promise<boolean> {
+  if (typeof ip !== 'string' || !isIP(ip)) return false;
+  for (const operator of registry) {
+    if (
+      !operator.ipLists.some((list) => list.complete && list.uaTokens?.some((t) => ua.includes(t)))
+    )
+      continue;
+    if (staticRanges.get(operator.operator)?.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')) continue;
+    const results = await Promise.allSettled(
+      operator.ipLists.map(async (list) => {
+        if (list.format === 'sail') {
+          const services = await cache.load(list.url, 'sail', now, decodeSail, 'claim');
+          // Shared ranges also prevent a negative attribution.
+          return [...services.values()].some(
+            (block) =>
+              block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6') ||
+              block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'),
+          );
+        }
+        const block = await cache.load(list.url, 'ip', now, decodeList, 'claim');
+        if (!block.rules.length) throw new Failure('invalid_ip_list', true);
+        return block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6');
+      }),
+    );
+    if (results.length && results.every((r) => r.status === 'fulfilled' && !r.value)) return true;
+  }
+  return false;
+}

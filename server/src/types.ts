@@ -12,6 +12,8 @@ export interface AgentRequest {
   host: string;
   headers: HeadersInput;
   clientIp?: string;
+  /** Adapter-established client IP; defaults to true for direct connections. */
+  ipTrusted?: boolean;
   /** External transport security from a trusted adapter; false makes WBA context insufficient. */
   secure?: boolean;
   /** Disable weak diagnostics behind stripping proxies or privacy/enterprise policies. */
@@ -76,6 +78,10 @@ export interface PurposePolicy {
 export interface IpList {
   name: string;
   url: string;
+  /** Published as complete for these UA tokens; never inferred from a positive match. */
+  complete?: boolean;
+  source?: string;
+  checked?: string;
   uaTokens?: readonly string[];
   /** SAIL is a schema-specific TOML feed; other feeds are JSON. */
   format?: 'json' | 'sail';
@@ -97,8 +103,16 @@ export interface AgentVerdict {
   agent_purpose: AgentPurpose;
   claimed: { uaTokens: string[]; signatureAgents: string[]; poppySession?: boolean };
   poppy?: import('./poppy.js').PoppyResult;
-  verification: 'signature_valid' | 'signature_invalid' | 'no_signature' | 'ip_match' | 'none';
+  verification:
+    | 'signature_valid'
+    | 'signature_invalid'
+    | 'no_signature'
+    | 'ip_match'
+    | 'ip_mismatch'
+    | 'none';
   reason: string;
+  /** Trust in the transport IP used for negative range evidence. */
+  ipTrusted?: boolean;
   verified?: {
     operator: string;
     method: 'signature' | 'ip' | 'rdns' | 'poppy';
@@ -124,6 +138,8 @@ export interface SignatureResult {
 }
 /** Construction-time configuration. Clock values are Unix seconds. */
 export interface VerifierOptions {
+  /** Opt into negative evidence from complete operator IP lists; default false. */
+  flagSpoofedClaims?: boolean;
   /** Poppy replay defaults to one local verifier; inject shared atomic storage for replicas. */
   poppy?: { enabled: boolean; replayStore?: NonceStore };
   registry: Registry;
