@@ -533,6 +533,25 @@ source documents can be supplied with `--source-dir DIR` using file names
 `complete: false` and missing sources and must not be published as a release feed.
 Run `node scripts/test-sgtm-rules.mjs` for offline export/SAIL/size-guard tests.
 
+Every group includes registry `complete` (default false), its own `fetched_at_ms`
+and `source_key`. `sources` records every remote list with `available`,
+`refresh_ok`, `fetched_at_ms` and `reason`. Aggregate `generated_at_ms` records
+assembly only. Archived input uses the file's mtime: preserve the original fetch
+time when archiving. Static groups are never complete negative evidence; SAIL
+shared ranges are excluded. A fresh assembly cannot renew stale source evidence.
+The live service retains each last good list independently and can publish a
+valid partial document with top-level `complete:true`; inspect per-list metadata.
+See the shared [service and feed contract](CONTRACT.md) for limits, health thresholds,
+72-hour reconstruction proofs and the optional `public_path_hash` request field.
+
+Service adapters may pass an owned `AgentCache` as the second `createVerifier`
+argument to share directory flights across authority batches. Closing a verifier
+does not close that supplied cache; its owner closes it. Request options
+`isReplay(label)` and synchronous `acceptSignature(label, verified)` reject one
+candidate without vetoing peers; admission runs only after policy and cryptography.
+Cache-only mutable-kid mismatches trigger one background refresh under the existing
+single-flight and 60-second cooldown and remain indeterminate for the current hit.
+
 Publish a reviewed, complete feed under an immutable public repository tag such as
 `sgtm-rules-v1.1.1`; the companion sGTM template reads
 `https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@sgtm-rules-v1.1.1/dist/sgtm-rules.json`.

@@ -140,7 +140,13 @@ export async function evaluateSignature(
     if (!key || !activeKey(key, env.now)) throw new Failure('unknown_keyid', true);
     if (!verify(null, Buffer.from(base, 'ascii'), key.key, bytes)) {
       if (keyid !== key.thumbprint && !trace.fetched) {
-        if (env.cacheOnly) throw new Failure('insufficient_context', true);
+        if (env.cacheOnly) {
+          // Same-kid rotation: bounded single-flight refresh without waiting on the hit.
+          void env.cache
+            .load(operator.directoryUrl, 'directory', env.now, publicKeys, 'cached-forced')
+            .catch(() => {});
+          throw new Failure('insufficient_context', true);
+        }
         keys = withKidAliases(
           await env.cache.load(
             operator.directoryUrl,

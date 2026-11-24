@@ -187,13 +187,16 @@ test('audit: orphan signature cannot poison valid intermediary proof', async () 
   const verdict = await v.verify(req);
   assert.equal(visitorLabels({ verdict }).vv_type, 'automation_verified');
 });
-test('audit: unrefreshed cache-only alias mismatch is never spoofed', async () => {
+test('audit: cache-only alias mismatch refreshes in background and respects cooldown', async () => {
   const old = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' });
   let calls = 0;
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
   const v = makeVerifier({
     registry: [{ ...operator, allowKidAlias: true }],
     fetcher: async () => {
       calls++;
+      if (calls > 1) await pending;
       return Response.json({ keys: [{ ...old, kid: 'alias' }] });
     },
   });
@@ -202,9 +205,11 @@ test('audit: unrefreshed cache-only alias mismatch is never spoofed', async () =
     (await v.verify(signed({ kid: 'alias' }), { cacheOnly: true })).verification,
     'none',
   );
-  assert.equal(calls, 1);
-  assert.equal((await v.verify(signed({ kid: 'alias' }))).verification, 'signature_invalid');
   assert.equal(calls, 2);
+  assert.equal((await v.verify(signed({ kid: 'alias' }), { cacheOnly: true })).verification, 'none');
+  assert.equal(calls, 2);
+  release();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal((await v.verify(signed({ kid: 'alias' }))).verification, 'none');
   assert.equal(calls, 2);
 });

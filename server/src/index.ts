@@ -44,14 +44,16 @@ function emptyVerdict(): AgentVerdict {
     signatures: [],
   };
 }
-/** Validate trusted configuration once and create a verifier with an owned cache. */
-export function createVerifier(options: VerifierOptions): AgentVerifier {
+/** Validate trusted configuration once and create a verifier with an owned cache, or a caller-owned cache shared by authority batches. */
+export function createVerifier(options: VerifierOptions, sharedCache?: AgentCache): AgentVerifier {
   const config = validateConfig(options);
-  const cache = new AgentCache(config.fetcher, config.fetchTimeoutMs, {
-    staleMaxSeconds: config.staleMaxSeconds,
-    now: config.now,
-    onRefresh: config.onRefresh,
-  });
+  const cache =
+    sharedCache ??
+    new AgentCache(config.fetcher, config.fetchTimeoutMs, {
+      staleMaxSeconds: config.staleMaxSeconds,
+      now: config.now,
+      onRefresh: config.onRefresh,
+    });
   const poppy = config.poppy
     ? new PoppyVerifier(
         config.registry,
@@ -105,6 +107,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
     signal: AbortSignal,
     cacheOnly: boolean,
     deadlineAt: number,
+    admission?: VerifyOptions,
   ): Promise<AgentVerdict> {
     let presented = false;
     const directoryLoads = new Map<string, { fetched: boolean }>();
@@ -156,23 +159,34 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           if (Array.isArray(member[0]) && member[0].length > 32)
             throw new Failure('too_many_components');
         for (const label of labels) {
-          const evaluation = await evaluateSignature(label, inputs, sigs, {
-            context,
-            headers: h,
-            agent: claims.agent,
-            registry: config.registry,
-            cache,
-            now,
-            signal,
-            nonceStore: config.nonceStore,
-            nonceTimeoutMs: config.fetchTimeoutMs,
-            fields: { inputs: parsedInputs, signatures: parsedSignatures, agent: claims.agent },
-            maxLifetimeSeconds: config.maxLifetimeSeconds,
-            cacheOnly,
-            secure: input.secure,
-            directoryLoads,
-          });
+          const evaluation = admission?.isReplay?.(label)
+            ? { result: { label, result: 'none' as const, reason: 'replay' }, verified: undefined }
+            : await evaluateSignature(label, inputs, sigs, {
+                context,
+                headers: h,
+                agent: claims.agent,
+                registry: config.registry,
+                cache,
+                now,
+                signal,
+                nonceStore: config.nonceStore,
+                nonceTimeoutMs: config.fetchTimeoutMs,
+                fields: { inputs: parsedInputs, signatures: parsedSignatures, agent: claims.agent },
+                maxLifetimeSeconds: config.maxLifetimeSeconds,
+                cacheOnly,
+                secure: input.secure,
+                directoryLoads,
+              });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
+          // Admission is synchronous so adapters can atomically commit verified bytes.
+          if (
+            evaluation.verified &&
+            admission?.acceptSignature &&
+            !admission.acceptSignature(label, evaluation.verified)
+          ) {
+            evaluation.verified = undefined;
+            evaluation.result = { label, result: 'none', reason: 'replay' };
+          }
           verdict.signatures.push(evaluation.result);
           // A valid direct identity wins over a valid intermediary (signing infrastructure),
           // so infrastructure is never reported in place of the agent that also signed.
@@ -316,6 +330,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
           controller.signal,
           options?.cacheOnly === true,
           started + config.deadlineMs,
+          options,
         );
         const result = await Promise.race([work, deadline]);
         if (performance.now() - started >= config.deadlineMs) {
@@ -352,7 +367,7 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       return result;
     },
     close(): void {
-      cache.close();
+      if (!sharedCache) cache.close();
     },
     status() {
       return cache.status([...targets.values()].map(([url, kind]) => [url, kind]));

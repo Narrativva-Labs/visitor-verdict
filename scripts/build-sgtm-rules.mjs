@@ -2,7 +2,8 @@
  * --source-dir DIR reads public source documents from DIR/<operator>--<list>.txt.
  * --allow-partial is for offline development only; default fails on any missing feed.
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { defaultRegistry } from '../server/dist/registry.js';
@@ -13,7 +14,7 @@ const sourceDir = args.includes('--source-dir') ? args[args.indexOf('--source-di
 const partial = args.includes('--allow-partial');
 const tokens = serverAgentTokens(defaultRegistry);
 const tokenIds = values => values === undefined ? null : values.map(t => tokens.indexOf(t)).filter(i => i >= 0);
-const groups = [], missing = [];
+const groups = [], missing = [], sources = [];
 function ipv6(ip) {
   if (ip.includes('.')) { const i = ip.lastIndexOf(':'); const p = ip.slice(i + 1).split('.').map(Number); ip = ip.slice(0,i+1) + ((p[0]*256+p[1]).toString(16)) + ':' + ((p[2]*256+p[3]).toString(16)); }
   const halves = ip.split('::'), left = halves[0] ? halves[0].split(':') : [], right = halves[1] ? halves[1].split(':') : [];
@@ -35,21 +36,27 @@ function compile(prefixes) {
   return {v4:merged,v6:v6.filter((x,i,a)=>!i || x[0]!==a[i-1][0] || x[1]!==a[i-1][1])};
 }
 // Static evidence precedes fetched evidence in the verifier.
-for (const [operator, o] of defaultRegistry.entries()) if (o.staticPrefixes?.length) groups.push({operator,list:'published_static',tokens:tokenIds(o.extraUaTokens),...compile(o.staticPrefixes)});
+for (const [operator, o] of defaultRegistry.entries()) if (o.staticPrefixes?.length) groups.push({operator,list:'published_static',complete:false,fetched_at_ms:Date.now(),source_key:'static',tokens:tokenIds(o.extraUaTokens),...compile(o.staticPrefixes)});
 for (const [operator, o] of defaultRegistry.entries()) for (const list of o.ipLists) {
   try {
-    let body;
-    if (sourceDir) body = await readFile(`${sourceDir}/${o.operator}--${list.name}.txt`,'utf8');
-    else { const r = await fetch(list.url,{redirect:'error',signal:AbortSignal.timeout(15000)}); if (!r.ok) throw Error('HTTP '+r.status); body = await r.text(); }
+    let body, fetched_at_ms;
+    if (sourceDir) {
+      const file = `${sourceDir}/${o.operator}--${list.name}.txt`;
+      body = await readFile(file,'utf8');
+      fetched_at_ms = Math.trunc((await stat(file)).mtimeMs);
+    }
+    else { const r = await fetch(list.url,{redirect:'error',signal:AbortSignal.timeout(15000)}); if (!r.ok) throw Error('HTTP '+r.status); body = await r.text(); fetched_at_ms = Date.now(); }
     if (Buffer.byteLength(body)>2_000_000) throw Error('Source too large');
     const prefixes = list.format === 'sail' ? parseSail(body).services.get(list.service)?.filter(p=>p.exclusive!==false) : JSON.parse(body).prefixes;
     if (!Array.isArray(prefixes) || prefixes.length>8192) throw Error('Invalid prefixes');
-    groups.push({operator,list:list.name,tokens:tokenIds(list.uaTokens),...compile(prefixes)});
-  } catch(e) { missing.push({operator:o.operator,list:list.name,url:list.url}); console.error(`${o.operator}/${list.name}: ${e.message}`); }
+    const source_key = createHash('sha256').update(JSON.stringify([o.operator,list.name,list.url,list.format,list.service])).digest('hex');
+    groups.push({operator,list:list.name,complete:list.complete===true,fetched_at_ms,source_key,tokens:tokenIds(list.uaTokens),...compile(prefixes)});
+    sources.push({operator:o.operator,list:list.name,fetched_at_ms,available:true,refresh_ok:true,reason:null});
+  } catch(e) { sources.push({operator:o.operator,list:list.name,fetched_at_ms:null,available:false,refresh_ok:false,reason:'fetch'}); missing.push({operator:o.operator,list:list.name,url:list.url}); console.error(`${o.operator}/${list.name}: ${e.message}`); }
 }
 if (missing.length && !partial) throw Error('Missing public feeds; existing output unchanged. Use --source-dir for archived sources.');
 const builtAt = new Date();
 // generated_at_ms: the sGTM sandbox has no Date, and its calendar arithmetic is not reliable.
-const rules = {schema:1,generated_at:builtAt.toISOString(),generated_at_ms:builtAt.getTime(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing};
+const rules = {schema:1,generated_at:builtAt.toISOString(),generated_at_ms:builtAt.getTime(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing,sources};
 const body = JSON.stringify(rules)+'\n'; if (Buffer.byteLength(body)>200_000) throw Error('Rules exceed 200 KB');
 const out = args.includes('--output') ? args[args.indexOf('--output')+1] : fileURLToPath(new URL('../dist/sgtm-rules.json',import.meta.url)); await mkdir(new URL('../dist/',import.meta.url),{recursive:true}); await writeFile(out,body); console.log(`${out}: ${Buffer.byteLength(body)} bytes; ${groups.length} groups; complete=${rules.complete}`);

@@ -1,4 +1,4 @@
-import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm,utimes} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -17,9 +17,21 @@ try{
  assert.equal(feed.schema,1);assert.equal(new Date(feed.generated_at).toISOString(),feed.generated_at);assert.ok(Date.now()-Date.parse(feed.generated_at)<60000);assert.equal(feed.generated_at_ms,Date.parse(feed.generated_at));assert.equal(feed.complete,true);assert.ok(Buffer.byteLength(original)<=200000);assert.deepEqual(feed.missing,[]);
  const group=feed.groups.find(g=>g.list==='chatgpt-user');assert.deepEqual(group.v4,[[3221225984,3221226239],[3325256746,3325256746]]);assert.deepEqual(group.v6,[['20010db8000000000000000000000000',33]]);
  assert.equal(feed.tokens[group.tokens[0]],'ChatGPT-User');assert.equal(feed.operators[group.operator].id,'openai');
+ assert.equal(group.complete,true);
+ for(const g of feed.groups){assert.equal(typeof g.complete,'boolean');assert.ok(Number.isSafeInteger(g.fetched_at_ms));}
+ assert.equal(feed.sources.length,defaultRegistry.reduce((n,o)=>n+o.ipLists.length,0));
+ assert.ok(feed.sources.every(s=>s.available&&s.refresh_ok&&Number.isSafeInteger(s.fetched_at_ms)));
  const sail=feed.groups.find(g=>g.list==='sail');assert.deepEqual(sail.v4,[[3221225984,3221226239]]);assert.deepEqual(sail.v6,[['20010db8000000000000000000000000',33]]);assert.ok(sail.tokens.length);
+ assert.equal(sail.complete,false);
+ const old=Date.now()-6*86400000;
+ await utimes(join(dir,'openai--chatgpt-user.txt'),old/1000,old/1000);
+ r=run();assert.equal(r.status,0,r.stderr);
+ const archived=JSON.parse(await readFile(output,'utf8'));
+ assert.ok(Math.abs(archived.groups.find(g=>g.list==='chatgpt-user').fetched_at_ms-old)<=1);
+ assert.ok(archived.generated_at_ms-old>5*86400000);
  // Missing input must never replace an existing good output silently.
- await rm(join(dir,'openai--chatgpt-user.txt'));r=run();assert.notEqual(r.status,0);assert.equal(await readFile(output,'utf8'),original);
+ const beforeMissing=await readFile(output,'utf8');
+ await rm(join(dir,'openai--chatgpt-user.txt'));r=run();assert.notEqual(r.status,0);assert.equal(await readFile(output,'utf8'),beforeMissing);
  r=run(['--allow-partial']);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(await readFile(output,'utf8')).complete,false);
  // Guard must measure the full serialized byte length, before writing output.
  const large=JSON.stringify({prefixes:Array.from({length:8192},(_,i)=>({ipv6Prefix:`2001:db8:${i.toString(16)}::/128`}))});

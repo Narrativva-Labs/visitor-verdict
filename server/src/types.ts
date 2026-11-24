@@ -191,6 +191,10 @@ export interface RefreshEvent {
 }
 /** Per-request behavior; configuration and network targets remain construction-time options. */
 export interface VerifyOptions {
+  /** Exclude a previously verified candidate before cryptographic work; no effect on its peers. */
+  isReplay?: (label: string) => boolean;
+  /** Atomic synchronous admission after policy and cryptography, before outcome selection. */
+  acceptSignature?: (label: string, verified: NonNullable<AgentVerdict['verified']>) => boolean;
   /**
    * Use only trusted cached documents and static ranges. Misses refresh in the background and
    * return none/cache_miss without waiting. DNS and external replay-store calls are not made. MemoryNonceStore is supported.
