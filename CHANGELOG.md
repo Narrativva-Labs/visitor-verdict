@@ -1,5 +1,10 @@
 # Changelog
 
+## IP mismatch review — 2026-11-24
+
+- Require a known successful source refresh within 2 h for every operator feed before reporting IP spoofing. Cache reuse and refresh failures do not renew certainty; uncertain mismatches preserve browser automation.
+- Treat exclusively non-WBA HTTP signatures as absent for IP mismatch, matching positive IP fallback. Document TRUST_PROXY certainty and cover freshness boundaries and missing metadata.
+
 ## Server 0.7.0 — 2026-11-24
 
 - Add opt-in `flagSpoofedClaims`, request `ipTrusted`, explicit OpenAI feed completeness/provenance and `ip_mismatch` labels for unsigned UA claims outside the operator IP union.

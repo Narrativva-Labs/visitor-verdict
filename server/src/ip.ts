@@ -127,8 +127,8 @@ export async function ipMismatch(
   cache: AgentCache,
   now: number,
   staticRanges: Map<string, BlockList>,
-): Promise<boolean> {
-  if (typeof ip !== 'string' || !isIP(ip)) return false;
+): Promise<{ fresh: boolean } | undefined> {
+  if (typeof ip !== 'string' || !isIP(ip)) return;
   for (const operator of registry) {
     if (
       !operator.ipLists.some((list) => list.complete && list.uaTokens?.some((t) => ua.includes(t)))
@@ -137,21 +137,31 @@ export async function ipMismatch(
     if (staticRanges.get(operator.operator)?.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')) continue;
     const results = await Promise.allSettled(
       operator.ipLists.map(async (list) => {
+        const trace: { fetched: boolean; successfulRefreshAt?: number } = { fetched: false };
         if (list.format === 'sail') {
-          const services = await cache.load(list.url, 'sail', now, decodeSail, 'claim');
+          const services = await cache.load(list.url, 'sail', now, decodeSail, 'claim', trace);
           // Shared ranges also prevent a negative attribution.
-          return [...services.values()].some(
+          const matches = [...services.values()].some(
             (block) =>
               block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6') ||
               block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'),
           );
+          return { matches, at: trace.successfulRefreshAt };
         }
-        const block = await cache.load(list.url, 'ip', now, decodeList, 'claim');
+        const block = await cache.load(list.url, 'ip', now, decodeList, 'claim', trace);
         if (!block.rules.length) throw new Failure('invalid_ip_list', true);
-        return block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6');
+        return {
+          matches: block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'),
+          at: trace.successfulRefreshAt,
+        };
       }),
     );
-    if (results.length && results.every((r) => r.status === 'fulfilled' && !r.value)) return true;
+    if (results.length && results.every((r) => r.status === 'fulfilled' && !r.value.matches)) {
+      const fresh = results.every((result) => {
+        const at = result.status === 'fulfilled' ? result.value.at : undefined;
+        return at !== undefined && Number.isFinite(at) && now >= at && now - at <= 7200;
+      });
+      return { fresh };
+    }
   }
-  return false;
 }

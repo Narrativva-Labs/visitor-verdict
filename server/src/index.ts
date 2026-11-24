@@ -266,22 +266,24 @@ export function createVerifier(options: VerifierOptions): AgentVerifier {
       }
       if (
         config.flagSpoofedClaims &&
-        !h.has('signature') &&
-        !h.has('signature-input') &&
+        ((!h.has('signature') && !h.has('signature-input')) || onlyIgnored) &&
         !(poppy && h.has('poppy-session')) &&
-        !verdict.verified &&
-        (await ipMismatch(
+        !verdict.verified
+      ) {
+        const mismatch = await ipMismatch(
           input.clientIp,
           claims.uaTokens,
           config.registry,
           cache,
-          now,
+          config.now(),
           staticRanges,
-        ))
-      ) {
-        verdict.verification = 'ip_mismatch';
-        verdict.reason = 'official_ip_range_mismatch';
-        verdict.ipTrusted = input.ipTrusted !== false;
+        );
+        if (mismatch) {
+          verdict.verification = 'ip_mismatch';
+          verdict.reason = 'official_ip_range_mismatch';
+          verdict.ipTrusted = input.ipTrusted !== false;
+          verdict.ipListsFresh = mismatch.fresh;
+        }
       }
     } catch (error) {
       const f = failure(error);

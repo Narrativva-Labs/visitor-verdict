@@ -7,6 +7,8 @@ interface Entry {
   data?: unknown;
   /** Fetch time, soft expiry (serve as fresh) and hard expiry (serve while revalidating). */
   fetched: number;
+  /** Completion time of the last validated HTTPS refresh; never advanced by cache reads/failures. */
+  lastSuccessfulRefreshAt?: number;
   until: number;
   staleUntil: number;
   cooldown: number;
@@ -160,6 +162,10 @@ export class AgentCache {
     };
   }
 
+  successfulRefreshAt(url: string, kind: DocumentKind): number | undefined {
+    return this.entries.get(kind + ':' + url)?.lastSuccessfulRefreshAt;
+  }
+
   private refreshed(
     kind: DocumentKind,
     ok: boolean,
@@ -208,7 +214,7 @@ export class AgentCache {
     now: number,
     decode: (data: unknown) => T,
     mode: LoadMode = 'request',
-    trace?: { fetched: boolean },
+    trace?: { fetched: boolean; successfulRefreshAt?: number },
   ): Promise<T> {
     const cacheKey = kind + ':' + url;
     const entry = this.touch(cacheKey, kind);
@@ -217,8 +223,12 @@ export class AgentCache {
     const request = mode === 'request' || mode === 'cached';
     const usable = entry.data !== undefined && now < entry.staleUntil;
     if (mode === 'claim' && usable) {
+      if (trace) trace.successfulRefreshAt = entry.lastSuccessfulRefreshAt;
       if (
-        now - entry.fetched >= 600 &&
+        (entry.lastSuccessfulRefreshAt === undefined ||
+          !Number.isFinite(entry.lastSuccessfulRefreshAt) ||
+          now < entry.lastSuccessfulRefreshAt ||
+          now - entry.lastSuccessfulRefreshAt >= 600) &&
         !entry.flight &&
         !entry.forcedFlight &&
         now >= entry.cooldown
@@ -329,6 +339,8 @@ export class AgentCache {
       const response = await fetchBounded(url, this.fetcher, kind, this.timeoutMs);
       const data = decode(response.data);
       // A newer document replaces the previous one entirely; removed keys stop verifying.
+      const completedAt = this.clock();
+      entry.lastSuccessfulRefreshAt = Number.isFinite(completedAt) ? completedAt : undefined;
       entry.data = data;
       entry.fetched = now;
       const ttl =

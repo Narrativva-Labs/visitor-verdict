@@ -84,8 +84,12 @@ export function visitorLabels({
         : '-';
   let type: VisitorType;
   if (verification === 'signature_invalid') type = 'bot_spoofed';
-  else if (verification === 'ip_mismatch')
-    type = verdict?.ipTrusted !== false ? 'bot_spoofed' : 'agent_unverified';
+  else if (
+    verification === 'ip_mismatch' &&
+    verdict?.ipTrusted === true &&
+    verdict.ipListsFresh === true
+  )
+    type = 'bot_spoofed';
   else if (verified) {
     // Infrastructure proves its platform identity; the downstream agent remains unknown.
     type =
@@ -96,6 +100,7 @@ export function visitorLabels({
           : 'agent_verified';
   } else if (browser === 'automated') type = 'bot_automation';
   else if (
+    verification === 'ip_mismatch' ||
     browser === 'declared_agent' ||
     claim === 'ua_token' ||
     claim === 'signature_agent' ||

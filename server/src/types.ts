@@ -113,6 +113,8 @@ export interface AgentVerdict {
   reason: string;
   /** Trust in the transport IP used for negative range evidence. */
   ipTrusted?: boolean;
+  /** Every operator IP feed has a known successful source refresh within two hours. */
+  ipListsFresh?: boolean;
   verified?: {
     operator: string;
     method: 'signature' | 'ip' | 'rdns' | 'poppy';
