@@ -51,7 +51,7 @@ const fields = visitorLabels({ verdict, browserClass: 'human', browserPhase: 'fi
 | `maxLifetimeSeconds` | Positive safe integer, default 86400 s; maximum expires-created lifetime.                                                                                               |
 | `reverseDns`         | Optional FCrDNS configuration, disabled by default; see the DNS section below.                                                                                          |
 | `onRefresh`          | Optional public-document refresh callback; exceptions are ignored.                                                                                                      |
-| `fetchTimeoutMs`     | Request-fetch and nonce-store timeout, default 1000 ms; startup/ahead uses 4000 ms. Positive integer, at most 60 seconds, as for deadlineMs.                                                            |
+| `fetchTimeoutMs`     | Request-fetch and nonce-store timeout, default 1000 ms; startup/ahead uses 4000 ms. Positive integer, at most 60 seconds, as for deadlineMs.                            |
 | `staleMaxSeconds`    | Positive values cap total document age, fresh or stale, default 86400 s (0–86400). 0 disables stale serving and retains the ordinary HTTP-derived fresh TTL.            |
 | `nonceStore`         | Optional atomic `insertIfAbsent(key, ttlSeconds): Promise<boolean>`. Default absent: no nonce retention.                                                                |
 | `now`                | Function returning Unix **seconds**, default Date.now()/1000. Values above 1e11/nonfinite return none/invalid_clock; clock exceptions return none/invalid_clock.        |
@@ -170,7 +170,7 @@ The verdict contains claimed known UA tokens and parsed Signature-Agent strings;
 | `none`              | Indeterminate/untrusted/context failure: untrusted_signature_agent, unknown_keyid, unsupported_component, insufficient_context, unknown_authority, invalid_clock, internal_error, replay_capacity_exhausted, nonce_store_timeout, directory_timeout, deadline_exceeded, ip_evidence_unavailable, cache_miss, reverse_dns_unavailable, ambiguous_signature_agent. |
 | `no_signature`      | No WBA signature and no official IP match: signature_headers_absent, ignored_non_wba or reverse_dns_not_confirmed. A relevant failed feed with no match instead returns none/ip_evidence_unavailable. UA alone never verifies.                                                                                                                                   |
 | `ip_match`          | No WBA signature presented and a relevant operator-published range matches: official_ip_range_match, or optional FCrDNS: reverse_dns_match.                                                                                                                                                                                                                      |
-| `ip_mismatch` | Opt-in unsigned UA claim outside the complete operator IP union: official_ip_range_mismatch. IP trust and successful source refresh within 2 h determine certainty; never verified identity. |
+| `ip_mismatch`       | Opt-in unsigned UA claim outside the complete operator IP union: official_ip_range_mismatch. IP trust and successful source refresh within 2 h determine certainty; never verified identity.                                                                                                                                                                     |
 
 Other/absent signature tags are reported per-label as none/ignored_non_wba and do not suppress IP matching or override an indeterminate WBA peer. A malformed SF header can still fail before tag selection.
 
@@ -185,7 +185,7 @@ Version 0.3.0 replaces the public `toAnalyticsFields` API with pure `visitorLabe
 | `automation_verified` | Trusted intermediary signature: platform identity (Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf); downstream agent and purpose unknown.                        |
 | `crawler_verified`    | Server `signature_valid`/`ip_match`, purpose `crawler`                                                                                                                           |
 | `bot_automation`      | Browser `automated`                                                                                                                                                              |
-| `agent_unverified`    | Uncertain `ip_mismatch` without browser `automated`, or browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent/`poppy_session` claim                                                                  |
+| `agent_unverified`    | Uncertain `ip_mismatch` without browser `automated`, or browser `declared_agent` (with or without a page marker) or unverified UA/Signature-Agent/`poppy_session` claim          |
 | `bot_suspicious`      | Browser `suspicious`                                                                                                                                                             |
 | `human`               | Browser `human`                                                                                                                                                                  |
 | `pending`             | No browser class or qualifying server evidence                                                                                                                                   |
@@ -209,13 +209,13 @@ The helper is stateless. Collectors can retain the strongest type per session wi
 
 The operator segment has exactly two sources in `visitorLabels`, and the same detail always says which:
 
-| Operator source                            | Verification segment                                               | Claim segment                                           | `vv_type`                                                     |
-| ------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------- |
-| Verified WBA signature                     | `signature_valid`                                                  | `signature_agent`                                       | `agent_verified` / `crawler_verified` / `automation_verified` |
-| Verified IP range or FCrDNS                | `ip_match`                                                         | `ua_token` (the claim that selected the feed) or `none` | `agent_verified` / `crawler_verified`                         |
-| Verified Poppy session                     | `signature_valid`                                                  | `poppy_session`                                         | `agent_verified`                                              |
+| Operator source                            | Verification segment                                               | Claim segment                                           | `vv_type`                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Verified WBA signature                     | `signature_valid`                                                  | `signature_agent`                                       | `agent_verified` / `crawler_verified` / `automation_verified`                                            |
+| Verified IP range or FCrDNS                | `ip_match`                                                         | `ua_token` (the claim that selected the feed) or `none` | `agent_verified` / `crawler_verified`                                                                    |
+| Verified Poppy session                     | `signature_valid`                                                  | `poppy_session`                                         | `agent_verified`                                                                                         |
 | Browser page marker (observed, unverified) | anything except `signature_valid`, `ip_match`, `signature_invalid` | `dom_marker` or `dom_host`                              | `agent_unverified`; mismatch: `bot_spoofed` if certain, otherwise `bot_automation` for automated browser |
-| Nothing else                               | any                                                                | any                                                     | operator is `none`                                            |
+| Nothing else                               | any                                                                | any                                                     | operator is `none`                                                                                       |
 
 A UA token or an unverified Signature-Agent value is a claim: it sets the claim segment and can make the type `agent_unverified`, but it **never** names an operator. An exhaustive test enforces this table. A collector that keeps a sticky operator per session (Vanilla does) inherits it together with the stronger type that established it, so on such a hit the type, not the current hit's verification segment, tells the source: `agent_verified`/`crawler_verified`/`automation_verified` means a verified operator; `agent_unverified` with an operator means a browser observation (`dom_marker` or `dom_host`).
 
@@ -699,9 +699,7 @@ refresh extends it. This avoids adding network latency to a negative decision.
 
 Server 0.7.1 tracks successful last attempts per source for negative IP evidence. Failed refreshes, and empty or more-than-half-shrunk complete IP lists, retain last-good data but disable certainty until recovery; source times up to 60 seconds ahead are tolerated. SAIL checks use the configured service including its shared ranges. Transport adapters can use `VerifyOptions.signatureFilter(label)` to skip unsupported candidates without removing raw dictionary members required by nested signatures. The service repository owns the API/feed [CONTRACT.md](CONTRACT.md) copy.
 
-
 K6 (0.7.4): warm/status SAIL readiness follows this verifier's configured services; an unconfigured healthy service cannot hide a missing required service. 0.7.5 additionally requires every configured service at that URL. The shared URL cache remains available to other verifiers. `visitorLabels` accepts optional fixed transport `diagnostic` codes (pair_unavailable, feed_unavailable, service_unavailable, config_suspect, rejected), encoded in the second detail segment without changing vv_type. Native local verification has no remote transport failures. Signature-trio budget is 16384 UTF-8 bytes including header names plus 4 bytes per raw field, checked before claims/IP. Negative proof never trusts a future fetch timestamp. See the synchronized CONTRACT.md for service replay persistence and the scope of adapter parity.
-
 
 ### 0.7.5 directory recovery and readiness
 

@@ -30,7 +30,6 @@
 - Add optional per-candidate `signatureFilter` for transport adapters. Skipped peers cannot veto supported proofs; original dictionaries remain intact for D.2 nested coverage.
 - Ship the exact service-owned schema 2 / verify v1 contract. Service and Vanilla vendor one identical 0.7.1 archive without patches.
 
-
 ## IP mismatch review — 2026-11-24
 
 - Require a known successful source refresh within 2 h for every operator feed before reporting IP spoofing. Cache reuse and refresh failures do not renew certainty; uncertain mismatches preserve browser automation.

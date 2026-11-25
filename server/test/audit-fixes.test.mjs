@@ -191,7 +191,9 @@ test('audit: cache-only alias mismatch refreshes in background and respects cool
   const old = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' });
   let calls = 0;
   let release;
-  const pending = new Promise(resolve => { release = resolve; });
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
   const v = makeVerifier({
     registry: [{ ...operator, allowKidAlias: true }],
     fetcher: async () => {
@@ -206,10 +208,13 @@ test('audit: cache-only alias mismatch refreshes in background and respects cool
     'none',
   );
   assert.equal(calls, 2);
-  assert.equal((await v.verify(signed({ kid: 'alias' }), { cacheOnly: true })).verification, 'none');
+  assert.equal(
+    (await v.verify(signed({ kid: 'alias' }), { cacheOnly: true })).verification,
+    'none',
+  );
   assert.equal(calls, 2);
   release();
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal((await v.verify(signed({ kid: 'alias' }))).verification, 'none');
   assert.equal(calls, 2);
 });

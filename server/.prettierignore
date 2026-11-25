@@ -3,3 +3,5 @@ dist/
 package-lock.json
 src/tokens.generated.ts
 test/fixtures/
+CONTRACT.md
+test/vectors/
