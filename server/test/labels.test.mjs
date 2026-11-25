@@ -19,8 +19,9 @@ const verdict = (verification, purpose, claim) => ({
   reason: 'PRIVATE REASON',
 });
 // Independent truth table: rows are the five browser classes, columns the four claim forms.
+// `RAW UA` is an unmapped token so unverified UA claims stay conservative `agent_unverified`.
 const fallback = [
-  ['pending', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
+  ['unclassified', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
   ['human', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
   ['bot_suspicious', 'agent_unverified', 'agent_unverified', 'agent_unverified'],
   ['bot_automation', 'bot_automation', 'bot_automation', 'bot_automation'],
@@ -65,7 +66,7 @@ for (const verification of verifications)
     });
   }
 test('absent evidence, invalid browser values and pure frozen input', () => {
-  assert.deepEqual(visitorLabels(), { vv_type: 'pending', vv_detail: 'none|-|-|-|-|-' });
+  assert.deepEqual(visitorLabels(), { vv_type: 'unclassified', vv_detail: 'none|-|-|-|-|-' });
   assert.deepEqual(visitorLabels({ browserClass: 'human', browserPhase: 'final' }), {
     vv_type: 'human',
     vv_detail: 'none|-|-|-|human|final',

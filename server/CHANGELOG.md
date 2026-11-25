@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 — 2026-11-25
+
+Breaking taxonomy update for `vv_type` (10 values; `vv_detail` 6-segment format and `agent_purpose` are unchanged):
+
+- Rename `pending` to `unclassified` when neither browser class nor qualifying server claim is present.
+- Add `crawler_unverified` for unverified UA-only claims whose token is explicitly documented as a crawler or user-directed fetcher (`Googlebot`, `GPTBot`, `ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, `meta-externalagent`, etc.) without verified evidence, browser `automated`, browser `declared_agent`, `Signature-Agent` or `Poppy-Session`.
+- Reclassify IP-verified user-directed fetchers (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, `Google-NotebookLM`, `Gemini-Deep-Research`, `Google-Read-Aloud`, etc.) from `agent_verified` to `crawler_verified` while retaining `user_directed` in `vv_detail` segment 3. Verified WBA browser agents, Poppy sessions and IP-verified agent tokens (`Claude-Agent`, `Google-Agent`) remain `agent_verified`.
+- Add explicit operator-documented token class registry (`defaultTokenClasses`, `tokenClassesFor`, `TokenClass`, `Operator.tokenClasses`, `AgentVerdict.token_class`) with no suffix guessing (`meta-externalagent` is explicitly `crawler`; undocumented `Blueno` and unknown/unmapped UA tokens remain conservative `agent_unverified`).
+- Emit parallel `token_classes` in `scripts/build-sgtm-rules.mjs` for sGTM rules exports.
+
+### Migration table (`vv_type` 0.7.x → 0.8.0)
+
+| Traffic / evidence                                                                                                     | 0.7.x `vv_type`       | 0.8.0 `vv_type`                                                       |
+| ---------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------- |
+| No browser signal, no server claim                                                                                     | `pending`             | `unclassified`                                                        |
+| IP-verified fetcher (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google fetchers) | `agent_verified`      | `crawler_verified` (`purpose=user_directed` preserved in `vv_detail`) |
+| Unverified crawler or fetcher UA claim (including untrusted IP / uncertain `ip_mismatch`)                              | `agent_unverified`    | `crawler_unverified`                                                  |
+| WBA browser agent / Poppy / IP-verified `Claude-Agent` / `Google-Agent`                                                | `agent_verified`      | `agent_verified`                                                      |
+| Unverified `declared_agent` / WBA `Signature-Agent` / Poppy / `Claude-Agent` / `Google-Agent` / unknown UA token       | `agent_unverified`    | `agent_unverified`                                                    |
+| Verified intermediary (Browserbase, Kernel, Cloudflare Browser Run, Shopify Cloudsurf)                                 | `automation_verified` | `automation_verified`                                                 |
+| Verified crawler (`Googlebot`, `GPTBot`, DuckDuckGo WBA, etc.)                                                         | `crawler_verified`    | `crawler_verified`                                                    |
+| `human`, `bot_spoofed`, `bot_automation`, `bot_suspicious`                                                             | unchanged             | unchanged                                                             |
+
 ## 0.7.6 — 2026-11-25
 
 Atomically restore and revalidate directory snapshots on startup, expose stale directory health, and reject positive IP evidence when ipTrusted is false.

@@ -164,7 +164,7 @@ test('K5 malformed non-WBA cannot promote IP and invalid agent claim contains no
       clientIp: '192.0.2.1',
       headers: { 'user-agent': 'GPTBot', signature: 'other=:AAAA:', 'signature-input': 'other=1' },
     });
-    assert.equal(visitorLabels({ verdict }).vv_type, 'agent_unverified');
+    assert.equal(visitorLabels({ verdict }).vv_type, 'crawler_unverified');
     const raw = 's=' + 'attacker'.repeat(100);
     const other = await v.verify({
       host: 'example.com',

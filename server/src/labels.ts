@@ -1,12 +1,14 @@
-import type { AgentPurpose, AgentVerdict } from './types.js';
+import { classifyTokenList, defaultTokenClasses } from './registry-token-classes.js';
+import type { AgentPurpose, AgentVerdict, TokenClass } from './types.js';
 
 export type VisitorType =
   | 'human'
-  | 'pending'
+  | 'unclassified'
   | 'agent_verified'
   | 'automation_verified'
   | 'agent_unverified'
   | 'crawler_verified'
+  | 'crawler_unverified'
   | 'bot_automation'
   | 'bot_suspicious'
   | 'bot_spoofed';
@@ -27,6 +29,8 @@ export interface VisitorLabelsInput {
   browserAgent?: string;
   /** Browser claim provenance; unknown values retain the legacy marker claim. */
   browserAgentClaim?: string;
+  /** Optional custom token class map when `verdict.token_class` is absent; defaults to `defaultTokenClasses`. */
+  tokenClasses?: Readonly<Record<string, TokenClass>>;
 }
 export interface VisitorLabels {
   vv_type: VisitorType;
@@ -42,6 +46,23 @@ const purposes: readonly string[] = [
   'intermediary',
   'unknown',
 ] satisfies AgentPurpose[];
+const tokenClassValues: readonly string[] = [
+  'agent',
+  'fetcher',
+  'crawler',
+  'intermediary',
+  'unknown',
+];
+
+function resolveTokenClass(
+  verdict: AgentVerdict | undefined,
+  tokenClasses: Readonly<Record<string, TokenClass>> | undefined,
+): TokenClass | 'unknown' {
+  if (!verdict) return 'unknown';
+  if (verdict.token_class !== undefined)
+    return tokenClassValues.includes(verdict.token_class) ? verdict.token_class : 'unknown';
+  return classifyTokenList(verdict.claimed.uaTokens, tokenClasses ?? defaultTokenClasses);
+}
 
 /** Pure, bounded GA4 event labels. No raw claims, request data or diagnostic reasons. */
 export function visitorLabels({
@@ -51,6 +72,7 @@ export function visitorLabels({
   browserPhase,
   browserAgent,
   browserAgentClaim,
+  tokenClasses,
 }: VisitorLabelsInput = {}): VisitorLabels {
   const verification = verdict?.verification ?? '-';
   const verified = verification === 'signature_valid' || verification === 'ip_match';
@@ -90,6 +112,8 @@ export function visitorLabels({
               ? 'ua_token'
               : 'none'
         : '-';
+  const tokenClass = resolveTokenClass(verdict, tokenClasses);
+  const crawlerOrFetcher = tokenClass === 'crawler' || tokenClass === 'fetcher';
   let type: VisitorType;
   if (verification === 'signature_invalid') type = 'bot_spoofed';
   else if (
@@ -100,11 +124,12 @@ export function visitorLabels({
     type = 'bot_spoofed';
   else if (verified) {
     // Infrastructure proves its platform identity; the downstream agent remains unknown.
+    // Verified WBA/Poppy signatures follow purpose; IP-verified fetchers and crawlers are crawler_verified.
     type =
-      purpose === 'crawler'
-        ? 'crawler_verified'
-        : purpose === 'intermediary'
-          ? 'automation_verified'
+      purpose === 'intermediary'
+        ? 'automation_verified'
+        : purpose === 'crawler' || (verification === 'ip_match' && crawlerOrFetcher)
+          ? 'crawler_verified'
           : 'agent_verified';
   } else if (browser === 'automated') type = 'bot_automation';
   else if (
@@ -113,11 +138,16 @@ export function visitorLabels({
     claim === 'ua_token' ||
     claim === 'signature_agent' ||
     claim === 'poppy_session'
-  )
-    type = 'agent_unverified';
-  else if (browser === 'suspicious') type = 'bot_suspicious';
+  ) {
+    // Unverified browser declarations, WBA/Poppy claims, agent tokens and unmapped UA claims stay
+    // agent_unverified; pure UA claims with explicit crawler/fetcher class become crawler_unverified.
+    type =
+      browser !== 'declared_agent' && claim === 'ua_token' && crawlerOrFetcher
+        ? 'crawler_unverified'
+        : 'agent_unverified';
+  } else if (browser === 'suspicious') type = 'bot_suspicious';
   else if (browser === 'human') type = 'human';
-  else type = 'pending';
+  else type = 'unclassified';
   const safeDiagnostic = [
     'pair_unavailable',
     'feed_unavailable',

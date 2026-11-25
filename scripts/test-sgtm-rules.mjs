@@ -17,6 +17,12 @@ try{
  assert.equal(feed.schema,1);assert.equal(new Date(feed.generated_at).toISOString(),feed.generated_at);assert.ok(Date.now()-Date.parse(feed.generated_at)<60000);assert.equal(feed.generated_at_ms,Date.parse(feed.generated_at));assert.equal(feed.complete,true);assert.ok(Buffer.byteLength(original)<=200000);assert.deepEqual(feed.missing,[]);
  const group=feed.groups.find(g=>g.list==='chatgpt-user');assert.deepEqual(group.v4,[[3221225984,3221226239],[3325256746,3325256746]]);assert.deepEqual(group.v6,[['20010db8000000000000000000000000',33]]);
  assert.equal(feed.tokens[group.tokens[0]],'ChatGPT-User');assert.equal(feed.operators[group.operator].id,'openai');
+ assert.equal(feed.token_classes.length,feed.tokens.length);
+ assert.equal(feed.token_classes[feed.tokens.indexOf('ChatGPT-User')],'fetcher');
+ assert.equal(feed.token_classes[feed.tokens.indexOf('Claude-Agent')],'agent');
+ assert.equal(feed.token_classes[feed.tokens.indexOf('GPTBot')],'crawler');
+ assert.equal(feed.token_classes[feed.tokens.indexOf('meta-externalagent')],'crawler');
+ assert.equal(feed.token_classes[feed.tokens.indexOf('Blueno')],null);
  assert.equal(group.complete,true);
  for(const g of feed.groups){assert.equal(typeof g.complete,'boolean');assert.ok(Number.isSafeInteger(g.fetched_at_ms));}
  assert.equal(feed.sources.length,defaultRegistry.reduce((n,o)=>n+o.ipLists.length,0));

@@ -8,11 +8,14 @@ import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { defaultRegistry } from '../server/dist/registry.js';
 import { serverAgentTokens } from '../server/dist/server-tokens.js';
+import { tokenClassesFor } from '../server/dist/registry-token-classes.js';
 import { parseSail } from '../server/dist/sail.js';
 const args = process.argv.slice(2);
 const sourceDir = args.includes('--source-dir') ? args[args.indexOf('--source-dir') + 1] : undefined;
 const partial = args.includes('--allow-partial');
 const tokens = serverAgentTokens(defaultRegistry);
+const classesMap = tokenClassesFor(defaultRegistry);
+const token_classes = tokens.map(t => Object.hasOwn(classesMap, t) ? classesMap[t] : null);
 const tokenIds = values => values === undefined ? null : values.map(t => tokens.indexOf(t)).filter(i => i >= 0);
 const groups = [], missing = [], sources = [];
 function ipv6(ip) {
@@ -57,6 +60,6 @@ for (const [operator, o] of defaultRegistry.entries()) for (const list of o.ipLi
 if (missing.length && !partial) throw Error('Missing public feeds; existing output unchanged. Use --source-dir for archived sources.');
 const builtAt = new Date();
 // generated_at_ms: the sGTM sandbox has no Date, and its calendar arithmetic is not reliable.
-const rules = {schema:1,generated_at:builtAt.toISOString(),generated_at_ms:builtAt.getTime(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,groups,missing,sources};
+const rules = {schema:1,generated_at:builtAt.toISOString(),generated_at_ms:builtAt.getTime(),complete:!missing.length,operators:defaultRegistry.map(o=>({id:o.operator,purposes:o.purposes ?? {},signatureAgent:o.signatureAgent ?? ''})),tokens,token_classes,groups,missing,sources};
 const body = JSON.stringify(rules)+'\n'; if (Buffer.byteLength(body)>200_000) throw Error('Rules exceed 200 KB');
 const out = args.includes('--output') ? args[args.indexOf('--output')+1] : fileURLToPath(new URL('../dist/sgtm-rules.json',import.meta.url)); await mkdir(new URL('../dist/',import.meta.url),{recursive:true}); await writeFile(out,body); console.log(`${out}: ${Buffer.byteLength(body)} bytes; ${groups.length} groups; complete=${rules.complete}`);

@@ -46,9 +46,9 @@
 --   * Class = strongest observation over ALL hits of the unit, not the last one:
 --     A: automated > declared_agent > suspicious > human (as bigquery.sql);
 --     B: agent_verified = crawler_verified > automation_verified > bot_spoofed >
---        bot_automation > agent_unverified > bot_suspicious > human > pending
---        (legacy agent_verified/intermediary also ranks 4.75; equal rank
---        keeps the first observed).
+--        bot_automation > crawler_unverified = agent_unverified > bot_suspicious >
+--        human > unclassified (legacy pending also ranks 0; legacy
+--        agent_verified/intermediary also ranks 4.75; equal rank keeps the first observed).
 --     No class observed = 'unknown' (A) / 'missing' (B); unknown is not human.
 --   * Separated class_group values (no conflated "non-human/excluded" bucket):
 --     - no automation detected: human
@@ -66,9 +66,10 @@
 --                               agent_verified with vv_detail purpose='intermediary' in B.
 --     - automation:             browser automation / spoofed bots (automated in A;
 --                               bot_automation, bot_spoofed, or unverified intermediary in B).
---     - crawler:                verified crawlers (crawler_verified in B).
+--     - crawler:                verified or unverified crawlers/fetchers
+--                               (crawler_verified, crawler_unverified in B).
 --     - suspicious:             uncertain evidence (suspicious in A; bot_suspicious in B).
---     - pending (B only) / unknown.
+--     - unclassified (B only; legacy pending normalized here) / unknown.
 --     Browser/GTM signature/IP echo claims lack purpose; A cannot distinguish
 --     verified unknown-purpose agents. Use B/B2 for that distinction.
 --   * Operators: accepts all valid operator slugs (not only openai/anthropic).
@@ -331,9 +332,11 @@ WITH params AS (
     -- Server precedence: spoofed 4.5 < intermediary 4.75 < agent/crawler 5.
     -- Legacy agent_verified/intermediary has the infrastructure rank too.
     CASE type_raw
+      WHEN 'unclassified' THEN 0
       WHEN 'pending' THEN 0
       WHEN 'human' THEN 1
       WHEN 'bot_suspicious' THEN 2
+      WHEN 'crawler_unverified' THEN 3
       WHEN 'agent_unverified' THEN 3
       WHEN 'bot_automation' THEN 4
       WHEN 'bot_spoofed' THEN 4.5
@@ -350,7 +353,7 @@ WITH params AS (
     AND COALESCE(analytics_storage, 'Unset') != 'No'
 ), hits AS (
   SELECT parsed.*,
-    IF(type_rank IS NOT NULL, type_raw, NULL) AS vv_type,
+    IF(type_rank IS NOT NULL, IF(type_raw = 'pending', 'unclassified', type_raw), NULL) AS vv_type,
     IF(REGEXP_CONTAINS(LOWER(TRIM(parts[SAFE_OFFSET(0)])), r'^[a-z0-9][a-z0-9_-]{0,63}$')
        AND LOWER(TRIM(parts[SAFE_OFFSET(0)])) NOT IN ('none', 'unknown', 'null'),
       LOWER(TRIM(parts[SAFE_OFFSET(0)])), NULL) AS operator,
@@ -410,7 +413,7 @@ WITH params AS (
     CASE WHEN COUNT(DISTINCT IF(verified_hit, operator, NULL)) > 1 THEN 'mixed'
       ELSE MAX(IF(verified_hit, operator, NULL)) END AS verified_operator,
     COUNTIF(vv_type IS NOT NULL) AS hits_with_class,
-    COUNTIF(vv_type = 'pending') > 0 AS any_pending,
+    COUNTIF(vv_type = 'unclassified') > 0 AS any_pending,
     COUNT(*) AS hits, COUNTIF(event_name = 'page_view') AS pageviews,
     LOGICAL_OR(COALESCE(session_engaged, 0) = 1) AS engaged,
     SUM(COALESCE(engagement_ms, 0)) AS engagement_ms,
@@ -441,10 +444,10 @@ WITH params AS (
         THEN 'agent_user'
       WHEN winning_label.vv_type = 'agent_verified' THEN 'agent_verified_unknown_purpose'
       WHEN winning_label.vv_type = 'agent_unverified' THEN 'agent_user'
-      WHEN winning_label.vv_type = 'crawler_verified' THEN 'crawler'
+      WHEN winning_label.vv_type IN ('crawler_verified', 'crawler_unverified') THEN 'crawler'
       WHEN winning_label.vv_type IN ('bot_automation', 'bot_spoofed') THEN 'automation'
       WHEN winning_label.vv_type = 'bot_suspicious' THEN 'suspicious'
-      WHEN winning_label.vv_type = 'pending' THEN 'pending'
+      WHEN winning_label.vv_type = 'unclassified' THEN 'unclassified'
       ELSE 'unknown' END AS class_group
   FROM units
   WHERE session_date BETWEEN PARSE_DATE('%Y%m%d', @DS_START_DATE)
@@ -475,8 +478,8 @@ WITH params AS (
     class_group = 'agent_verified_unknown_purpose' AS is_agent_verified_unknown_purpose,
     class_group = 'suspicious' AS is_suspicious,
     agent_operator, verified_operator,
-    winning_label.vv_type IS NOT NULL AND winning_label.vv_type != 'pending' AS has_class,
-    COALESCE(winning_label.vv_type = 'pending', FALSE) AS is_pending, any_pending,
+    winning_label.vv_type IS NOT NULL AND winning_label.vv_type != 'unclassified' AS has_class,
+    COALESCE(winning_label.vv_type = 'unclassified', FALSE) AS is_pending, any_pending,
     hits_with_class, hits, pageviews,
     engaged, engagement_ms, purchases, purchase_events, unique_transactions, purchase_revenue,
     leads, other_key_events
@@ -532,9 +535,11 @@ WITH params AS (
 ), parsed AS (
   SELECT ev.*,
     CASE type_raw
+      WHEN 'unclassified' THEN 0
       WHEN 'pending' THEN 0
       WHEN 'human' THEN 1
       WHEN 'bot_suspicious' THEN 2
+      WHEN 'crawler_unverified' THEN 3
       WHEN 'agent_unverified' THEN 3
       WHEN 'bot_automation' THEN 4
       WHEN 'bot_spoofed' THEN 4.5
@@ -555,7 +560,7 @@ WITH params AS (
     AND COALESCE(analytics_storage, 'Unset') != 'No')
 ), hits AS (
   SELECT parsed.*,
-    IF(type_rank IS NOT NULL, type_raw, NULL) AS vv_type,
+    IF(type_rank IS NOT NULL, IF(type_raw = 'pending', 'unclassified', type_raw), NULL) AS vv_type,
     IF(REGEXP_CONTAINS(LOWER(TRIM(parts[SAFE_OFFSET(0)])), r'^[a-z0-9][a-z0-9_-]{0,63}$')
        AND LOWER(TRIM(parts[SAFE_OFFSET(0)])) NOT IN ('none', 'unknown', 'null'),
       LOWER(TRIM(parts[SAFE_OFFSET(0)])), NULL) AS operator,
@@ -616,7 +621,7 @@ WITH params AS (
     CASE WHEN COUNT(DISTINCT IF(verified_hit, operator, NULL)) > 1 THEN 'mixed'
       ELSE MAX(IF(verified_hit, operator, NULL)) END AS verified_operator,
     COUNTIF(vv_type IS NOT NULL) AS hits_with_class,
-    COUNTIF(vv_type = 'pending') > 0 AS any_pending,
+    COUNTIF(vv_type = 'unclassified') > 0 AS any_pending,
     COUNT(*) AS hits, COUNTIF(event_name = 'page_view') AS pageviews,
     COUNTIF(event_name = 'purchase' AND (transaction_id IS NULL OR tx_rn = 1)) AS purchases,
     COUNTIF(event_name = 'purchase') AS purchase_events,
@@ -645,10 +650,10 @@ WITH params AS (
         THEN 'agent_user'
       WHEN winning_label.vv_type = 'agent_verified' THEN 'agent_verified_unknown_purpose'
       WHEN winning_label.vv_type = 'agent_unverified' THEN 'agent_user'
-      WHEN winning_label.vv_type = 'crawler_verified' THEN 'crawler'
+      WHEN winning_label.vv_type IN ('crawler_verified', 'crawler_unverified') THEN 'crawler'
       WHEN winning_label.vv_type IN ('bot_automation', 'bot_spoofed') THEN 'automation'
       WHEN winning_label.vv_type = 'bot_suspicious' THEN 'suspicious'
-      WHEN winning_label.vv_type = 'pending' THEN 'pending'
+      WHEN winning_label.vv_type = 'unclassified' THEN 'unclassified'
       ELSE 'unknown' END AS class_group
   FROM units
 )
@@ -676,8 +681,8 @@ SELECT site, stream_id, event_day, unit_type, unit_key, 1 AS units,
   class_group = 'agent_verified_unknown_purpose' AS is_agent_verified_unknown_purpose,
   class_group = 'suspicious' AS is_suspicious,
   agent_operator, verified_operator,
-  winning_label.vv_type IS NOT NULL AND winning_label.vv_type != 'pending' AS has_class,
-  COALESCE(winning_label.vv_type = 'pending', FALSE) AS is_pending, any_pending,
+  winning_label.vv_type IS NOT NULL AND winning_label.vv_type != 'unclassified' AS has_class,
+  COALESCE(winning_label.vv_type = 'unclassified', FALSE) AS is_pending, any_pending,
   hits_with_class, hits, pageviews,
   purchases, purchase_events, unique_transactions, purchase_revenue, leads, other_key_events
 FROM classified;

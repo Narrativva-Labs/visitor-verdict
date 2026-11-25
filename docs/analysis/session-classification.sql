@@ -30,9 +30,11 @@
 -- Rules:
 --   vv_type is the collector verdict, sticky on later hits in the same session/page.
 --   Take the strongest observed value, never the last or a user property:
---   pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
---   crawler_verified=agent_verified=5, bot_spoofed=6. Equal ranks retain the first
---   observed value (export ordering breaks ties deterministically where possible).
+--   unclassified (and legacy pending)=0, human=1, bot_suspicious=2,
+--   crawler_unverified=agent_unverified=3, bot_automation=4,
+--   automation_verified=4.75, crawler_verified=agent_verified=5, bot_spoofed=6.
+--   Legacy 'pending' from pre-0.8.0 exports is normalized to 'unclassified'.
+--   Equal ranks retain the first observed value (export ordering breaks ties deterministically where possible).
 --   This reporting rank differs on purpose from the collector's live sticky memory
 --   (bot_spoofed=4.5 below verified, fresh equal-rank evidence replaces): any invalid
 --   signature makes the whole session spoofed here.
@@ -73,14 +75,14 @@ SELECT
     FROM UNNEST(event_params) WHERE key = 'ga_session_id' LIMIT 1) IS NULL)
     AS hits_without_ga_session_id,
   COUNTIF(EXISTS(SELECT 1 FROM UNNEST(event_params)
-    WHERE key = 'vv_type' AND (CASE value.string_value WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
-    WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
-    WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
+    WHERE key = 'vv_type' AND (CASE value.string_value WHEN 'unclassified' THEN 0 WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
+    WHEN 'crawler_unverified' THEN 3 WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
+    WHEN 'automation_verified' THEN 4.75 WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
     WHEN 'bot_spoofed' THEN 6 END) IS NOT NULL)) AS hits_with_valid_type,
   COUNTIF(EXISTS(SELECT 1 FROM UNNEST(event_params)
-    WHERE key = 'vv_type' AND (CASE value.string_value WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
-    WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
-    WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
+    WHERE key = 'vv_type' AND (CASE value.string_value WHEN 'unclassified' THEN 0 WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
+    WHEN 'crawler_unverified' THEN 3 WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
+    WHEN 'automation_verified' THEN 4.75 WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
     WHEN 'bot_spoofed' THEN 6 END) IS NULL)) AS hits_with_unknown_type,
   COUNTIF(EXISTS(SELECT 1 FROM UNNEST(event_params)
     WHERE key = 'vv_detail' AND LENGTH(value.string_value) <= 100
@@ -120,21 +122,23 @@ WITH params AS (
     AND FORMAT_DATE('%Y%m%d', (SELECT end_date FROM params))
     AND REGEXP_CONTAINS(_TABLE_SUFFIX, r'^\d{8}$') AND platform = 'WEB'
 ), parsed AS (
-  SELECT *, IF((CASE type_raw WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
-    WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
-    WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
-    WHEN 'bot_spoofed' THEN 6 END) IS NOT NULL, type_raw, NULL) AS vv_type,
+  SELECT *, CASE
+    WHEN type_raw IN ('unclassified', 'pending') THEN 'unclassified'
+    WHEN type_raw IN ('human', 'bot_suspicious', 'crawler_unverified', 'agent_unverified',
+      'bot_automation', 'automation_verified', 'crawler_verified', 'agent_verified', 'bot_spoofed')
+      THEN type_raw
+    ELSE NULL END AS vv_type,
     IF(LENGTH(detail_raw) <= 100 AND ARRAY_LENGTH(SPLIT(detail_raw, '|')) = 6,
        SPLIT(detail_raw, '|'), NULL) AS parts
   FROM ev
 ), norm AS (
   SELECT *,
     NULLIF(NULLIF(parts[SAFE_OFFSET(0)], 'none'), '-') AS operator,
-    IF(parts[SAFE_OFFSET(1)] IN ('signature_valid', 'signature_invalid', 'ip_match',
+    IF(parts[SAFE_OFFSET(1)] IN ('signature_valid', 'signature_invalid', 'ip_match', 'ip_mismatch',
        'no_signature', 'none'), parts[SAFE_OFFSET(1)], NULL) AS verification,
     IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'intermediary', 'unknown'),
        parts[SAFE_OFFSET(2)], NULL) AS purpose,
-    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'poppy_session', 'none'),
+    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'dom_host', 'poppy_session', 'none'),
        parts[SAFE_OFFSET(3)], NULL) AS claim,
     IF(parts[SAFE_OFFSET(4)] IN ('human', 'suspicious', 'automated', 'declared_agent'),
        parts[SAFE_OFFSET(4)], NULL) AS browser_class,
@@ -162,9 +166,9 @@ SELECT unit_type, unit_key, ANY_VALUE(stream_id) AS stream_id,
   COUNTIF(browser_class IS NOT NULL) AS hits_with_browser_class,
   COUNTIF(type_raw IS NOT NULL AND vv_type IS NULL) AS hits_with_unknown_type,
   COUNTIF(detail_raw IS NOT NULL AND parts IS NULL) AS hits_with_malformed_detail,
-  ARRAY_AGG(vv_type IGNORE NULLS ORDER BY (CASE vv_type WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
-    WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
-    WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
+  ARRAY_AGG(vv_type IGNORE NULLS ORDER BY (CASE vv_type WHEN 'unclassified' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
+    WHEN 'crawler_unverified' THEN 3 WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
+    WHEN 'automation_verified' THEN 4.75 WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
     WHEN 'bot_spoofed' THEN 6 END) DESC, event_timestamp,
     COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0), vv_type
     LIMIT 1)[SAFE_OFFSET(0)] AS strongest_type,
@@ -231,21 +235,23 @@ WITH params AS (
     AND FORMAT_DATE('%Y%m%d', (SELECT end_date FROM params))
     AND REGEXP_CONTAINS(_TABLE_SUFFIX, r'^\d{8}$') AND platform = 'WEB'
 ), parsed AS (
-  SELECT *, IF((CASE type_raw WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
-    WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
-    WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
-    WHEN 'bot_spoofed' THEN 6 END) IS NOT NULL, type_raw, NULL) AS vv_type,
+  SELECT *, CASE
+    WHEN type_raw IN ('unclassified', 'pending') THEN 'unclassified'
+    WHEN type_raw IN ('human', 'bot_suspicious', 'crawler_unverified', 'agent_unverified',
+      'bot_automation', 'automation_verified', 'crawler_verified', 'agent_verified', 'bot_spoofed')
+      THEN type_raw
+    ELSE NULL END AS vv_type,
     IF(LENGTH(detail_raw) <= 100 AND ARRAY_LENGTH(SPLIT(detail_raw, '|')) = 6,
        SPLIT(detail_raw, '|'), NULL) AS parts
   FROM ev
 ), norm AS (
   SELECT *,
     NULLIF(NULLIF(parts[SAFE_OFFSET(0)], 'none'), '-') AS operator,
-    IF(parts[SAFE_OFFSET(1)] IN ('signature_valid', 'signature_invalid', 'ip_match',
+    IF(parts[SAFE_OFFSET(1)] IN ('signature_valid', 'signature_invalid', 'ip_match', 'ip_mismatch',
        'no_signature', 'none'), parts[SAFE_OFFSET(1)], NULL) AS verification,
     IF(parts[SAFE_OFFSET(2)] IN ('user_directed', 'crawler', 'intermediary', 'unknown'),
        parts[SAFE_OFFSET(2)], NULL) AS purpose,
-    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'poppy_session', 'none'),
+    IF(parts[SAFE_OFFSET(3)] IN ('signature_agent', 'ua_token', 'dom_marker', 'dom_host', 'poppy_session', 'none'),
        parts[SAFE_OFFSET(3)], NULL) AS claim,
     IF(parts[SAFE_OFFSET(4)] IN ('human', 'suspicious', 'automated', 'declared_agent'),
        parts[SAFE_OFFSET(4)], NULL) AS browser_class,
@@ -273,9 +279,9 @@ SELECT unit_type, unit_key, ANY_VALUE(stream_id) AS stream_id,
   COUNTIF(browser_class IS NOT NULL) AS hits_with_browser_class,
   COUNTIF(type_raw IS NOT NULL AND vv_type IS NULL) AS hits_with_unknown_type,
   COUNTIF(detail_raw IS NOT NULL AND parts IS NULL) AS hits_with_malformed_detail,
-  ARRAY_AGG(vv_type IGNORE NULLS ORDER BY (CASE vv_type WHEN 'pending' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
-    WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
-    WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
+  ARRAY_AGG(vv_type IGNORE NULLS ORDER BY (CASE vv_type WHEN 'unclassified' THEN 0 WHEN 'human' THEN 1 WHEN 'bot_suspicious' THEN 2
+    WHEN 'crawler_unverified' THEN 3 WHEN 'agent_unverified' THEN 3 WHEN 'bot_automation' THEN 4
+    WHEN 'automation_verified' THEN 4.75 WHEN 'crawler_verified' THEN 5 WHEN 'agent_verified' THEN 5
     WHEN 'bot_spoofed' THEN 6 END) DESC, event_timestamp,
     COALESCE(batch_ordering_id, 0), COALESCE(batch_event_index, 0), vv_type
     LIMIT 1)[SAFE_OFFSET(0)] AS strongest_type,

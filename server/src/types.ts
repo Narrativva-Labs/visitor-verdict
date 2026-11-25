@@ -48,9 +48,19 @@ export interface Operator {
   reverseDns?: readonly ReverseDnsRule[];
   /** Documented product purpose, applied only after operator verification. */
   purposes?: PurposePolicy;
+  /** Documented product class per UA token, derived from operator docs (never guessed by name). */
+  tokenClasses?: Readonly<Record<string, TokenClass>>;
   /** Provenance of individual registry claims; descriptive, never a verification bypass. */
   evidence?: readonly RegistryEvidence[];
 }
+/**
+ * Explicit product class of a recognized UA token or verified evidence:
+ * `agent` = interactive browser/agent that can browse and convert;
+ * `fetcher` = user-directed page downloader (labelled as `crawler_*`);
+ * `crawler` = automated web crawler/indexer (labelled as `crawler_*`);
+ * `intermediary` = signing infrastructure acting for other parties (`automation_verified`).
+ */
+export type TokenClass = 'agent' | 'fetcher' | 'crawler' | 'intermediary';
 /** Documented operator facts, observed wire behavior, or explicitly inferred mappings. */
 export interface RegistryEvidence {
   level: 'documented' | 'observed' | 'inferred';
@@ -101,6 +111,8 @@ export interface AgentVerdict {
   /** Weak local diagnostics; never identity or verification evidence. */
   evidence?: readonly ('header_mismatch' | 'shared_ip_range')[];
   agent_purpose: AgentPurpose;
+  /** Effective documented token class for the winning evidence or claimed UA tokens. */
+  token_class?: TokenClass | 'unknown';
   claimed: { uaTokens: string[]; signatureAgents: string[]; poppySession?: boolean };
   poppy?: import('./poppy.js').PoppyResult;
   verification:

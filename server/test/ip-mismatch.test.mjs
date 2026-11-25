@@ -132,14 +132,14 @@ test('two-hour freshness boundary, failed refresh and automation precedence', as
   const stale = await s.verifier.verify(s.request, { cacheOnly: true });
   assert.equal(stale.verification, 'ip_mismatch');
   assert.equal(stale.ipListsFresh, false);
-  assert.equal(visitorLabels({ verdict: stale }).vv_type, 'agent_unverified');
+  assert.equal(visitorLabels({ verdict: stale }).vv_type, 'crawler_unverified');
   assert.equal(
     visitorLabels({ verdict: stale, browserClass: 'automated' }).vv_type,
     'bot_automation',
   );
   for (const ipListsFresh of [undefined, false]) {
     const missing = { ...boundary, ipListsFresh };
-    assert.equal(visitorLabels({ verdict: missing }).vv_type, 'agent_unverified');
+    assert.equal(visitorLabels({ verdict: missing }).vv_type, 'crawler_unverified');
     assert.equal(
       visitorLabels({ verdict: missing, browserClass: 'automated' }).vv_type,
       'bot_automation',

@@ -12,7 +12,7 @@ import { evaluateSignature } from './signature.js';
 import { ReverseDnsVerifier } from './rdns.js';
 import { staticBlocks, ipEvidence, ipMismatch, decodeList, decodeSail } from './ip.js';
 import { publicKeys } from './keys.js';
-import { purposeFor, type DnsPurposeEvidence } from './purpose.js';
+import { purposeFor, tokenClassFor, type DnsPurposeEvidence } from './purpose.js';
 import type {
   AgentRequest,
   AgentVerdict,
@@ -347,6 +347,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
       verdict.verified = undefined;
     }
     verdict.agent_purpose = purposeFor(verdict, config.registry, dnsPurpose);
+    verdict.token_class = tokenClassFor(verdict, config.registry, dnsPurpose);
     return verdict;
   }
 
@@ -429,6 +430,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
 }
 export { visitorLabels } from './labels.js';
 export { serverAgentTokens } from './server-tokens.js';
+export { defaultTokenClasses, tokenClassesFor } from './registry-token-classes.js';
 export type { VisitorType, VisitorLabelsInput, VisitorLabels, BrowserAgent } from './labels.js';
 
 export { MemoryNonceStore } from './replay.js';

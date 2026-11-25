@@ -50,9 +50,24 @@ const health = verifier.status();
 const lastRefresh: boolean | null = health.lastRefreshOk;
 void lastRefresh;
 
-import { visitorLabels, type VisitorType, type BrowserAgent } from '../dist/index.js';
+import {
+  visitorLabels,
+  defaultTokenClasses,
+  tokenClassesFor,
+  type VisitorType,
+  type BrowserAgent,
+  type TokenClass,
+} from '../dist/index.js';
 const label: VisitorType = visitorLabels({ browserClass: 'human', browserPhase: 'final' }).vv_type;
 void label;
+const unclassifiedType: VisitorType = 'unclassified';
+const crawlerUnverifiedType: VisitorType = 'crawler_unverified';
+const tokenClass: TokenClass = defaultTokenClasses['ChatGPT-User'];
+const customTokenClasses: Record<string, TokenClass> = tokenClassesFor(defaultRegistry);
+void unclassifiedType;
+void crawlerUnverifiedType;
+void tokenClass;
+void customTokenClasses;
 const marker: BrowserAgent = 'anthropic';
 const marked: VisitorType = visitorLabels({
   browserClass: 'declared_agent',

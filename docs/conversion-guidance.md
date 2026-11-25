@@ -44,23 +44,24 @@ For practical Meta and Google Ads setup, use the [passive reporting recipes](ad-
 
 ## Server-side verification
 
-Server-side verification of signed agents (Web Bot Auth / HTTP Message Signatures, published IP ranges, and optional Poppy 1.0) is provided by the [Node server library](../server/README.md) (v0.6.1), with [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side) as its first collector integration. The separate sGTM template uses IP and browser evidence without cryptographic verification. It follows the same rule: it adds labels (`agent_verified`, `agent_unverified`, `crawler_verified`, `automation_verified`, `bot_automation`, `bot_spoofed`, `bot_suspicious`, `human`, `pending`), it withholds nothing, and any label forwarded to ad platforms in sGTM is strictly a passive reporting parameter.
+Server-side verification of signed agents (Web Bot Auth / HTTP Message Signatures, published IP ranges, and optional Poppy 1.0) is provided by the [Node server library](../server/README.md) (v0.8.0), with [Vanilla Server-Side](https://github.com/Narrativva-Labs/vanilla-server-side) as its first collector integration. The separate sGTM template uses IP and browser evidence without cryptographic verification. It follows the same rule: it adds labels (`agent_verified`, `agent_unverified`, `crawler_verified`, `crawler_unverified`, `automation_verified`, `bot_automation`, `bot_spoofed`, `bot_suspicious`, `human`, `unclassified`), it withholds nothing, and any label forwarded to ad platforms in sGTM is strictly a passive reporting parameter.
 
-`agent_verified` confirms identity, not customer intent: `purpose=user_directed` enters the server SQL `agent_user` group, while unknown or missing purpose enters `agent_verified_unknown_purpose` (including verified Poppy identities). Server library 0.6.1 emits `automation_verified`; SQL also accepts older `agent_verified` + `purpose=intermediary` at the same infrastructure priority. Browser echo `server_signature`/`server_ip` does not encode purpose, so browser-only reporting cannot make this distinction; use the collector’s `vv_detail` with Query B/B2.
+`agent_verified` confirms identity, not customer intent: `purpose=user_directed` enters the server SQL `agent_user` group, while unknown or missing purpose enters `agent_verified_unknown_purpose` (including verified Poppy identities). IP-verified user-directed fetchers (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google fetchers) emit `crawler_verified` while retaining `user_directed` in `vv_detail` segment 3. Server library 0.8.0 emits `automation_verified`, `crawler_unverified` and `unclassified` (replacing `pending`); SQL also accepts legacy `pending` and older `agent_verified` + `purpose=intermediary`. Browser echo `server_signature`/`server_ip` does not encode purpose, so browser-only reporting cannot make this distinction; use the collector’s `vv_detail` with Query B/B2.
 
-### Server labels (library 0.6.1)
+### Server labels (library 0.8.0)
 
 | `vv_type` | Meaning | Suggested collector rank |
 |---|---|---|
-| `pending` | No browser class or qualifying server evidence yet | 0 |
+| `unclassified` | No browser class or qualifying server evidence yet (formerly `pending`) | 0 |
 | `human` | Browser reports no automation evidence; not proof of a person | 1 |
 | `bot_suspicious` | Uncertain browser evidence | 2 |
-| `agent_unverified` | Browser declaration or unverified UA, Signature-Agent or Poppy claim | 3 |
+| `crawler_unverified` | Unverified UA-only claim for a documented crawler or fetcher token (including untrusted IP or uncertain `ip_mismatch`) | 3 |
+| `agent_unverified` | Browser declaration (`dom_marker`/`dom_host`), unverified `Signature-Agent`/`poppy_session`, unverified agent token (`Claude-Agent`/`Google-Agent`), or unknown/unmapped UA token | 3 |
 | `bot_automation` | Hard browser automation evidence without stronger server evidence | 4 |
-| `bot_spoofed` | Cryptographic signature mismatch against a known valid key | 4.5 |
+| `bot_spoofed` | Cryptographic signature mismatch against a known valid key, or certain fresh `ip_mismatch` | 4.5 |
 | `automation_verified` | Verified signing infrastructure; downstream agent unknown | 4.75 |
-| `agent_verified` | Verified agent identity; purpose is `user_directed` or `unknown` | 5 |
-| `crawler_verified` | Verified identity with crawler purpose | 5 |
+| `agent_verified` | Verified WBA browser agent, Poppy session, or IP-verified agent token (`Claude-Agent`, `Google-Agent`) | 5 |
+| `crawler_verified` | Verified crawler (`signature_valid`/`ip_match`, purpose `crawler`) or IP-verified fetcher (`ChatGPT-User`, `Claude-User`, etc.; `user_directed` stays in `vv_detail`) | 5 |
 
 `visitorLabels` derives each hit statelessly; these ranks are collector retention/reporting guidance. On a single hit, a cryptographic mismatch yields `bot_spoofed`; valid evidence identifies crawler, infrastructure or agent before falling back to browser evidence. Expiry, replay, malformed input, unknown keys and unavailable verification are indeterminate, not proof of spoofing. A collector can retain earlier stronger evidence; the type does not prove that every subsequent hit was freshly verified. Collector retention must be bounded (the reference uses 10,000 entries and a 30-minute TTL), with expiry capped by proof lifetime; process restarts clear it. Scope full events to client/session and denied pings to page/client, never IP or cross-page identity. Live collector memory may replace equal-rank evidence; SQL independently applies its documented export-order tie break.
 

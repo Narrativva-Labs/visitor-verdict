@@ -8,6 +8,7 @@ import type {
   IpList,
   PurposePolicy,
   RegistryEvidence,
+  TokenClass,
 } from './types.js';
 
 function registryEvidence(value: readonly RegistryEvidence[] | undefined) {
@@ -67,6 +68,23 @@ function purposePolicy(value: PurposePolicy | undefined): PurposePolicy | undefi
     ipLists: value.ipLists ? { ...value.ipLists } : undefined,
     uaTokens: value.uaTokens ? { ...value.uaTokens } : undefined,
   };
+}
+
+function tokenClassesPolicy(
+  value: Readonly<Record<string, TokenClass>> | undefined,
+): Readonly<Record<string, TokenClass>> | undefined {
+  if (value === undefined) return;
+  const valid = (kind: unknown) =>
+    ['agent', 'fetcher', 'crawler', 'intermediary'].includes(kind as string);
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.entries(value).length > 64 ||
+    Object.entries(value).some(([key, kind]) => !key.length || key.length > 128 || !valid(kind))
+  )
+    throw new TypeError('Invalid token class mapping');
+  return { ...value };
 }
 
 function httpsUrl(value: unknown): void {
@@ -233,6 +251,7 @@ export function validateConfig(options: VerifierOptions) {
       ...operator,
       evidence: registryEvidence(operator.evidence),
       purposes: purposePolicy(operator.purposes),
+      tokenClasses: tokenClassesPolicy(operator.tokenClasses),
       ipLists,
       reverseDns,
       staticPrefixes: operator.staticPrefixes ? [...operator.staticPrefixes] : undefined,

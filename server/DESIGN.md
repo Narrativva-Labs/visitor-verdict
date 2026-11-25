@@ -58,11 +58,11 @@ remain part of ambiguity resolution. Google customer cloud DNS is excluded.
 ## GA4 label API (0.3.0)
 
 `visitorLabels` replaces `toAnalyticsFields` and returns only `vv_type` and `vv_detail`.
-It is pure and stores nothing. Invalid signatures take precedence, followed by verified
-identities (crawler purpose gives `crawler_verified`; `user_directed` or `unknown` gives
-`agent_verified`; `intermediary` gives `automation_verified`), browser automation, unverified claims, suspicious behavior, human and
-pending. Unknown purpose never downgrades successful verification to pending: detail
-preserves `unknown`, and `agent_verified` alone does not assert a user-directed role.
+It is pure and stores nothing. Invalid signatures and certain fresh IP mismatches take precedence (`bot_spoofed`), followed by verified
+identities (crawler purpose or IP-verified fetcher gives `crawler_verified`; verified WBA browser agents, Poppy sessions and IP-verified agent/unknown-class tokens give
+`agent_verified`; `intermediary` gives `automation_verified`), browser automation (`bot_automation`), unverified claims (`crawler_unverified` for documented crawler/fetcher UA-only claims without `declared_agent`/`signature_agent`/`poppy_session`, otherwise `agent_unverified`), suspicious behavior (`bot_suspicious`), human (`human`) and
+`unclassified` (renamed from `pending` in 0.8.0). Unknown purpose never downgrades successful verification to `unclassified`: detail
+preserves `unknown`, and `agent_verified` alone does not assert a user-directed role. IP-verified fetchers (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google fetchers) map to `crawler_verified` while preserving `user_directed` in `vv_detail`; token classes come strictly from explicit operator-documented registry entries (`registry-token-classes.ts`), never from suffix guessing (`meta-externalagent` is `crawler`, undocumented `Blueno` and unknown tokens stay `unknown` → `agent_unverified`).
 Manus and Meta Muse signature identities map to user_directed under the owner policy
 based on their documented agent products; DuckDuckGo's maps to crawler in line
 with DuckAssistBot. Browserbase is an intermediary (0.4.0): it signs its customers'
@@ -84,8 +84,8 @@ invalid signature; the claim segment is then `dom_host` when explicitly supplied
 verified or downgrades a spoofed one. The browser phase `agent` marks the detector's
 update after such a marker appears.
 
-Session aggregation belongs to the collector: pending=0, human=1, bot_suspicious=2,
-agent_unverified=3, bot_automation=4, bot_spoofed=4.5, automation_verified=4.75, direct crawler_verified/agent_verified=5;
+Session aggregation belongs to the collector: unclassified=0, human=1, bot_suspicious=2,
+crawler_unverified=agent_unverified=3, bot_automation=4, bot_spoofed=4.5, automation_verified=4.75, direct crawler_verified/agent_verified=5;
 fresh equal-rank evidence replaces the prior type, operator and verified purpose. An intermediary cannot replace active direct proof. Verified purpose travels with the inherited operator, so intermediary survives unsigned hits. Verification, claim and browser segments describe the current hit. Same-identity renewal includes purpose; inherited evidence never extends its proof expiry. Replay is indeterminate in 0.6.1; collectors own any per-hit sticky evidence policy.
 Full hits use client_id+session_id, denied pings page_id; bounded memory-only storage
 must expire and clear on close. No library persistence or request waiting is introduced.

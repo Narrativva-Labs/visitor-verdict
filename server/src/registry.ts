@@ -1,5 +1,6 @@
 import { additionalOperators } from './registry-extra.js';
 import { purposePolicies } from './registry-purposes.js';
+import { tokenClassPolicies } from './registry-token-classes.js';
 import type { Registry } from './types.js';
 const googleCommonTokens = [
   'Googlebot',
@@ -413,4 +414,5 @@ export const defaultRegistry: Registry = operators.map((operator) => ({
     },
   ],
   purposes: purposePolicies[operator.operator],
+  tokenClasses: tokenClassPolicies[operator.operator],
 }));

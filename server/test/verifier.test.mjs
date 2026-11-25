@@ -400,7 +400,7 @@ test('UA-only claim is unverified and analytics fields exclude raw claims', asyn
   });
   assert.equal(v.verification, 'no_signature');
   assert.deepEqual(visitorLabels({ verdict: v }), {
-    vv_type: 'agent_unverified',
+    vv_type: 'crawler_unverified',
     vv_detail: 'none|no_signature|unknown|ua_token|-|-',
   });
 });

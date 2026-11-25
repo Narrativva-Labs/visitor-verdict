@@ -122,7 +122,7 @@ test('K8 untrusted client IP cannot supply positive identity evidence', async ()
       headers: { 'user-agent': 'GPTBot' },
     });
     assert.equal(verdict.verification, 'no_signature');
-    assert.equal(visitorLabels({ verdict }).vv_type, 'agent_unverified');
+    assert.equal(visitorLabels({ verdict }).vv_type, 'crawler_unverified');
   } finally {
     v.close();
   }
