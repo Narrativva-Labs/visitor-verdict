@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.5 — 2026-11-25
+
+- Retry cold directories at 1/2/4/8/16/30/60 seconds and use a separate 4s startup/ahead timeout. Preserve normal forced-refresh cooldowns.
+- Add validated public-directory snapshots with original fetch/expiry metadata and configured-source restoration.
+- Require every configured SAIL service for URL readiness; retain healthy shared cache data.
+- Synchronize the service contract and 894 differential vectors, including empty headers, malformed encodings, phases and long keyed Signature-Agent.
+
 ## 0.7.4 — 2026-11-25
 
 - Report SAIL readiness per configured verifier without masking missing services; support allowlisted adapter diagnostics; disable negative proof for future fetch times.

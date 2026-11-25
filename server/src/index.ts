@@ -109,7 +109,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
         sailServices.set(list.url, names);
       }
   const sailReady = (url: string, now: number) =>
-    [...(sailServices.get(url) ?? [])].some(
+    [...(sailServices.get(url) ?? [])].every(
       (name) => cache.serviceStatus(url, name, now).available,
     );
 

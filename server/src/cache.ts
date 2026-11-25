@@ -12,6 +12,8 @@ interface LogicalState {
   candidate?: ShrinkCandidate;
 }
 interface Entry {
+  rawDirectory?: unknown;
+  coldFailures?: number;
   candidate?: ShrinkCandidate;
   services?: Map<string, LogicalState>;
   data?: unknown;
@@ -119,6 +121,8 @@ export type LoadMode =
   | 'mismatch'
   | 'claim';
 export interface CacheOptions {
+  /** Startup/refresh-ahead I/O budget; request loads retain their own timeout. */
+  backgroundTimeoutMs?: number;
   /** Hard maximum age of retained data since its fetch; 0 disables stale serving. */
   staleMaxSeconds?: number;
   /** Clock in Unix seconds for refresh-ahead timers. */
@@ -147,6 +151,7 @@ export class AgentCache {
   private lastRefreshOk: boolean | null = null;
   private lastRefreshAt: number | null = null;
   private onRefresh?: (event: RefreshEvent) => void;
+  private backgroundTimeoutMs: number;
   constructor(
     private fetcher: Fetcher,
     private timeoutMs: number,
@@ -155,6 +160,65 @@ export class AgentCache {
     this.staleMaxSeconds = options.staleMaxSeconds ?? 0;
     this.now = options.now ?? (() => Date.now() / 1000);
     this.onRefresh = options.onRefresh;
+    this.backgroundTimeoutMs = options.backgroundTimeoutMs ?? 4000;
+  }
+
+  /** Only validated public source documents; never serialize imported KeyObjects. */
+  directorySnapshot() {
+    return {
+      v: 1,
+      entries: [...this.entries].flatMap(([key, e]) =>
+        key.startsWith('directory:') && e.rawDirectory !== undefined && this.clock() < e.staleUntil
+          ? [
+              [
+                key.slice(10),
+                e.rawDirectory,
+                e.fetched,
+                e.until,
+                e.staleUntil,
+                e.lastSuccessfulRefreshAt,
+                e.lastRefreshOk,
+              ],
+            ]
+          : [],
+      ),
+    };
+  }
+
+  /** Restore only configured sources, revalidating documents and preserving absolute age. */
+  restoreDirectories(value: unknown, decoders: ReadonlyMap<string, (data: unknown) => unknown>) {
+    const data = value as { v?: number; entries?: unknown[] };
+    if (data?.v !== 1 || !Array.isArray(data.entries) || data.entries.length > DIRECTORY_CACHE_SIZE)
+      throw new Failure('invalid_directory', true);
+    const now = this.clock();
+    for (const row of data.entries) {
+      if (
+        !Array.isArray(row) ||
+        row.length !== 7 ||
+        typeof row[0] !== 'string' ||
+        ![row[2], row[3], row[4], row[5]].every(Number.isFinite) ||
+        typeof row[6] !== 'boolean' ||
+        row[2] > now + 300 ||
+        row[3] < row[2] ||
+        row[4] < row[3]
+      )
+        throw new Failure('invalid_directory', true);
+      const decode = decoders.get(row[0]);
+      const end = Math.min(row[4], row[2] + this.staleMaxSeconds);
+      if (!decode || this.staleMaxSeconds <= 0 || now >= end) continue;
+      const decoded = decode(row[1]);
+      const e = this.touch('directory:' + row[0], 'directory');
+      Object.assign(e, {
+        data: decoded,
+        rawDirectory: row[1],
+        fetched: row[2],
+        until: Math.min(row[3], end),
+        staleUntil: end,
+        lastSuccessfulRefreshAt: row[5],
+        lastRefreshOk: row[6],
+        cooldown: 0,
+      });
+    }
   }
 
   status(targets: readonly (readonly [string, DocumentKind])[]): VerifierStatus {
@@ -264,7 +328,7 @@ export class AgentCache {
         now >= entry.cooldown
       ) {
         entry.cooldown = now + COOLDOWN_SECONDS;
-        entry.flight = this.refresh(url, kind, now, entry, decode, 'flight');
+        entry.flight = this.refresh(url, kind, now, entry, decode, 'flight', mode);
         entry.flight.catch(() => {});
       }
       return entry.data as T;
@@ -276,7 +340,7 @@ export class AgentCache {
     if (request && usable) {
       // Stale-while-revalidate: serve the last valid document while one refresh runs.
       if (!pending && now >= entry.cooldown) {
-        entry.flight = this.refresh(url, kind, now, entry, decode, 'flight');
+        entry.flight = this.refresh(url, kind, now, entry, decode, 'flight', mode);
         entry.flight.catch(() => {});
       }
       return entry.data as T;
@@ -294,7 +358,7 @@ export class AgentCache {
     }
     if (force) entry.cooldown = now + COOLDOWN_SECONDS;
     const slot = force ? 'forcedFlight' : 'flight';
-    entry[slot] = this.refresh(url, kind, now, entry, decode, slot);
+    entry[slot] = this.refresh(url, kind, now, entry, decode, slot, mode);
     if (cacheOnly) {
       entry[slot].catch(() => {});
       throw new Failure('cache_miss', true);
@@ -364,9 +428,15 @@ export class AgentCache {
     entry: Entry,
     decode: (data: unknown) => T,
     slot: 'flight' | 'forcedFlight',
+    mode: LoadMode,
   ): Promise<T> {
     try {
-      const response = await fetchBounded(url, this.fetcher, kind, this.timeoutMs);
+      const response = await fetchBounded(
+        url,
+        this.fetcher,
+        kind,
+        mode === 'warm' || mode === 'ahead' ? this.backgroundTimeoutMs : this.timeoutMs,
+      );
       let data = decode(response.data);
       const completed = this.clock();
       const at = Number.isFinite(completed) ? completed : now;
@@ -439,6 +509,8 @@ export class AgentCache {
       entry.lastSuccessfulRefreshAt = Number.isFinite(completedAt) ? completedAt : undefined;
       entry.lastRefreshOk = !partial;
       entry.data = data;
+      if (kind === 'directory') entry.rawDirectory = response.data;
+      entry.coldFailures = 0;
       entry.fetched = now;
       const ttl =
         this.staleMaxSeconds > 0 ? Math.min(response.ttl, this.staleMaxSeconds) : response.ttl;
@@ -449,7 +521,15 @@ export class AgentCache {
     } catch (error) {
       entry.lastRefreshOk = false;
       for (const state of entry.services?.values() ?? []) state.ok = false;
-      entry.cooldown = now + COOLDOWN_SECONDS;
+      const completed = this.clock();
+      const at = Number.isFinite(completed) ? Math.max(now, completed) : now;
+      const cold = kind === 'directory' && entry.data === undefined;
+      const delays = [1, 2, 4, 8, 16, 30, 60];
+      const retry = cold
+        ? delays[Math.min(entry.coldFailures ?? 0, delays.length - 1)]
+        : COOLDOWN_SECONDS;
+      if (cold) entry.coldFailures = (entry.coldFailures ?? 0) + 1;
+      entry.cooldown = at + retry;
       const f = failure(error);
       this.refreshed(kind, false, now, new URL(url).hostname, f.reason);
       throw f;
