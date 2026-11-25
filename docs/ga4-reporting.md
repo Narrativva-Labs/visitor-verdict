@@ -15,17 +15,17 @@ Merge DLV `VV - DLV traffic_agent_claim` (ID 17, Version 2, key `traffic_agent_c
 
 All imported named objects use `VV - `. The import creates two tags, nine variables, five triggers and one optional recipe folder. Underlying event/data names do not carry the prefix:
 
-| Object | Definition |
-|---|---|
-| VV - detector | Custom HTML, All Pages, once per page, priority 100 |
-| VV - GA4 traffic_class | GA4 Event, event name `traffic_class`, measurement ID `{{VV - GA4 measurement ID}}`, triggers VV - initial hard OR VV - agent OR VV - final, once per event |
-| VV - initial / VV - agent / VV - final | Custom event `traffic_class`, filtered by `{{VV - DLV traffic_phase}}` equal to `initial` / `agent` / `final` |
-| VV - initial hard | Custom event `traffic_class`, phase equals `initial` AND class matches regex `^(automated|declared_agent)$` |
-| VV - OPTIONAL page_view readiness (OR, once per page) | Folder containing VV - initial and VV - timer fallback 1s; attach both manually as ordinary OR firing triggers |
-| VV - timer fallback 1s | Timer `gtm.timer`, 1000ms, limit 1, enabled on all pages |
+| Object                                                                                                                          | Definition                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VV - detector                                                                                                                   | Custom HTML, All Pages, once per page, priority 100                                                                                                               |
+| VV - GA4 traffic_class                                                                                                          | GA4 Event, event name `traffic_class`, measurement ID `{{VV - GA4 measurement ID}}`, triggers VV - initial hard OR VV - agent OR VV - final, once per event       |
+| VV - initial / VV - agent / VV - final                                                                                          | Custom event `traffic_class`, filtered by `{{VV - DLV traffic_phase}}` equal to `initial` / `agent` / `final`                                                     |
+| VV - initial hard                                                                                                               | Custom event `traffic_class`, phase equals `initial` AND class matches regex `^(automated                                                                         | declared_agent)$` |
+| VV - OPTIONAL page_view readiness (OR, once per page)                                                                           | Folder containing VV - initial and VV - timer fallback 1s; attach both manually as ordinary OR firing triggers                                                    |
+| VV - timer fallback 1s                                                                                                          | Timer `gtm.timer`, 1000ms, limit 1, enabled on all pages                                                                                                          |
 | VV - DLV traffic_class / traffic_phase / traffic_score / traffic_version / traffic_agent / traffic_webmcp / traffic_agent_claim | Seven Version 2 Data Layer Variables, each reading the corresponding unprefixed key, with no default (`traffic_agent` is absent on most events and then not sent) |
-| VV - current class | Browser automated/declared class, then verified B7 agent, then browser human/suspicious, then startup previous class, then `undefined` |
-| VV - GA4 measurement ID | Constant holding your destination ID |
+| VV - current class                                                                                                              | Browser automated/declared class, then verified B7 agent, then browser human/suspicious, then startup previous class, then `undefined`                            |
+| VV - GA4 measurement ID                                                                                                         | Constant holding your destination ID                                                                                                                              |
 
 ### Optional first page_view timing and rollback
 
@@ -71,14 +71,14 @@ Initial and final hits for the same hard class are expected. Use **session-level
 
 The dedicated event describes one data-layer publication. Use these exact seven event-parameter mappings; do not substitute the live current-class variable:
 
-| GA4 field | Variable |
-|---|---|
-| Event parameter `traffic_class` | `{{VV - DLV traffic_class}}` |
-| Event parameter `traffic_phase` | `{{VV - DLV traffic_phase}}` |
-| Event parameter `traffic_score` | `{{VV - DLV traffic_score}}` |
-| Event parameter `traffic_version` | `{{VV - DLV traffic_version}}` |
-| Event parameter `traffic_agent` | `{{VV - DLV traffic_agent}}` |
-| Event parameter `traffic_webmcp` | `{{VV - DLV traffic_webmcp}}` |
+| GA4 field                             | Variable                           |
+| ------------------------------------- | ---------------------------------- |
+| Event parameter `traffic_class`       | `{{VV - DLV traffic_class}}`       |
+| Event parameter `traffic_phase`       | `{{VV - DLV traffic_phase}}`       |
+| Event parameter `traffic_score`       | `{{VV - DLV traffic_score}}`       |
+| Event parameter `traffic_version`     | `{{VV - DLV traffic_version}}`     |
+| Event parameter `traffic_agent`       | `{{VV - DLV traffic_agent}}`       |
+| Event parameter `traffic_webmcp`      | `{{VV - DLV traffic_webmcp}}`      |
 | Event parameter `traffic_agent_claim` | `{{VV - DLV traffic_agent_claim}}` |
 
 **No `traffic_class` user property:** the user property previously mapped on this tag was removed in GTM 1.4.1; remove legacy mappings from existing tags. A legacy last-observed user property can overwrite earlier agent/automation evidence when a later `human` event fires and leaks across handoff and subsequent sessions. Use event-scoped parameters with session-level classification in SQL ([bigquery.sql](analysis/bigquery.sql) / [campaign-dashboard.sql](analysis/campaign-dashboard.sql)) or GA4 Exploration session segments instead.
@@ -125,6 +125,10 @@ The B7 snapshot may use its native `v/type/operator/verification/purpose` shape 
 
 It never reads or writes storage. `__visitorVerdictLast` is the validated previous final class captured once at startup, not a live storage lookup. Unknown remains undefined, never default human. Re-read `window.__visitorVerdict` for the latest frozen snapshot; previously held snapshots do not update.
 
+## CSP-safe traffic_detail variable
+
+On sites whose Content Security Policy does not allow `'unsafe-eval'`, GTM cannot run Custom JavaScript variables, so **VV - traffic_detail** returns nothing and GA4 silently drops the `traffic_detail` parameter (observed on narrativva.com, 24–25 Nov 2026). Import [`gtm/templates/vv-traffic-detail.tpl`](../gtm/templates/vv-traffic-detail.tpl) (Templates > Variable Templates > Import), create a variable from it and use it for `traffic_detail` on **VV - GA4 traffic_class** and any other GA4 event that sends the detail. It reads only the four data layer keys (`traffic_agent`, `traffic_agent_claim`, `traffic_phase`, `traffic_replay`) and returns the same `agent|claim|phase|replay` value, each missing or invalid segment as `-`. Check in Preview that the parameter is present.
+
 ## CSP-safe current-class variable
 
 For a variable without GTM Custom JavaScript evaluation, open **Templates → Variable Templates → New → Import** and choose [gtm/templates/vv-current-class.tpl](../gtm/templates/vv-current-class.tpl). Save it, then create a variable using the **VV - current class** template. Replace the imported Custom JavaScript variable, preserving or updating every reference.
@@ -145,25 +149,25 @@ Keep the dedicated event on initial hard, agent and final even if no later inter
 
 In **Admin → Data display → Custom definitions**, create **event-scoped** dimensions only:
 
-| Display name | Scope | Field |
-|---|---|---|
-| Traffic class (event) | Event | Event parameter `traffic_class` |
-| Traffic agent (event) | Event | Event parameter `traffic_agent` |
-| Traffic agent claim (event) | Event | Event parameter `traffic_agent_claim` |
-| Traffic WebMCP (event), optional | Event | Event parameter `traffic_webmcp` |
-| Traffic phase (event), optional | Event | Event parameter `traffic_phase` |
+| Display name                     | Scope | Field                                 |
+| -------------------------------- | ----- | ------------------------------------- |
+| Traffic class (event)            | Event | Event parameter `traffic_class`       |
+| Traffic agent (event)            | Event | Event parameter `traffic_agent`       |
+| Traffic agent claim (event)      | Event | Event parameter `traffic_agent_claim` |
+| Traffic WebMCP (event), optional | Event | Event parameter `traffic_webmcp`      |
+| Traffic phase (event), optional  | Event | Event parameter `traffic_phase`       |
 
 Optionally register event-scoped `traffic_version` to distinguish release/configuration intervals. This is static release metadata.
 
 Register `traffic_score` as a custom metric only if needed. Score is a heuristic, not a probability.
 
-| Stored value | Reporting label and interpretation |
-|---|---|
-| `human` | **No automation detected**; not proof of a person |
-| `suspicious` | Uncertain evidence; show separately for review |
-| `automated` | Automation evidence; does not establish intent or abuse |
+| Stored value     | Reporting label and interpretation                                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `human`          | **No automation detected**; not proof of a person                                                                                                                                                                                                                                                                                                             |
+| `suspicious`     | Uncertain evidence; show separately for review                                                                                                                                                                                                                                                                                                                |
+| `automated`      | Automation evidence; does not establish intent or abuse                                                                                                                                                                                                                                                                                                       |
 | `declared_agent` | Unverified agent claim (UA token, agent UI marker, or server echo); can be spoofed in browser-only setups. With `traffic_agent` (and `traffic_agent_claim != 'server_intermediary'`), usually a real person's agent-assisted visit (`agent_user`); with `traffic_agent_claim = 'server_intermediary'`, a verified automation platform (`automation_verified`) |
-| Missing | Unknown; never silently treat as human |
+| Missing          | Unknown; never silently treat as human                                                                                                                                                                                                                                                                                                                        |
 
 **Labels only.** Nothing is excluded, filtered or deleted at collection, and no view below is a default filter. **All sessions** is the headline; the other views are breakdowns or optional comparisons that leave the data intact. Agent-assisted sessions (`agent_user`) are real visits: a browser agent such as OpenAI's in-browser agent runs in the person's own browser and pays with their card, so its purchases are revenue. Coverage remains limited: the Claude 1.0.107 host pattern (`dom_host`) is observed evidence and may also match unrelated closed-shadow widgets or portals, and ChatGPT's cloud agent ends `human` in the browser (recognised only on the server via HTTP Message Signatures). Report each group separately, never merged into an "excluded" total.
 
@@ -184,7 +188,6 @@ Headline purchase conversion rate = **purchasing sessions / sessions in the same
 For GA4 UI steps use [Explorations and comparisons](analysis/ga4-explorations.md): create **Session segments** scoped to the web stream for each separated group. Standard-report comparisons on the event-scoped dimension are scoped label comparisons, not reliable whole-session classifications; never use a user property as a shortcut. [BigQuery SQL](analysis/bigquery.sql) and [Campaign dashboard SQL](analysis/campaign-dashboard.sql) supply session flags, `class_group`, `agent_claim`, first/last evidence, class at first purchase and consistent cohorts; [Looker Studio](analysis/looker-studio.md) uses those session aggregates.
 
 **Do not use the class to block access, deny service or make decisions about individuals.** Assistive technology can resemble some input patterns. Keep conversion collection running and send conversions as usual; the project recommends no conversion exceptions or holds by default, and any label forwarded to ad platforms (e.g. via sGTM) must be a passive reporting parameter only (see [conversion guidance](conversion-guidance.md)). Pre-consent classification must never feed advertising platforms.
-
 
 ## Detector 1.2.0 timing and carry-over
 
