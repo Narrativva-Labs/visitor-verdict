@@ -136,16 +136,16 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
       const identities = claims.agent.legacy
         ? [claims.agent.legacy]
         : [...claims.agent.identities.values()];
-      const trusted = identities.some((identity) =>
-        config.registry.some((o) => o.signatureAgent === identity),
-      );
-      if (
-        claims.agent.values.length &&
-        !trusted &&
-        !presented &&
-        !(poppy && h.has('poppy-session'))
-      )
-        throw new Failure('untrusted_signature_agent', true);
+      const bareIdentity =
+        identities.length &&
+        identities.every((id) => id === identities[0]) &&
+        (claims.agent.legacy || claims.agent.identities.size === claims.agent.members?.size) &&
+        config.registry.some((o) => o.signatureAgent === identities[0])
+          ? identities[0]
+          : undefined;
+      const hasAgent = !!field(h, 'signature-agent');
+      if (hasAgent && !verdict.claimed.signatureAgents.length)
+        verdict.claimed.signatureAgents = [field(h, 'signature-agent')];
       if (poppy && h.has('poppy-session')) verdict.claimed.poppySession = true;
       if (presented) {
         if (!field(h, 'signature') || !field(h, 'signature-input'))
@@ -221,11 +221,16 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
       const onlyIgnored =
         verdict.signatures.length > 0 &&
         verdict.signatures.every((s) => s.reason === 'ignored_non_wba');
-      if (!claims.agent.values.length || trusted || onlyIgnored) {
+      const bareAllowed = !hasAgent || !!bareIdentity || onlyIgnored;
+      const ipRegistry =
+        bareIdentity && !onlyIgnored
+          ? config.registry.filter((o) => o.signatureAgent === bareIdentity)
+          : config.registry;
+      if (bareAllowed) {
         const evidence = await ipEvidence(
           input.clientIp,
           claims.uaTokens,
-          config.registry,
+          ipRegistry,
           cache,
           now,
           staticRanges,
@@ -276,6 +281,10 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
           verdict.verified !== undefined && isIntermediary(verdict.verified),
         ),
       );
+      if (!bareAllowed && !presented) {
+        verdict.verification = 'none';
+        verdict.reason = 'untrusted_signature_agent';
+      }
       if (verdict.reason === 'ip_evidence_unavailable' && ipCacheMiss)
         verdict.reason = 'cache_miss';
       if (verdict.verification === 'ip_match') {
@@ -295,6 +304,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
       }
       if (
         config.flagSpoofedClaims &&
+        bareAllowed &&
         ((!h.has('signature') && !h.has('signature-input')) || onlyIgnored) &&
         !(poppy && h.has('poppy-session')) &&
         !verdict.verified
@@ -302,7 +312,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
         const mismatch = await ipMismatch(
           input.clientIp,
           claims.uaTokens,
-          config.registry,
+          ipRegistry,
           cache,
           config.now(),
           staticRanges,

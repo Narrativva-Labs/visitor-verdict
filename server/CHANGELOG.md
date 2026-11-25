@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 — 2026-11-25
+
+- Require unambiguous matching bare Signature-Agent identity for IP evidence; mixed, token and cross-operator claims remain unverified.
+- Accept a nonempty >50% shrink after identical validated content is confirmed at least two hours apart; empty complete lists remain uncertain.
+- Keep SAIL LKG, refresh status and age per service while sharing downloads by URL; preserve healthy siblings.
+- Require every operator peer to be present and nonempty for a negative union; keep IP/rDNS diagnostics under invalid-signature precedence.
+- Shared differential corpus and regression coverage for K4.
+
 ## 0.7.1 — 2026-11-25
 
 - Track last refresh success per IP source; failed refreshes disable negative certainty even with a recent last-good document. Tolerate up to 60 seconds of future source time, matching sGTM.

@@ -96,7 +96,8 @@ export async function ipEvidence(
               .load(list.url, 'sail', now, decodeSail, cacheOnly ? 'cached' : 'request')
               .then((services) => {
                 const block = services.get(list.service!);
-                if (!block) throw new Failure('invalid_sail', true);
+                if (!block || !cache.serviceStatus(list.url, list.service!, now).available)
+                  throw new Failure('invalid_sail', true);
                 if (block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')) shared = true;
                 return block;
               })
@@ -130,6 +131,7 @@ export async function ipMismatch(
   staticRanges: Map<string, BlockList>,
 ): Promise<{ fresh: boolean } | undefined> {
   if (typeof ip !== 'string' || !isIP(ip)) return;
+  let uncertain = false;
   for (const operator of registry) {
     if (
       !operator.ipLists.some((list) => list.complete && list.uaTokens?.some((t) => ua.includes(t)))
@@ -152,7 +154,9 @@ export async function ipMismatch(
           const matches =
             block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6') ||
             block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6');
-          return { matches, at: trace.successfulRefreshAt, ok: trace.refreshOk };
+          const state = cache.serviceStatus(list.url, list.service!, now);
+          if (!state.available) throw new Failure('invalid_ip_list', true);
+          return { matches, at: state.at, ok: state.ok };
         }
         const block = await cache.load(list.url, 'ip', now, decodeList, 'claim', trace);
         if (!block.rules.length) throw new Failure('invalid_ip_list', true);
@@ -175,7 +179,9 @@ export async function ipMismatch(
           now - at <= 7200
         );
       });
-      return { fresh };
+      if (fresh) return { fresh: true };
+      uncertain = true;
     }
   }
+  return uncertain ? { fresh: false } : undefined;
 }

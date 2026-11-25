@@ -1,9 +1,19 @@
+import { createHash } from 'node:crypto';
+import { prefixPolicy, type ShrinkCandidate } from './prefix-policy.js';
 import { parseSail } from './sail.js';
 import { Failure, failure } from './errors.js';
 import type { Fetcher, RefreshEvent, VerifierStatus } from './types.js';
 
 export type DocumentKind = 'directory' | 'ip' | 'sail';
+interface LogicalState {
+  at?: number;
+  ok: boolean;
+  staleUntil: number;
+  candidate?: ShrinkCandidate;
+}
 interface Entry {
+  candidate?: ShrinkCandidate;
+  services?: Map<string, LogicalState>;
   data?: unknown;
   /** Fetch time, soft expiry (serve as fresh) and hard expiry (serve while revalidating). */
   fetched: number;
@@ -167,6 +177,12 @@ export class AgentCache {
 
   successfulRefreshAt(url: string, kind: DocumentKind): number | undefined {
     return this.entries.get(kind + ':' + url)?.lastSuccessfulRefreshAt;
+  }
+
+  /** SAIL download is single-flight; evidence and LKG age are per logical service. */
+  serviceStatus(url: string, service: string, now: number) {
+    const state = this.entries.get('sail:' + url)?.services?.get(service);
+    return { at: state?.at, ok: state?.ok === true, available: !!state && now < state.staleUntil };
   }
 
   /** Trusted registry policy: completeness guards apply only to configured complete lists. */
@@ -351,37 +367,84 @@ export class AgentCache {
   ): Promise<T> {
     try {
       const response = await fetchBounded(url, this.fetcher, kind, this.timeoutMs);
-      const data = decode(response.data);
-      // A disappearing IP union is uncertain. Keep the last good document and
-      // do not turn a successful HTTP response into negative evidence.
-      const sane = (next: any, previous: any) =>
-        typeof next?.prefixCount !== 'number' ||
-        (next.prefixCount > 0 &&
-          (typeof previous?.prefixCount !== 'number' ||
-            next.prefixCount >= previous.prefixCount / 2));
-      if (kind === 'ip' && this.completeIp.has(url) && !sane(data, entry.data))
-        throw new Failure('invalid_ip_list', true);
-      if (kind === 'sail' && this.completeSail.has(url)) {
+      let data = decode(response.data);
+      const completed = this.clock();
+      const at = Number.isFinite(completed) ? completed : now;
+      const expiry = now + (this.staleMaxSeconds > 0 ? this.staleMaxSeconds : response.ttl);
+      const guard = (next: any, previous: any, candidate?: ShrinkCandidate) =>
+        prefixPolicy(
+          next?.prefixCount ?? 0,
+          previous?.prefixCount,
+          createHash('sha256')
+            .update(
+              JSON.stringify([
+                [...(next?.rules ?? [])].sort(),
+                [...(next?.shared?.rules ?? [])].sort(),
+              ]),
+            )
+            .digest('hex'),
+          at,
+          candidate,
+        );
+      if (kind === 'ip' && this.completeIp.has(url)) {
+        const decision = guard(data, entry.data, entry.candidate);
+        entry.candidate = decision.candidate;
+        if (!decision.accept) throw new Failure('shrink', true);
+      }
+      let partial = false;
+      if (kind === 'sail') {
         const next = data as Map<string, unknown>;
         const previous = entry.data as Map<string, unknown> | undefined;
-        for (const name of this.completeSail.get(url)!)
-          if (!next.has(name) || !sane(next.get(name), previous?.get(name)))
-            throw new Failure('invalid_ip_list', true);
+        const states = entry.services ?? new Map<string, LogicalState>();
+        const merged = new Map(next);
+        const names = new Set([
+          ...next.keys(),
+          ...(previous?.keys() ?? []),
+          ...(this.completeSail.get(url) ?? []),
+        ]);
+        for (const name of names) {
+          const prior = states.get(name);
+          const complete = this.completeSail.get(url)?.has(name);
+          const decision = complete
+            ? guard(next.get(name), previous?.get(name), prior?.candidate)
+            : { accept: next.has(name) };
+          if (decision.accept)
+            states.set(name, {
+              at: Number.isFinite(completed) ? completed : undefined,
+              ok: true,
+              staleUntil: expiry,
+            });
+          else {
+            partial = true;
+            states.set(name, {
+              at: prior?.at,
+              ok: false,
+              staleUntil: prior?.staleUntil ?? 0,
+              candidate: decision.candidate,
+            });
+            if (previous?.has(name) && now < (prior?.staleUntil ?? 0))
+              merged.set(name, previous.get(name));
+            else merged.delete(name);
+          }
+        }
+        entry.services = states;
+        data = merged as T;
       }
       // A newer document replaces the previous one entirely; removed keys stop verifying.
       const completedAt = this.clock();
       entry.lastSuccessfulRefreshAt = Number.isFinite(completedAt) ? completedAt : undefined;
-      entry.lastRefreshOk = true;
+      entry.lastRefreshOk = !partial;
       entry.data = data;
       entry.fetched = now;
       const ttl =
         this.staleMaxSeconds > 0 ? Math.min(response.ttl, this.staleMaxSeconds) : response.ttl;
       entry.until = now + ttl;
       entry.staleUntil = this.staleMaxSeconds > 0 ? now + this.staleMaxSeconds : entry.until;
-      this.refreshed(kind, true, now, new URL(url).hostname);
+      this.refreshed(kind, !partial, now, new URL(url).hostname, partial ? 'shrink' : undefined);
       return data;
     } catch (error) {
       entry.lastRefreshOk = false;
+      for (const state of entry.services?.values() ?? []) state.ok = false;
       entry.cooldown = now + COOLDOWN_SECONDS;
       const f = failure(error);
       this.refreshed(kind, false, now, new URL(url).hostname, f.reason);
