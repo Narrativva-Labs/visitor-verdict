@@ -13,6 +13,7 @@ interface LogicalState {
 }
 interface Entry {
   rawDirectory?: unknown;
+  startupRevalidate?: boolean;
   coldFailures?: number;
   candidate?: ShrinkCandidate;
   services?: Map<string, LogicalState>;
@@ -191,6 +192,7 @@ export class AgentCache {
     if (data?.v !== 1 || !Array.isArray(data.entries) || data.entries.length > DIRECTORY_CACHE_SIZE)
       throw new Failure('invalid_directory', true);
     const now = this.clock();
+    const restored = new Map<string, Entry>();
     for (const row of data.entries) {
       if (
         !Array.isArray(row) ||
@@ -207,32 +209,44 @@ export class AgentCache {
       const end = Math.min(row[4], row[2] + this.staleMaxSeconds);
       if (!decode || this.staleMaxSeconds <= 0 || now >= end) continue;
       const decoded = decode(row[1]);
-      const e = this.touch('directory:' + row[0], 'directory');
+      const e: Entry = { until: 0, staleUntil: 0, fetched: 0, cooldown: 0 };
       Object.assign(e, {
         data: decoded,
         rawDirectory: row[1],
         fetched: row[2],
         until: Math.min(row[3], end),
+        startupRevalidate: true,
         staleUntil: end,
         lastSuccessfulRefreshAt: row[5],
         lastRefreshOk: row[6],
         cooldown: 0,
       });
+      restored.set('directory:' + row[0], e);
     }
+    for (const [key, e] of restored) this.entries.set(key, e);
   }
 
   status(targets: readonly (readonly [string, DocumentKind])[]): VerifierStatus {
     const now = this.clock();
     const directories = { loaded: 0, total: 0 };
+    let stale = 0;
     const ipLists = { loaded: 0, total: 0 };
     for (const [url, kind] of targets) {
       const count = kind === 'directory' ? directories : ipLists;
       count.total++;
       const entry = this.entries.get(kind + ':' + url);
-      if (entry?.data !== undefined && now < entry.staleUntil) count.loaded++;
+      if (entry?.data !== undefined && now < entry.staleUntil) {
+        count.loaded++;
+        if (
+          kind === 'directory' &&
+          (now >= entry.until || entry.startupRevalidate) &&
+          entry.lastRefreshOk === false
+        )
+          stale++;
+      }
     }
     return {
-      directories,
+      directories: { ...directories, ...(stale ? { stale } : {}) },
       ipLists,
       lastRefreshOk: this.lastRefreshOk,
       lastRefreshAt: this.lastRefreshAt,
@@ -333,7 +347,8 @@ export class AgentCache {
       }
       return entry.data as T;
     }
-    if ((request || mode === 'warm') && usable && now < entry.until) return entry.data as T;
+    if ((request || mode === 'warm') && usable && now < entry.until && !entry.startupRevalidate)
+      return entry.data as T;
     const pending = force
       ? (entry.forcedFlight ?? entry.flight)
       : (entry.flight ?? entry.forcedFlight);
@@ -508,6 +523,7 @@ export class AgentCache {
       const completedAt = this.clock();
       entry.lastSuccessfulRefreshAt = Number.isFinite(completedAt) ? completedAt : undefined;
       entry.lastRefreshOk = !partial;
+      entry.startupRevalidate = false;
       entry.data = data;
       if (kind === 'directory') entry.rawDirectory = response.data;
       entry.coldFailures = 0;

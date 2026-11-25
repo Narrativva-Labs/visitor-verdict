@@ -175,7 +175,7 @@ export interface AgentVerifier {
 }
 /** Aggregate in-memory cache health. Times are Unix seconds; null means no refresh has completed. */
 export interface VerifierStatus {
-  directories: { loaded: number; total: number };
+  directories: { loaded: number; total: number; stale?: number };
   ipLists: { loaded: number; total: number };
   lastRefreshOk: boolean | null;
   lastRefreshAt: number | null;

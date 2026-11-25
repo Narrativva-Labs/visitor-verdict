@@ -251,7 +251,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
           staticRanges,
           cacheOnly,
         );
-        verdict.ip = evidence.ip;
+        if (input.ipTrusted !== false) verdict.ip = evidence.ip;
         if (evidence.shared) verdict.evidence = [...(verdict.evidence ?? []), 'shared_ip_range'];
         ipUnavailable = evidence.unavailable;
         ipCacheMiss = evidence.cacheMiss === true;
@@ -259,6 +259,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
           !verdict.ip &&
           !verdict.verified &&
           rdns &&
+          input.ipTrusted !== false &&
           !cacheOnly &&
           !(poppy && h.has('poppy-session'))
         ) {

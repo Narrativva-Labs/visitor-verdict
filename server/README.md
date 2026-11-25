@@ -706,3 +706,12 @@ K6 (0.7.4): warm/status SAIL readiness follows this verifier's configured servic
 Startup warm and refresh-ahead use a 4 second fetch timeout; ordinary request fetches keep fetchTimeoutMs. A directory with no usable data retries after 1, 2, 4, 8, 16, 30, then 60 seconds. Successful warm data retains its original age; mutable-key forced refreshes still have their 60 second cooldown. `onRefresh` reports each outcome. SAIL URL warm/status readiness requires every service configured by that verifier; another service or verifier cannot hide an unavailable required service.
 
 The service's shared AgentCache can export validated public directory snapshots and restore only configured URL/decoder pairs. The snapshot stores raw public documents, original fetched/refresh times and soft/hard expirations, never imported KeyObjects. Restoration revalidates keys and clamps hard age to staleMaxSeconds; it never renews freshness or key nbf/exp. Directory persistence in the central service is separate from the library's own replay policy. See the synchronized CONTRACT.md for the remote reconstruction-proof profile.
+
+### 0.7.6 directory revalidation and IP trust
+
+Directory restore validates the entire snapshot before publication and immediately
+revalidates restored URLs on startup warm, even for long soft TTLs. It preserves
+original absolute ages. Status directories.stale counts retained directories whose
+revalidation failed. A request with ipTrusted:false cannot gain positive IP or
+reverse-DNS identity evidence. Malformed Signature-Agent suppresses server claims
+before browser fallback, consistently with the 2.1.6 template.

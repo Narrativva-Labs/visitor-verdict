@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.6 — 2026-11-25
+
+Atomically restore and revalidate directory snapshots on startup, expose stale directory health, and reject positive IP evidence when ipTrusted is false.
+
 ## 0.7.5 — 2026-11-25
 
 - Retry cold directories at 1/2/4/8/16/30/60 seconds and use a separate 4s startup/ahead timeout. Preserve normal forced-refresh cooldowns.
