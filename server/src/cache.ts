@@ -414,7 +414,10 @@ export class AgentCache {
               ok: true,
               staleUntil: expiry,
             });
-          else {
+          else if (!complete) {
+            states.delete(name);
+            merged.delete(name);
+          } else {
             partial = true;
             states.set(name, {
               at: prior?.at,
@@ -428,6 +431,7 @@ export class AgentCache {
           }
         }
         entry.services = states;
+        if (!merged.size && this.completeSail.get(url)?.size) throw new Failure('shrink', true);
         data = merged as T;
       }
       // A newer document replaces the previous one entirely; removed keys stop verifying.
@@ -438,7 +442,7 @@ export class AgentCache {
       entry.fetched = now;
       const ttl =
         this.staleMaxSeconds > 0 ? Math.min(response.ttl, this.staleMaxSeconds) : response.ttl;
-      entry.until = now + ttl;
+      entry.until = now + (partial ? Math.min(ttl, 600) : ttl);
       entry.staleUntil = this.staleMaxSeconds > 0 ? now + this.staleMaxSeconds : entry.until;
       this.refreshed(kind, !partial, now, new URL(url).hostname, partial ? 'shrink' : undefined);
       return data;

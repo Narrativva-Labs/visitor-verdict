@@ -145,7 +145,7 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
           : undefined;
       const hasAgent = !!field(h, 'signature-agent');
       if (hasAgent && !verdict.claimed.signatureAgents.length)
-        verdict.claimed.signatureAgents = [field(h, 'signature-agent')];
+        verdict.claimed.signatureAgents = ['(non-string)'];
       if (poppy && h.has('poppy-session')) verdict.claimed.poppySession = true;
       if (presented) {
         if (!field(h, 'signature') || !field(h, 'signature-input'))

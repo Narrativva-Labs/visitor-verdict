@@ -64,7 +64,7 @@ export async function evaluateSignature(
     checkActive(env.signal);
     const member = inputs.get(label);
     const sig = sigs.get(label);
-    if (member && member[1].get('tag') !== 'web-bot-auth')
+    if (member && Array.isArray(member[0]) && member[1].get('tag') !== 'web-bot-auth')
       return { result: { label, result: 'none', reason: 'ignored_non_wba' } };
     if (member && env.secure === false) throw new Failure('insufficient_context', true);
     if (

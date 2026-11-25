@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.3 — 2026-11-25
+
+- Retry partial SAIL shrink without extending soft expiry; reject empty unusable SAIL warm-ups and accept non-complete service removal without shrink. Reject malformed non-list non-WBA inputs and redact raw invalid Signature-Agent claims. Expand shared differential corpus.
+
 ## 0.7.2 — 2026-11-25
 
 - Require unambiguous matching bare Signature-Agent identity for IP evidence; mixed, token and cross-operator claims remain unverified.
