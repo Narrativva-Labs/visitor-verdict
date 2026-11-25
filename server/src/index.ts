@@ -87,6 +87,8 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
         publicKeys,
       ]);
     for (const list of operator.ipLists) {
+      if (list.complete)
+        cache.requireComplete(list.url, list.format === 'sail' ? list.service : undefined);
       const kind = list.format === 'sail' ? 'sail' : 'ip';
       targets.set(kind + ':' + list.url, [
         list.url,
@@ -159,24 +161,37 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
           if (Array.isArray(member[0]) && member[0].length > 32)
             throw new Failure('too_many_components');
         for (const label of labels) {
-          const evaluation = admission?.isReplay?.(label)
-            ? { result: { label, result: 'none' as const, reason: 'replay' }, verified: undefined }
-            : await evaluateSignature(label, inputs, sigs, {
-                context,
-                headers: h,
-                agent: claims.agent,
-                registry: config.registry,
-                cache,
-                now,
-                signal,
-                nonceStore: config.nonceStore,
-                nonceTimeoutMs: config.fetchTimeoutMs,
-                fields: { inputs: parsedInputs, signatures: parsedSignatures, agent: claims.agent },
-                maxLifetimeSeconds: config.maxLifetimeSeconds,
-                cacheOnly,
-                secure: input.secure,
-                directoryLoads,
-              });
+          const evaluation =
+            admission?.signatureFilter && !admission.signatureFilter(label)
+              ? {
+                  result: { label, result: 'none' as const, reason: 'unsupported_component' },
+                  verified: undefined,
+                }
+              : admission?.isReplay?.(label)
+                ? {
+                    result: { label, result: 'none' as const, reason: 'replay' },
+                    verified: undefined,
+                  }
+                : await evaluateSignature(label, inputs, sigs, {
+                    context,
+                    headers: h,
+                    agent: claims.agent,
+                    registry: config.registry,
+                    cache,
+                    now,
+                    signal,
+                    nonceStore: config.nonceStore,
+                    nonceTimeoutMs: config.fetchTimeoutMs,
+                    fields: {
+                      inputs: parsedInputs,
+                      signatures: parsedSignatures,
+                      agent: claims.agent,
+                    },
+                    maxLifetimeSeconds: config.maxLifetimeSeconds,
+                    cacheOnly,
+                    secure: input.secure,
+                    directoryLoads,
+                  });
           if (signal.aborted) throw new Failure('deadline_exceeded', true);
           // Admission is synchronous so adapters can atomically commit verified bytes.
           if (

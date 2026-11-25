@@ -4,7 +4,7 @@ import { Failure, failure } from './errors.js';
 import type { Registry, AgentVerdict } from './types.js';
 import type { AgentCache } from './cache.js';
 
-export function compilePrefixes(prefixes: unknown): BlockList {
+export function compilePrefixes(prefixes: unknown): BlockList & { prefixCount: number } {
   if (!Array.isArray(prefixes) || prefixes.length > 8192)
     throw new Failure('invalid_ip_list', true);
   const list = new BlockList();
@@ -27,7 +27,7 @@ export function compilePrefixes(prefixes: unknown): BlockList {
       family === 4 ? 'ipv4' : 'ipv6',
     );
   }
-  return list;
+  return Object.assign(list, { prefixCount: prefixes.length });
 }
 export function decodeList(data: unknown): BlockList {
   return compilePrefixes((data as { prefixes?: unknown })?.prefixes);
@@ -50,6 +50,7 @@ export function decodeSail(data: unknown): Map<string, BlockList & { shared: Blo
       name,
       Object.assign(compilePrefixes(prefixes.filter((prefix) => prefix.exclusive !== false)), {
         shared: compilePrefixes(prefixes.filter((prefix) => prefix.exclusive === false)),
+        prefixCount: prefixes.length,
       }),
     ]),
   );
@@ -137,29 +138,42 @@ export async function ipMismatch(
     if (staticRanges.get(operator.operator)?.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')) continue;
     const results = await Promise.allSettled(
       operator.ipLists.map(async (list) => {
-        const trace: { fetched: boolean; successfulRefreshAt?: number } = { fetched: false };
+        if (list.complete)
+          cache.requireComplete?.(list.url, list.format === 'sail' ? list.service : undefined);
+        const trace: { fetched: boolean; successfulRefreshAt?: number; refreshOk?: boolean } = {
+          fetched: false,
+        };
         if (list.format === 'sail') {
           const services = await cache.load(list.url, 'sail', now, decodeSail, 'claim', trace);
           // Shared ranges also prevent a negative attribution.
-          const matches = [...services.values()].some(
-            (block) =>
-              block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6') ||
-              block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'),
-          );
-          return { matches, at: trace.successfulRefreshAt };
+          const block = services.get(list.service!);
+          if (!block || (!block.rules.length && !block.shared.rules.length))
+            throw new Failure('invalid_ip_list', true);
+          const matches =
+            block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6') ||
+            block.shared.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6');
+          return { matches, at: trace.successfulRefreshAt, ok: trace.refreshOk };
         }
         const block = await cache.load(list.url, 'ip', now, decodeList, 'claim', trace);
         if (!block.rules.length) throw new Failure('invalid_ip_list', true);
         return {
           matches: block.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6'),
           at: trace.successfulRefreshAt,
+          ok: trace.refreshOk,
         };
       }),
     );
     if (results.length && results.every((r) => r.status === 'fulfilled' && !r.value.matches)) {
       const fresh = results.every((result) => {
         const at = result.status === 'fulfilled' ? result.value.at : undefined;
-        return at !== undefined && Number.isFinite(at) && now >= at && now - at <= 7200;
+        return (
+          result.status === 'fulfilled' &&
+          result.value.ok === true &&
+          at !== undefined &&
+          Number.isFinite(at) &&
+          at <= now + 60 &&
+          now - at <= 7200
+        );
       });
       return { fresh };
     }

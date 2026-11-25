@@ -113,7 +113,7 @@ export interface AgentVerdict {
   reason: string;
   /** Trust in the transport IP used for negative range evidence. */
   ipTrusted?: boolean;
-  /** Every operator IP feed has a known successful source refresh within two hours. */
+  /** Every operator IP feed has a successful last refresh, within two hours (60 s future skew allowed). */
   ipListsFresh?: boolean;
   verified?: {
     operator: string;
@@ -191,6 +191,8 @@ export interface RefreshEvent {
 }
 /** Per-request behavior; configuration and network targets remain construction-time options. */
 export interface VerifyOptions {
+  /** Transport adapters may exclude unsupported candidates; dictionaries stay intact for nested coverage. */
+  signatureFilter?: (label: string) => boolean;
   /** Exclude a previously verified candidate before cryptographic work; no effect on its peers. */
   isReplay?: (label: string) => boolean;
   /** Atomic synchronous admission after policy and cryptography, before outcome selection. */

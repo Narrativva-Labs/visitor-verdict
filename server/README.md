@@ -696,3 +696,5 @@ lists trigger one throttled background refresh without
 waiting, even if their HTTP max-age is longer. Decisions use the retained list
 until the configured hard `staleMaxSeconds` limit (default 24 hours); no failed
 refresh extends it. This avoids adding network latency to a negative decision.
+
+Server 0.7.1 tracks successful last attempts per source for negative IP evidence. Failed refreshes, and empty or more-than-half-shrunk complete IP lists, retain last-good data but disable certainty until recovery; source times up to 60 seconds ahead are tolerated. SAIL checks use the configured service including its shared ranges. Transport adapters can use `VerifyOptions.signatureFilter(label)` to skip unsupported candidates without removing raw dictionary members required by nested signatures. The service repository owns the API/feed [CONTRACT.md](CONTRACT.md) copy.

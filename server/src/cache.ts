@@ -9,6 +9,7 @@ interface Entry {
   fetched: number;
   /** Completion time of the last validated HTTPS refresh; never advanced by cache reads/failures. */
   lastSuccessfulRefreshAt?: number;
+  lastRefreshOk?: boolean;
   until: number;
   staleUntil: number;
   cooldown: number;
@@ -127,6 +128,8 @@ function lead(entry: Entry): number {
 }
 export class AgentCache {
   private entries = new Map<string, Entry>();
+  private completeIp = new Set<string>();
+  private completeSail = new Map<string, Set<string>>();
   private ahead = new Map<string, AheadJob>();
   private closed = false;
   private staleMaxSeconds: number;
@@ -164,6 +167,16 @@ export class AgentCache {
 
   successfulRefreshAt(url: string, kind: DocumentKind): number | undefined {
     return this.entries.get(kind + ':' + url)?.lastSuccessfulRefreshAt;
+  }
+
+  /** Trusted registry policy: completeness guards apply only to configured complete lists. */
+  requireComplete(url: string, service?: string): void {
+    if (service === undefined) this.completeIp.add(url);
+    else {
+      const services = this.completeSail.get(url) ?? new Set<string>();
+      services.add(service);
+      this.completeSail.set(url, services);
+    }
   }
 
   private refreshed(
@@ -214,7 +227,7 @@ export class AgentCache {
     now: number,
     decode: (data: unknown) => T,
     mode: LoadMode = 'request',
-    trace?: { fetched: boolean; successfulRefreshAt?: number },
+    trace?: { fetched: boolean; successfulRefreshAt?: number; refreshOk?: boolean },
   ): Promise<T> {
     const cacheKey = kind + ':' + url;
     const entry = this.touch(cacheKey, kind);
@@ -224,10 +237,11 @@ export class AgentCache {
     const usable = entry.data !== undefined && now < entry.staleUntil;
     if (mode === 'claim' && usable) {
       if (trace) trace.successfulRefreshAt = entry.lastSuccessfulRefreshAt;
+      if (trace) trace.refreshOk = entry.lastRefreshOk === true;
       if (
         (entry.lastSuccessfulRefreshAt === undefined ||
           !Number.isFinite(entry.lastSuccessfulRefreshAt) ||
-          now < entry.lastSuccessfulRefreshAt ||
+          now + 60 < entry.lastSuccessfulRefreshAt ||
           now - entry.lastSuccessfulRefreshAt >= 600) &&
         !entry.flight &&
         !entry.forcedFlight &&
@@ -338,9 +352,26 @@ export class AgentCache {
     try {
       const response = await fetchBounded(url, this.fetcher, kind, this.timeoutMs);
       const data = decode(response.data);
+      // A disappearing IP union is uncertain. Keep the last good document and
+      // do not turn a successful HTTP response into negative evidence.
+      const sane = (next: any, previous: any) =>
+        typeof next?.prefixCount !== 'number' ||
+        (next.prefixCount > 0 &&
+          (typeof previous?.prefixCount !== 'number' ||
+            next.prefixCount >= previous.prefixCount / 2));
+      if (kind === 'ip' && this.completeIp.has(url) && !sane(data, entry.data))
+        throw new Failure('invalid_ip_list', true);
+      if (kind === 'sail' && this.completeSail.has(url)) {
+        const next = data as Map<string, unknown>;
+        const previous = entry.data as Map<string, unknown> | undefined;
+        for (const name of this.completeSail.get(url)!)
+          if (!next.has(name) || !sane(next.get(name), previous?.get(name)))
+            throw new Failure('invalid_ip_list', true);
+      }
       // A newer document replaces the previous one entirely; removed keys stop verifying.
       const completedAt = this.clock();
       entry.lastSuccessfulRefreshAt = Number.isFinite(completedAt) ? completedAt : undefined;
+      entry.lastRefreshOk = true;
       entry.data = data;
       entry.fetched = now;
       const ttl =
@@ -350,6 +381,7 @@ export class AgentCache {
       this.refreshed(kind, true, now, new URL(url).hostname);
       return data;
     } catch (error) {
+      entry.lastRefreshOk = false;
       entry.cooldown = now + COOLDOWN_SECONDS;
       const f = failure(error);
       this.refreshed(kind, false, now, new URL(url).hostname, f.reason);
