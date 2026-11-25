@@ -14,6 +14,13 @@ export type VisitorType =
 export type BrowserAgent = 'openai' | 'anthropic';
 export interface VisitorLabelsInput {
   verdict?: AgentVerdict;
+  /** Fixed transport diagnostic supplied by a service adapter, never raw data. */
+  diagnostic?:
+    | 'pair_unavailable'
+    | 'feed_unavailable'
+    | 'service_unavailable'
+    | 'config_suspect'
+    | 'rejected';
   browserClass?: string;
   browserPhase?: string;
   /** Browser-observed operator; used only with `declared_agent` and no verified identity. */
@@ -39,6 +46,7 @@ const purposes: readonly string[] = [
 /** Pure, bounded GA4 event labels. No raw claims, request data or diagnostic reasons. */
 export function visitorLabels({
   verdict,
+  diagnostic,
   browserClass,
   browserPhase,
   browserAgent,
@@ -110,7 +118,16 @@ export function visitorLabels({
   else if (browser === 'suspicious') type = 'bot_suspicious';
   else if (browser === 'human') type = 'human';
   else type = 'pending';
-  const suffix = [verification, purpose, claim, browser, phase].join('|');
+  const safeDiagnostic = [
+    'pair_unavailable',
+    'feed_unavailable',
+    'service_unavailable',
+    'config_suspect',
+    'rejected',
+  ].includes(diagnostic ?? '')
+    ? diagnostic
+    : undefined;
+  const suffix = [safeDiagnostic ?? verification, purpose, claim, browser, phase].join('|');
   const candidate = verified ? verdict?.verified?.operator : marker;
   // Operators are trusted configuration, but an arbitrary configured string is not an analytics label.
   const operator =

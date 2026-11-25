@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.4 — 2026-11-25
+
+- Report SAIL readiness per configured verifier without masking missing services; support allowlisted adapter diagnostics; disable negative proof for future fetch times.
+
 ## 0.7.3 — 2026-11-25
 
 - Retry partial SAIL shrink without extending soft expiry; reject empty unusable SAIL warm-ups and accept non-complete service removal without shrink. Reject malformed non-list non-WBA inputs and redact raw invalid Signature-Agent claims. Expand shared differential corpus.

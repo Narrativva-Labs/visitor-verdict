@@ -98,6 +98,21 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
     }
   }
 
+  // URL download readiness is separate from this verifier's configured services.
+  // Do not discard shared cache data needed by another verifier.
+  const sailServices = new Map<string, Set<string>>();
+  for (const op of config.registry)
+    for (const list of op.ipLists)
+      if (list.format === 'sail') {
+        const names = sailServices.get(list.url) ?? new Set<string>();
+        names.add(list.service!);
+        sailServices.set(list.url, names);
+      }
+  const sailReady = (url: string, now: number) =>
+    [...(sailServices.get(url) ?? [])].some(
+      (name) => cache.serviceStatus(url, name, now).available,
+    );
+
   const isIntermediary = (verified: NonNullable<AgentVerdict['verified']>) =>
     config.registry.some(
       (o) => o.intermediary === true && o.signatureAgent === verified.signatureAgent,
@@ -386,7 +401,11 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
       );
       const result: WarmResult = { ok: [], failed: [] };
       jobs.forEach(([url, kind, decode], i) => {
-        result[results[i].status === 'fulfilled' ? 'ok' : 'failed'].push(url);
+        result[
+          results[i].status === 'fulfilled' && (kind !== 'sail' || sailReady(url, now))
+            ? 'ok'
+            : 'failed'
+        ].push(url);
         if (options?.refreshAhead === true) cache.keepWarm(url, kind, decode);
       });
       return result;
@@ -395,7 +414,15 @@ export function createVerifier(options: VerifierOptions, sharedCache?: AgentCach
       if (!sharedCache) cache.close();
     },
     status() {
-      return cache.status([...targets.values()].map(([url, kind]) => [url, kind]));
+      const result = cache.status([...targets.values()].map(([url, kind]) => [url, kind]));
+      for (const [url, kind] of targets.values())
+        if (
+          kind === 'sail' &&
+          !sailReady(url, config.now()) &&
+          cache.status([[url, kind]]).ipLists.loaded
+        )
+          result.ipLists.loaded--;
+      return result;
     },
   };
 }

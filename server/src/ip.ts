@@ -175,7 +175,7 @@ export async function ipMismatch(
           result.value.ok === true &&
           at !== undefined &&
           Number.isFinite(at) &&
-          at <= now + 60 &&
+          at <= now &&
           now - at <= 7200
         );
       });

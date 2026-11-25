@@ -24,7 +24,7 @@ test('failed refresh before two hours disables certainty until a successful reco
   const check = () => ipMismatch('203.0.113.1', ['GPTBot'], registry, cache, now, new Map());
   await cache.load(registry[0].ipLists[0].url, 'ip', now, decodeList, 'warm');
   now -= 30;
-  assert.deepEqual(await check(), { fresh: true });
+  assert.deepEqual(await check(), { fresh: false }); // future timestamp cannot prove a negative
   now += 631;
   fail = true;
   await check();
