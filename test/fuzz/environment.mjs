@@ -249,6 +249,11 @@ if (spec.race === 'visibility') {
   advance(4000000); document.visibilityState = 'visible'; dispatch(document, 'visibilitychange');
 }
 advance(4000001);
+if (spec.lateTool) {
+  window.__codexPlaywrightInjected = function () {};
+  dispatch(document, 'scroll', {isTrusted:true});
+  dispatch(document, 'scroll', {isTrusted:true});
+}
 if (spec.agentAfterReplay) { exerciseConsent(); placeMarker('codex-agent-overlay-root', rootNode); }
 if (spec.marker === 'after-final') { placeMarker('claude-phantom-cursor', bodyNode); placeMarker('claude-phantom-cursor', bodyNode); }
 dispatch(window, 'pagehide'); dispatch(window, 'pagehide');
@@ -272,5 +277,5 @@ export const snapshot = `nativeJSON.stringify({events:spec.absentPrimary ? windo
   agentReplayCleared:captured.some(function(e){return e.traffic_phase === 'agent' && Object.prototype.hasOwnProperty.call(e,'traffic_replay') && e.traffic_replay === undefined;}),writes:writes,storage:storage,state:window.__visitorVerdict,now:now,
   beforeFrozen:beforeFrozen,finalFrozen:Object.isFrozen(window.__visitorVerdict),
   readOnly:beforeDescriptor && beforeDescriptor.configurable === false && beforeDescriptor.set === undefined && typeof beforeDescriptor.get === 'function',
-  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.5.0',
+  initialIntact:beforePoison && beforePoison.phase === 'initial' && beforePoison.version === '1.6.0',
   previous:window.__visitorVerdictLast})`;

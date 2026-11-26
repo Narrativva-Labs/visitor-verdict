@@ -106,6 +106,7 @@
           "status": {
             "enum": [
               "experimental",
+              "observed",
               "validated",
               "retired"
             ]

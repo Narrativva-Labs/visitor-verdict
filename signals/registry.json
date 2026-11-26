@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
-  "registryVersion": "1.5.0",
-  "detectorVersion": "1.5.0",
+  "registryVersion": "1.6.0",
+  "detectorVersion": "1.6.0",
   "description": "Versioned evidence catalogue, not runtime configuration. validated is scoped to the listed verification, not population accuracy. Code status governs emission; token/element status describes product evidence. Retired legacy UA literals can remain compatible with an active output code when retirementReason explicitly records this. Unknown version ranges must stay explicit. Consent replay is publication metadata only: one late analytics_storage grant update can replay the latest result as final with traffic_replay=consent; no scoring signal or persisted consent state.",
   "signals": [
     {
@@ -1729,7 +1729,7 @@
       "kind": "code",
       "code": "UC",
       "family": "behaviour",
-      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, after previous trusted page input more than 2000 ms ago, with at least one getClientRects() rectangle wider and taller than 1 px and computed visibility neither hidden nor collapse. Initialization without prior trusted input, hidden or text fields never qualify. Final only; interaction cap 2.",
+      "check": "Explicitly untrusted change on enabled, writable SELECT or INPUT checkbox/radio only, after previous trusted page input more than 2000 ms ago, with at least one getClientRects() rectangle wider and taller than 1 px and computed visibility neither hidden nor collapse. Initialization without prior trusted input, hidden or text fields never qualify. Final only; interaction cap 2. Continues after final until pagehide; ordinary corroboration still required.",
       "weight": 2,
       "hardness": "soft",
       "status": "experimental",
@@ -1798,6 +1798,87 @@
       ],
       "falsePositives": [
         "Unlabelled Linux kiosks in smaller windows, non-Electron Chromium app shells and Linux ARM devices with SwiftShader may match. Display modes and UA tokens cover only observable app/kiosk modes. Evidence correlated with WG; no population false-positive measurement. AW is weak environment evidence, never ChatGPT/Meta identity."
+      ]
+    },
+    {
+      "id": "CP",
+      "kind": "code",
+      "code": "CP",
+      "family": "behaviour",
+      "check": "Chromium only: at least two trusted mouse pointerdowns with buttons > 0, pressure 0, within 2 px of element rect centre, preceded by trusted mouse pointermove within 15 ms. Compatibility mousedown never doubles a pointerdown.",
+      "weight": 0,
+      "hardness": "direct-suspicious",
+      "status": "observed",
+      "lastChecked": "2026-11-26",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/_ref/NALEZY.md",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Antigravity / ChatGPT agent / human control",
+          "versions": "Chrome 158 / Chromium 156; tool versions unknown",
+          "result": "One owner run per agent and one human control; observed signal, no prevalence or accuracy validation. Synthetic timing regressions only.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/_ref/NALEZY.md"
+        }
+      ],
+      "falsePositives": [
+        "Remote desktops, pen/tablet mouse emulation and text expansion/password-manager key injection may imitate this pattern; IME and paste excluded."
+      ]
+    },
+    {
+      "id": "KT",
+      "kind": "code",
+      "code": "KT",
+      "family": "behaviour",
+      "check": "Eight trusted non-composing non-repeat unmodified keydowns paired with insertText on one control; seven positive intervals <=1000 ms, median <5 ms. Paste, replacement/autofill, IME and invalid clocks reset the window.",
+      "weight": 0,
+      "hardness": "direct-suspicious",
+      "status": "observed",
+      "lastChecked": "2026-11-26",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/_ref/NALEZY.md",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Antigravity / ChatGPT agent / human control",
+          "versions": "Chrome 158 / Chromium 156; tool versions unknown",
+          "result": "One owner run per agent and one human control; observed signal, no prevalence or accuracy validation. Synthetic timing regressions only.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/_ref/NALEZY.md"
+        }
+      ],
+      "falsePositives": [
+        "Remote desktops, pen/tablet mouse emulation and text expansion/password-manager key injection may imitate this pattern; IME and paste excluded."
+      ]
+    },
+    {
+      "id": "TG",
+      "kind": "code",
+      "code": "TG",
+      "family": "environment",
+      "check": "Own callable window data properties only, with GL/PW host guards: puppeteer___ariaQuerySelector, __ariaQuerySelector, puppeteer___ariaQuerySelectorAll, __ariaQuerySelectorAll, __codexPlaywrightInjected, __browserUseClipboardBridge or prefix __browserUseClipboard_. Checked at load, visible input and at most 120 one-second polls, stopped on pagehide.",
+      "weight": 0,
+      "hardness": "direct-suspicious",
+      "status": "observed",
+      "lastChecked": "2026-11-26",
+      "sources": [
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/_ref/NALEZY.md",
+        "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/test/contracts.mjs"
+      ],
+      "verification": [
+        {
+          "product": "Antigravity / ChatGPT agent / human control",
+          "versions": "Chrome 158 / Chromium 156; tool versions unknown",
+          "result": "One owner run per agent and one human control; observed signal, no prevalence or accuracy validation. Synthetic timing regressions only.",
+          "kind": "field-observation",
+          "source": "https://github.com/Narrativva-Labs/visitor-verdict/blob/agent-driven-signals/_ref/NALEZY.md"
+        }
+      ],
+      "falsePositives": [
+        "Page-authored functions can imitate tool globals."
       ]
     }
   ]

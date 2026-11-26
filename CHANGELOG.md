@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.0 — 2026-11-26
+
+- Add observed CP, KT and TG as zero-weight direct suspicious rules, preserving automated/declaration and B7 server precedence; no operator inference; qualifying CP/KT/TG seed one-document CS provenance.
+- Keep bounded input timing and UC observation after ordinary final; scan callable own tool globals at load, interaction and up to 120 one-second polls until pagehide.
+- Allow one late human → suspicious final (`traffic_replay: late`), independent of consent replay; new frozen snapshot and sticky metadata clearing. Existing GTM DLV/detail and final trigger accept late; Vanilla must deduplicate consent only.
+- Extend synthetic log regressions, negative controls, registry observed lifecycle, documentation and 1.6.0 build artifacts.
+
+
 ## 1.5.0 — 2026-11-23
 
 - B8 round 2: cancel replay on a later denied command in the batch, release reservations after failed consumer/replay pushes, cover late agent updates after replay and cross-layer consent, and check Document PiP through its guarded opener.

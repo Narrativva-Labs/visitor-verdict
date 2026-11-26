@@ -1,0 +1,188 @@
+{
+  "beh-1-antigravity.json": [
+    {
+      "t": 13299.6,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 1.9
+    },
+    {
+      "t": 37798.1,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 3.6
+    },
+    {
+      "t": 54797.1,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 0.4
+    },
+    {
+      "t": 63545.4,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 0.3
+    },
+    {
+      "t": 695757.4,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": 22.97,
+      "centerDy": 11.99,
+      "sinceMoveMs": 41.9
+    },
+    {
+      "t": 700888,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": 32.17,
+      "centerDy": -7.51,
+      "sinceMoveMs": 47.3
+    }
+  ],
+  "beh-2-chatgpt.jsonl": [
+    {
+      "t": 4280.9,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 2.5
+    },
+    {
+      "t": 10747.4,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 4.3
+    },
+    {
+      "t": 14609.9,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 1.4
+    },
+    {
+      "t": 18426.1,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 1.8
+    },
+    {
+      "t": 35290.2,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0,
+      "centerDx": 0,
+      "centerDy": 0,
+      "sinceMoveMs": 2.7
+    }
+  ],
+  "beh-3-clovek.json": [
+    {
+      "t": 2989,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": -3.34,
+      "centerDy": 21.72,
+      "sinceMoveMs": 361.2
+    },
+    {
+      "t": 3653.6,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": -29.37,
+      "centerDy": 11.54,
+      "sinceMoveMs": 109.1
+    },
+    {
+      "t": 6003.8,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": -100.03,
+      "centerDy": 8.06,
+      "sinceMoveMs": 559.2
+    },
+    {
+      "t": 8653.7,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": 16.77,
+      "centerDy": -1.09,
+      "sinceMoveMs": 26.1
+    },
+    {
+      "t": 11059.2,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": 1.47,
+      "centerDy": -3.43,
+      "sinceMoveMs": 64.3
+    },
+    {
+      "t": 16521,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": 17.89,
+      "centerDy": 7.91,
+      "sinceMoveMs": 460
+    },
+    {
+      "t": 20904.6,
+      "isTrusted": true,
+      "pointerType": "mouse",
+      "buttons": 1,
+      "pressure": 0.5,
+      "centerDx": 15.63,
+      "centerDy": 18.55,
+      "sinceMoveMs": 768.6
+    }
+  ]
+}

@@ -4,7 +4,7 @@
   var own = Object.prototype.hasOwnProperty, tag = Object.prototype.toString;
   // Frames must not probe, publish, or touch this tab's storage.
   if (w.top !== w) { return; }
-  var version = '1.5.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
+  var version = '1.6.0', snapshot, claimed = false, activated = false, duplicate = false, claimListener = false;
   // Keep the per-document inclusion marker in an event listener's closure.
   // Predefined public globals (even non-configurable ones) cannot claim it.
   function claim(event) {
@@ -142,7 +142,7 @@
         }
         if (webmcpCount >= 255) {
           stopWebmcp();
-          if (done && !observer) { removeListener(w, 'pagehide', hide, listenerOptions); }
+          if (ended && !observer) { removeListener(w, 'pagehide', hide, listenerOptions); }
         }
       } catch (ignore) {}
     }
@@ -194,7 +194,7 @@
     var embedded = /; wv\)|WebView|FBAN|FBAV|Instagram/i.test(ua);
     var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
     var chromium = false, hasBrands = false, brands = n.userAgentData && n.userAgentData.brands, i;
-    var events = 'mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin input change'.split(' ');
+    var events = 'mousedown mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin input change'.split(' ');
     // Bounded transient state only: no trajectories, rates or input objects retained.
     var move = null, clicked = null, pointerKind = '', downAt = 0, teleport = false;
     var tpPages = 0, pageTime = Math.floor(Date.now() / 100) * 100;
@@ -309,6 +309,56 @@
     function playwright() {
       var names = '__playwright__binding__ __playwright__binding__controller__ __pwInitScripts'.split(' ');
       for (var j = 0; j < names.length; j++) { if (shape(w, names[j])) { add('PW', 100); } }
+    }
+    // Keep only bounded timing samples, never text or a pointer trajectory.
+    var cdpClicks = 0, cdpMove = null, cdpDown = null, rapid = false, toolGlobal = false;
+    var rapidField = null, rapidTimes = [], latePublished = false, ended = false, toolTimer = null, toolScans = 0, toolScanAt = -Infinity, agentCarrySaved = false;
+    function tools() {
+      if (toolGlobal || ended) { return; }
+      try {
+        var names = 'puppeteer___ariaQuerySelector __ariaQuerySelector puppeteer___ariaQuerySelectorAll __ariaQuerySelectorAll __codexPlaywrightInjected __browserUseClipboardBridge'.split(' ');
+        // Prefix enumeration is throttled even during high-rate pointer streams.
+        var now = Date.now();
+        if (now - toolScanAt >= 1000) { names = names.concat(Object.getOwnPropertyNames(w)); toolScanAt = now; }
+        for (var j = 0; j < names.length; j++) {
+          if (/^(?:puppeteer___ariaQuerySelector(?:All)?|__ariaQuerySelector(?:All)?|__codexPlaywrightInjected|__browserUseClipboardBridge|__browserUseClipboard_.+)$/.test(names[j]) && shape(w, names[j])) {
+            toolGlobal = true; add('TG', 0); break;
+          }
+        }
+      } catch (ignore) {}
+    }
+    function pollTools() {
+      toolTimer = null;
+      tools(); late();
+      if (!ended && !toolGlobal && ++toolScans < 120 && canHide) { toolTimer = w.setTimeout(pollTools, 1000); }
+    }
+    function late() {
+      if (finalPublished && !latePublished && latest === 'human' && suspicious()) { publish('final', true); }
+      // A page already suspicious (e.g. AW) can acquire fresh carry evidence
+      // without another class publication. Persist it at most once.
+      if (finalPublished && latest === 'suspicious' && !agentCarrySaved && (cdpClicks >= 2 || rapid || toolGlobal)) {
+        agentCarrySaved = true; save(provenance(latest));
+      }
+    }
+    function agentInput(event) {
+      tools();
+      var clock = event.timeStamp;
+      if (event.type === 'pointermove' && event.isTrusted === true && event.pointerType === 'mouse' &&
+          typeof clock === 'number' && isFinite(clock)) { cdpMove = clock; }
+      if (event.type === 'pointerdown' && (chromium || desktop) && event.isTrusted === true &&
+          event.pointerType === 'mouse' && event.buttons > 0 && event.pressure === 0 &&
+          typeof clock === 'number' && isFinite(clock) && cdpMove !== null && clock >= cdpMove && clock - cdpMove <= 15 &&
+          cdpDown !== clock) {
+        try {
+          var target = event.target, rect = target && target.nodeType === 1 && target.getBoundingClientRect();
+          if (rect && rect.width > 0 && rect.height > 0 &&
+              Math.sqrt(Math.pow(event.clientX - (rect.left + rect.width / 2), 2) +
+              Math.pow(event.clientY - (rect.top + rect.height / 2), 2)) <= 2) {
+            cdpDown = clock; cdpClicks = Math.min(2, cdpClicks + 1);
+            if (cdpClicks === 2) { add('CP', 0); }
+          }
+        } catch (ignore) {}
+      }
     }
     function geometry() {
       try {
@@ -459,8 +509,8 @@
         if (withoutDirect && strongAW && family === 'automationEnvironment') { continue; }
         if (/^(geometry|language|plugins|graphics|chrome|permissions|automationEnvironment)$/.test(family)) { env++; }
       }
-      // UB and strong AW are direct suspicious rules, never carry proof by themselves.
-      return !withoutDirect && (workerBrands || strongAW) || total >= config.suspiciousThreshold && count >= 3 &&
+      // UB and strong AW never prove carry alone; qualifying CP/KT/TG use explicit provenance.
+      return !withoutDirect && (workerBrands || strongAW || cdpClicks >= 2 || rapid || toolGlobal) || total >= config.suspiciousThreshold && count >= 3 &&
         (families.pointer || signals.indexOf('SY') !== -1 ||
         (env >= 2 && (families.interaction || families.navigation)));
     }
@@ -542,9 +592,9 @@
         };
       } catch (ignore) {}
     }
-    function publish(phase) {
-      // One initial, at most one agent escalation and one final, in any order after initial.
-      if (phase === 'initial' ? initialPublished : !initialPublished ||
+    function publish(phase, isLate) {
+      // One initial, one agent phase, one ordinary final and at most one late final.
+      if (isLate ? (!finalPublished || latePublished || latest !== 'human') : phase === 'initial' ? initialPublished : !initialPublished ||
           (phase === 'final' ? finalPublished : phase !== 'agent' || agentPublished)) { return initial; }
       var result = hard ? 'automated' : declared ? 'declared_agent' :
         suspicious() || carriedSuspicious ? 'suspicious' : 'human';
@@ -555,7 +605,7 @@
           typeof total !== 'number' || !isFinite(total)) { return initial; }
       // Mark before any consumer callback can reenter. Never read public state.
       if (phase === 'initial') { initialPublished = true; initial = result; }
-      else if (phase === 'final') { finalPublished = true; finalWhileGranted = analyticsGranted; }
+      else if (phase === 'final') { if (isLate) { latePublished = true; } finalPublished = true; finalWhileGranted = analyticsGranted; }
       else { agentPublished = true; }
       latest = result;
       var state = {'class': result, score: total, phase: phase, version: version,
@@ -569,19 +619,23 @@
       if (agentClaim && result === 'declared_agent') { state.claim = event.traffic_agent_claim = agentClaim; }
       snapshot = Object.freeze(state);
       // Clear GTM v2 sticky replay metadata on a later agent publication.
-      if (consentReplayed) { event.traffic_replay = undefined; }
+      if (consentReplayed || latePublished) { event.traffic_replay = undefined; }
+      if (isLate) { event.traffic_replay = 'late'; }
       if (config.debug) { event.traffic_signals = signals.slice(0); }
       // Only current evidence can seed one grace document. CA/CD/CS alone store no
       // provenance, so a carried class cannot seed another grace document.
       // A marker seen at load is stored at once, as later phases are.
-      if (phase !== 'initial' || marked) { save(provenance(result)); }
+      if (phase !== 'initial' || marked) {
+        if (result === 'suspicious' && (cdpClicks >= 2 || rapid || toolGlobal)) { agentCarrySaved = true; }
+        save(provenance(result));
+      }
       if (config.replayOnConsent) { lastPublication = copyPublication(event); }
       pushPublication(event);
       return result;
     }
     function provenance(result) {
       // Preserve the reported class; only fresh evidence seeds another grace page.
-      if (result === 'suspicious') { return suspicious(true) ? {value: result, direct: true} : result; }
+      if (result === 'suspicious') { return cdpClicks >= 2 || rapid || toolGlobal || suspicious(true) ? {value: result, direct: true} : result; }
       // Only direct hard evidence stores automated. A direct declaration stores
       // declared_agent even when carried CA made this document automated.
       // Only a marker seen in this document renews the stored operator.
@@ -727,7 +781,7 @@
       }
       w.clearTimeout(hostTimer); hostTimer = null; hostCandidates = []; watchedNodes = [];
       removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
-      if (done && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
+      if (ended && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
     for (i = 0; i < config.agentTokens.length; i++) {
       var token = config.agentTokens[i];
@@ -757,7 +811,7 @@
       }
       names = null;
     } catch (ignore) {}
-    playwright(); geometry();
+    playwright(); tools(); geometry();
     var screen = w.screen || {};
     if ((screen.width === 800 && screen.height === 600) ||
         (screen.width === 1280 && screen.height === 720 && w.innerWidth === 1280 && w.innerHeight === 720)) { add('GS', 1, 'geometry'); }
@@ -826,12 +880,13 @@
       }
     } catch (ignore) { fast = false; }
     function interact(event) {
-      if (done || d.visibilityState === 'hidden') { return; }
+      if (ended || d.visibilityState === 'hidden') { return; }
+      agentInput(event);
       var now = Date.now(), type = event.type;
-      pointer(event, now);
+      if (!done) { pointer(event, now); }
       if (type === 'keydown') {
         keyField = null; keyTime = null;
-        if (event.isTrusted === true && !event.isComposing && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey &&
+        if (event.isTrusted === true && !event.isComposing && event.keyCode !== 229 && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey &&
             typeof event.timeStamp === 'number' && isFinite(event.timeStamp) && event.timeStamp >= 0) {
           keyField = event.target; keyTime = event.timeStamp;
         }
@@ -851,7 +906,16 @@
           typingTimes.push(clock);
           if (typingTimes.length > 3) { typingTimes.shift(); }
           if (typingTimes.length === 3 && clock - typingTimes[0] > 0 && clock - typingTimes[0] <= 5) { burst = true; }
-        } else if (type === 'input') { typingField = null; typingTimes = []; }
+          if (rapidField !== field || rapidTimes.length && (clock <= rapidTimes[rapidTimes.length - 1] || clock - rapidTimes[rapidTimes.length - 1] > 1000)) { rapidField = field; rapidTimes = []; }
+          rapidTimes.push(clock);
+          if (rapidTimes.length > 8) { rapidTimes.shift(); }
+          if (rapidTimes.length === 8) {
+            var intervals = [];
+            for (var k = 1; k < rapidTimes.length; k++) { intervals.push(rapidTimes[k] - rapidTimes[k - 1]); }
+            intervals.sort(function (a, b) { return a - b; });
+            if (intervals[3] < 5) { rapid = true; add('KT', 0); }
+          }
+        } else if (type === 'input') { typingField = null; typingTimes = []; rapidField = null; rapidTimes = []; }
         if (type === 'change' && field && !field.disabled && !field.readOnly &&
             (name === 'SELECT' || name === 'INPUT' && /^(checkbox|radio)$/i.test(field.type)) &&
             event.isTrusted === false && lastTrusted !== -Infinity && now - lastTrusted > 2000) {
@@ -864,8 +928,11 @@
             }
           } catch (ignore) {}
         }
-        return;
+        if (done && untrustedControl) { add('UC', 2, 'interaction'); }
+        late(); return;
       }
+      late();
+      if (done) { return; }
       if ((event.isTrusted === true || event.isTrusted === undefined) && type !== 'pointercancel') { active = true; }
       if (/^(mousemove|pointerdown|touchstart)$/.test(event.type) && event.isTrusted === false) { synthetic = true; }
     }
@@ -875,12 +942,16 @@
     }
     function cleanup() {
       exposure(); stopWorker();
-      for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
+      if (ended || !canHide) {
+        rapidField = null; rapidTimes = []; cdpMove = cdpDown = null;
+        for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
+        w.clearTimeout(toolTimer);
+      }
       if (!observer) { removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); }
       // Live marker/WebMCP watches keep pagehide until they disconnect.
-      if (!observer && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
+      if (ended && !observer && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
-    function hide() { stopWebmcp(); unwatch(); finish(); }
+    function hide() { ended = true; stopWebmcp(); unwatch(); finish(); cleanup(); }
     function finish() {
       if (done) { return; }
       done = true; cleanup();
@@ -902,7 +973,7 @@
       if (active && !teleport) { save(null, 'decay'); }
       if (tpPages >= 2) { add('TR', 2, 'pointer'); }
       move = clicked = typingField = keyField = null; keyTime = null; typingTimes = []; pointerKind = '';
-      try { publish('final'); } finally { signals = []; families = {}; }
+      publish('final');
     }
     var wasVisible = d.visibilityState !== 'hidden';
     function visibility() {
@@ -938,9 +1009,10 @@
       if (operator) { mark(operator); }
       check(); watch();
       initial = publish('initial'); ua = ''; brands = null;
+      if (canHide && !ended) { toolTimer = w.setTimeout(pollTools, 1000); }
       // Check again once watching: a consumer of the initial push may have added a marker.
       startWorker();
       operator = marker(); if (operator && !marked) { mark(operator); }
-    } catch (ignore) { done = true; stopWebmcp(); unwatch(); cleanup(); }
+    } catch (ignore) { ended = true; done = true; stopWebmcp(); unwatch(); cleanup(); }
   }
 }(window, document, navigator));
