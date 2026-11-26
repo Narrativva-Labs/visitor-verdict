@@ -2781,11 +2781,11 @@ export async function runContracts(detectorSource) {
     assert.deepEqual(Object.keys(f.listeners).filter(n=>n!=='visitor-verdict:claim'), []);
   });
   const agentTarget = {nodeType: 1, tagName: 'INPUT', type: 'button', getBoundingClientRect: () => ({left: 0, top: 0, width: 100, height: 20})};
-  function cp(f, {pressure = 0, x = 50, gap = 2, count = 2, same = false, target = agentTarget, moves = 1, pointerType = 'mouse', isTrusted = true} = {}) {
+  function cp(f, {pressure = 0, x = 50, gap = 2, button = 0, buttons = 1, count = 2, same = false, target = agentTarget, moves = 1, pointerType = 'mouse', isTrusted = true} = {}) {
     for (let i = 0; i < count; i++) {
       const timeStamp = 100 + i * 100;
       for (let j = 0; j < moves; j++) f.emit('pointermove', {isTrusted, pointerType, timeStamp: timeStamp - j});
-      f.emit('pointerdown', {target: same ? target : {...target, ...(target.parentElement ? {parentElement:{...target.parentElement}} : {})}, isTrusted, pointerType, buttons: 1, pressure, clientX: x, clientY: 10, timeStamp: timeStamp + gap});
+      f.emit('pointerdown', {target: same ? target : {...target, ...(target.parentElement ? {parentElement:{...target.parentElement}} : {})}, isTrusted, pointerType, button, buttons, pressure, clientX: x, clientY: 10, timeStamp: timeStamp + gap});
       f.emit('mousedown', {target: agentTarget, isTrusted, buttons: 1, clientX: x, clientY: 10, timeStamp: timeStamp + gap});
     }
   }
@@ -2793,13 +2793,13 @@ export async function runContracts(detectorSource) {
     for (let i = 0; i < count; i++) {
       const target = field;
       f.emit('keydown', {target, isTrusted: mode !== 'untrusted', isComposing: mode === 'ime', keyCode: mode === 'ime229' ? 229 : 65,
-        timeStamp: 10 + i * (mode === 'human' ? 79 : mode === 'pause' ? 1001 : 1)});
+        timeStamp: 10 + i * (mode === 'zero' ? 0 : mode === 'human' ? 79 : mode === 'pause' ? 1001 : 1)});
       f.emit('input', {target, isTrusted: true, isComposing: mode === 'ime',
         inputType: mode === 'paste' ? 'insertFromPaste' : mode === 'autofill' ? 'insertReplacementText' : 'insertText'});
     }
   }
   await test('CP: Chromium pressure, centre, movement, count, trust and pointer guards', () => {
-    for (const [mode, opts] of Object.entries({yes: {}, pressure: {pressure: .5}, offCentre: {x: 53}, stale: {gap: 16}, single: {count: 1}, pen: {pointerType: 'pen'}, untrusted: {isTrusted: false}, firefox: {}})) {
+    for (const [mode, opts] of Object.entries({yes: {}, right: {button:2,buttons:2}, middle: {button:1,buttons:4}, chord: {buttons:3}, pressure: {pressure: .5}, offCentre: {x: 53}, stale: {gap: 16}, single: {count: 1}, pen: {pointerType: 'pen'}, untrusted: {isTrusted: false}, firefox: {}})) {
       const f = fixture({config: {debug: true}, modify: ({navigator}) => {if (mode === 'firefox') navigator.userAgent = 'Firefox/150';}});
       cp(f, opts); f.advance(8000);
       assert.equal(f.signals.includes('CP'), mode === 'yes', mode);
@@ -2807,10 +2807,10 @@ export async function runContracts(detectorSource) {
     }
   });
   await test('KT: twelve paired keys, human pace, IME, paste/autofill, trust, long gaps', () => {
-    for (const mode of ['fast','human','ime','ime229','paste','autofill','untrusted','pause','seven']) {
+    for (const mode of ['fast','zero','human','ime','ime229','paste','autofill','untrusted','pause','seven']) {
       const f = fixture({config: {debug: true}});
       kt(f, mode, mode === 'seven' ? 7 : 12); f.advance(8000);
-      assert.equal(f.signals.includes('KT'), mode === 'fast', mode);
+      assert.equal(f.signals.includes('KT'), ['fast','zero'].includes(mode), mode);
       assert.equal(f.window.__visitorVerdict.class, 'human', mode);
     }
   });
@@ -2949,11 +2949,11 @@ export async function runContracts(detectorSource) {
         }
       } else kt(f, 'fast', mode === 'expander' ? 5 : 12, field);
       cp(f); f.advance(8000);
-      assert.equal(f.signals.includes('KT'), mode === 'fast', mode);
+      assert.equal(f.signals.includes('KT'), ['fast','zero'].includes(mode), mode);
       assert.equal(f.window.__visitorVerdict.class, mode === 'fast' ? 'suspicious' : 'human', mode);
     }
   });
-  await test('B8: reentrant late during grant replays current publication; granted final remains granted', () => {
+  await test('B8: reentrant granted late suppresses duplicate replay; denied late replays on regrant', () => {
     let f, trigger = false;
     f = fixture({modify: ({window}) => {
       window.dataLayer.push = function (...items) {
@@ -2966,11 +2966,13 @@ export async function runContracts(detectorSource) {
     }});
     f.advance(8000); trigger = true; f.window.dataLayer.push(consent('granted'));
     assert.equal(publications(f).at(-1).traffic_class, 'suspicious');
-    assert.equal(publications(f).at(-1).traffic_replay, 'consent');
+    assert.equal(publications(f).at(-1).traffic_replay, 'late');
+    assert.equal(publications(f).filter(x => x.traffic_replay === 'consent').length, 0);
     const g = fixture(); g.window.dataLayer.push(consent('granted')); g.advance(8000);
     g.window.dataLayer.push(consent('denied')); g.window.__codexPlaywrightInjected = true; g.emit('click');
     g.window.dataLayer.push(consent('granted'));
-    assert.equal(publications(g).filter(x => x.traffic_replay === 'consent').length, 0);
+    assert.equal(publications(g).filter(x => x.traffic_replay === 'consent').length, 1);
+    assert.equal(publications(g).at(-1).traffic_class, 'suspicious');
   });
   await test('Tools performance: movement does not probe globals; polling backs off, pauses and stops', () => {
     const f = fixture();
@@ -2993,6 +2995,54 @@ export async function runContracts(detectorSource) {
     g.window.__codexPlaywrightInjected=true; g.emit('click'); assert.equal(g.timers.size,0);
     for(const name of ['mousemove','pointermove','keydown','input','scroll','wheel']) assert.equal(g.listeners[name],undefined,name);
   });
+  await test('Hidden final observes trusted discrete TG and CP+KT, pauses polling and rejects untrusted input', () => {
+    for (const mode of ['TG','CP+KT']) {
+      const f=fixture(); f.document.visibilityState='hidden'; f.emit('visibilitychange');
+      f.advance(200000); assert.equal(f.window.__visitorVerdict.class,'human');
+      if(mode==='TG') {
+        f.window.__codexPlaywrightInjected=true; f.emit('click',{isTrusted:false});
+        assert.equal(f.window.__visitorVerdict.class,'human');
+        f.emit('beforeinput',{isTrusted:true});
+      } else {cp(f); kt(f);}
+      assert.equal(publications(f).at(-1).traffic_replay,'late');
+    }
+  });
+  await test('Post-final wheel/scroll only refresh UC trust, without global probes', () => {
+    for(const type of ['wheel','scroll']) {
+      let reads=0; const f=fixture({modify:({window})=>{window.getComputedStyle=()=>{reads++;return {visibility:'visible'};};}});
+      f.emit('click',{isTrusted:true}); f.advance(8000);
+      f.window.__codexPlaywrightInjected=true; f.emit(type,{isTrusted:true});
+      f.emit('change',{isTrusted:false,target:{tagName:'SELECT',getClientRects:()=>[{width:100,height:20}]}});
+      assert.equal(reads,0);
+    }
+  });
+  await test('Late carry retries on later discrete input, bounded to three attempts', () => {
+    for(const recover of [true,false]) {
+      const f=fixture();f.advance(8000);let attempts=0;
+      const set=f.window.sessionStorage.setItem;
+      f.window.sessionStorage.setItem=(...args)=>{attempts++;if(!recover || attempts===1) throw Error('temporary');return set(...args);};
+      f.window.__codexPlaywrightInjected=true; f.emit('click');
+      assert.equal(attempts,1);assert.ok(f.listeners.click);
+      for(let i=0;i<10;i++) f.emit('click');
+      assert.equal(attempts,recover?2:3);assert.equal(f.listeners.click,undefined);
+    }
+  });
+  await test('CP interactive roles and summary; unsupported platforms skip pointermove', () => {
+    for(const role of ['link','tab','menuitem','option','summary']) {
+      const f=fixture();cp(f,{target:{...agentTarget,tagName:role==='summary'?'SUMMARY':'DIV',getAttribute:()=>role}});kt(f);f.advance(8000);
+      assert.equal(f.window.__visitorVerdict.class,'suspicious');
+    }
+    for(const ua of ['Firefox/150','Chrome/150 Mobile','Chrome/150; wv)']) {
+      const f=fixture({modify:({navigator})=>{navigator.userAgent=ua;}});
+      assert.equal(f.listeners.pointermove,undefined);f.advance(8000);assert.equal(f.listeners.pointermove,undefined);
+    }
+  });
+  await test('TG rejects inactive primitives', () => {
+    for(const value of [false,0,'']) {
+      const f=fixture({modify:({window})=>{window.__codexPlaywrightInjected=value;}});
+      f.advance(8000);assert.equal(f.window.__visitorVerdict.class,'human');
+    }
+  });
   await test('Owner logs: reproduce pointer timing/geometry after final; agents suspicious, human human', async () => {
     for (const [file, expected] of [['beh-1-antigravity.json','suspicious'],['beh-2-chatgpt.jsonl','suspicious'],['beh-3-clovek.json','human']]) {
       const logs = JSON.parse(await readFile(new URL('./fixtures/agent-driven-pointer.json', import.meta.url), 'utf8'));
@@ -3002,7 +3052,7 @@ export async function runContracts(detectorSource) {
         const rect = {left: -row.centerDx - 50, top: -row.centerDy - 10, width:100, height:20};
         const target = {nodeType:1, tagName:'BUTTON', getBoundingClientRect:() => rect};
         f.emit('pointermove', {isTrusted:true, pointerType:'mouse', timeStamp:row.t - row.sinceMoveMs});
-        f.emit('pointerdown', {...row, clientX:0, clientY:0, target, timeStamp:row.t});
+        f.emit('pointerdown', {button:0, ...row, clientX:0, clientY:0, target, timeStamp:row.t});
       }
       // Sanitized log-derived own names and paired key timestamps; values were
       // not recorded, so use allowed representative data shapes, not identity.

@@ -60,7 +60,7 @@ An alternative to the GTM detector tag. Set `window.visitorVerdictConfig` before
 <script>window.dataLayer = window.dataLayer || [];</script>
 <!-- Set consent defaults and install the consent consumer before the detector. -->
 <script src="https://cdn.jsdelivr.net/gh/Narrativva-Labs/visitor-verdict@v1.6.0/dist/visitor-verdict.min.js"
-        integrity="sha384-Z81P6ygCoiL/A/pbAgVibD84YaX9ecbtr7d0F0O3RBhkd0dVJjLJGt4RbpJ1XK1n"
+        integrity="sha384-fyqLFr5dZXDWRzAuvO28xtzDJ/Jr7xdflHkKuQdLMaN8aFFJIcO3/Q5Jem1PG69A"
         crossorigin="anonymous"></script>
 ```
 

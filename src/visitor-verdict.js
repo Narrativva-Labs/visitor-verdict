@@ -196,7 +196,7 @@
     try { mobile = mobile || n.maxTouchPoints > 0 && w.matchMedia('(pointer: coarse)').matches; } catch (ignore) {}
     var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
     var chromium = false, hasBrands = false, brands = n.userAgentData && n.userAgentData.brands, i;
-    var events = 'mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin input change'.split(' ');
+    var events = 'mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin beforeinput input change'.split(' ');
     // Bounded transient state only: no trajectories, rates or input objects retained.
     var move = null, clicked = null, pointerKind = '', downAt = 0, teleport = false;
     var tpPages = 0, pageTime = Math.floor(Date.now() / 100) * 100;
@@ -315,7 +315,7 @@
     // Bounded transient samples; targets never leave this closure.
     var cdpClicks = 0, cdpMove = null, cdpMoves = [], cdpDown = null, cdpTarget = null, cdpPoint = null;
     var rapid = false, toolGlobal = false;
-    var rapidField = null, rapidTimes = [], latePublished = false, ended = false, toolTimer = null, toolScans = 0, agentCarrySaved = false, inputTrimmed = false, inputStopped = false;
+    var rapidField = null, rapidTimes = [], latePublished = false, ended = false, toolTimer = null, toolScans = 0, agentCarrySaved = false, carryAttempts = 0, inputTrimmed = false, inputStopped = false;
     var toolNames = ['puppeteer___ariaQuerySelector', 'puppeteer___ariaQuerySelectorAll', '__codexPlaywrightInjected', '__browserUseClipboardBridge'];
     var toolDelays = [1000, 2000, 4000, 8000, 15000, 30000, 60000];
     function toolValue(name, callable) {
@@ -323,7 +323,7 @@
       if (callable) { return shape(w, name); }
       try {
         var prop = Object.getOwnPropertyDescriptor(w, name), value = prop && prop.value, type = typeof value;
-        return type === 'boolean' || type === 'number' || type === 'string' ||
+        return type === 'boolean' && value === true || type === 'number' && value !== 0 && isFinite(value) || type === 'string' && value !== '' ||
           (type === 'function' || type === 'object' && tag.call(value) === '[object Object]') && shapeValue(value);
       } catch (ignore) { return false; }
     }
@@ -345,7 +345,7 @@
       } catch (ignore) {}
     }
     function exhausted() {
-      return ended || latest === 'automated' || latest === 'declared_agent' || latePublished ||
+      return ended || latest === 'automated' || latest === 'declared_agent' || latePublished && (!directAgent() || agentCarrySaved || carryAttempts >= 3) ||
         latest === 'suspicious' && agentCarrySaved;
     }
     function scheduleTools() {
@@ -364,7 +364,7 @@
       if (!done || inputStopped || inputTrimmed && !exhausted()) { return; }
       inputTrimmed = true; inputStopped = exhausted();
       for (var j = 0; j < events.length; j++) {
-        if (exhausted() || /^(mousemove|pointerup|pointercancel|touchmove|touchend|touchcancel|wheel|scroll)$/.test(events[j])) {
+        if (exhausted() || /^(mousemove|pointerup|pointercancel|touchmove|touchend|touchcancel)$/.test(events[j])) {
           removeListener(inputTarget, events[j], interact, listenerOptions);
         }
       }
@@ -375,15 +375,19 @@
       }
     }
     function late() {
+      var wasLate = latePublished;
       if (finalPublished && !latePublished && latest === 'human' && suspicious()) { publish('final', true); }
-      if (finalPublished && latest === 'suspicious' && !agentCarrySaved) {
+      if (finalPublished && latest === 'suspicious' && !agentCarrySaved && carryAttempts < 3 && wasLate === latePublished) {
         var proof = provenance(latest);
-        if (proof.direct === true && save(proof)) { agentCarrySaved = true; }
+        if (proof.direct === true) {
+          carryAttempts++;
+          if (save(proof)) { agentCarrySaved = true; }
+        }
       }
       trimInput();
     }
     function agentInput(event) {
-      if (/^(pointerdown|click|keydown|input|change|focusin)$/.test(event.type)) { tools(false); }
+      if (/^(pointerdown|click|keydown|beforeinput|input|change|focusin)$/.test(event.type)) { tools(false); }
       var clock = event.timeStamp;
       if (event.type === 'pointermove' && event.isTrusted === true && event.pointerType === 'mouse' &&
           typeof clock === 'number' && isFinite(clock)) {
@@ -391,7 +395,7 @@
         while (cdpMoves.length > 3 || cdpMoves.length && clock - cdpMoves[0] > 150) { cdpMoves.shift(); }
       }
       if (event.type === 'pointerdown' && !mobile && !embedded && (chromium || desktop) && event.isTrusted === true &&
-          event.pointerType === 'mouse' && event.buttons > 0 && event.pressure === 0 &&
+          event.pointerType === 'mouse' && event.button === 0 && event.buttons === 1 && event.pressure === 0 &&
           typeof clock === 'number' && isFinite(clock) && cdpMove !== null && clock >= cdpMove && clock - cdpMove <= 15 &&
           cdpDown !== clock) {
         while (cdpMoves.length && clock - cdpMoves[0] > 150) { cdpMoves.shift(); }
@@ -399,9 +403,9 @@
         try {
           var target = event.target;
           while (target && target.nodeType === 1) {
-            if (/^(BUTTON|A|SELECT|LABEL)$/i.test(target.tagName) ||
+            if (/^(BUTTON|A|SELECT|LABEL|SUMMARY)$/i.test(target.tagName) ||
                 /^INPUT$/i.test(target.tagName) && /^(button|submit|checkbox|radio)$/i.test(target.type) ||
-                target.getAttribute && target.getAttribute('role') === 'button') { break; }
+                target.getAttribute && /^(button|link|tab|menuitem|option)$/.test(target.getAttribute('role'))) { break; }
             target = target.parentElement;
           }
           var rect = target && target.nodeType === 1 && target.getBoundingClientRect();
@@ -574,7 +578,7 @@
     }
     // Consent is only a transient transition bit, never persisted or scored.
     var analyticsGranted = false, regionalDefault = false, consentUpdated = false;
-    var finalWhileGranted = false, consentReplayed = false, lastPublication = null;
+    var lastDeliveredGranted = false, consentReplayed = false, lastPublication = null;
     function copyPublication(event) {
       var copy = {}, name;
       for (name in event) {
@@ -610,7 +614,7 @@
         analyticsGranted = value === 'granted' && (isUpdate || !regionalDefault);
         if (isUpdate) { consentUpdated = true; }
         if (historical || !afterFinal || command[1] !== 'update' || !changed || !finalPublished ||
-            finalWhileGranted || consentReplayed || !lastPublication) { return; }
+            lastDeliveredGranted || consentReplayed || !lastPublication) { return; }
         // Guard before calling consumers: replay cannot reenter itself or renew carry.
         consentReplayed = true;
         var event = copyPublication(lastPublication);
@@ -641,10 +645,11 @@
             throw error;
           }
           if (replay) {
-            if (analyticsGranted) {
+            if (analyticsGranted && !lastDeliveredGranted) {
               replay = copyPublication(lastPublication);
               replay.traffic_phase = 'final'; replay.traffic_replay = 'consent';
-              if (!pushPublication(replay)) { consentReplayed = false; analyticsGranted = false; }
+              lastDeliveredGranted = true;
+              if (!pushPublication(replay)) { lastDeliveredGranted = false; consentReplayed = false; analyticsGranted = false; }
             }
             else { consentReplayed = false; }
           }
@@ -665,7 +670,7 @@
           typeof total !== 'number' || !isFinite(total)) { return initial; }
       // Mark before any consumer callback can reenter. Never read public state.
       if (phase === 'initial') { initialPublished = true; initial = result; }
-      else if (phase === 'final') { if (isLate) { latePublished = true; } finalPublished = true; if (!isLate) { finalWhileGranted = analyticsGranted; } }
+      else if (phase === 'final') { if (isLate) { latePublished = true; } finalPublished = true; }
       else { agentPublished = true; }
       latest = result;
       var state = {'class': result, score: total, phase: phase, version: version,
@@ -687,10 +692,12 @@
       // A marker seen at load is stored at once, as later phases are.
       if (phase !== 'initial' || marked) {
         var proof = provenance(result);
+        if (proof.direct === true) { carryAttempts++; }
         if (save(proof) && result === 'suspicious' && proof.direct === true) { agentCarrySaved = true; }
       }
       if (config.replayOnConsent) { lastPublication = copyPublication(event); }
-      pushPublication(event);
+      lastDeliveredGranted = analyticsGranted;
+      if (!pushPublication(event)) { lastDeliveredGranted = false; }
       trimInput();
       return result;
     }
@@ -941,7 +948,12 @@
       }
     } catch (ignore) { fast = false; }
     function interact(event) {
-      if (ended || d.visibilityState === 'hidden') { return; }
+      if (ended || d.visibilityState === 'hidden' && (!done || event.isTrusted !== true ||
+          !/^(pointermove|pointerdown|click|keydown|beforeinput|input|change|focusin)$/.test(event.type))) { return; }
+      if (done && /^(wheel|scroll)$/.test(event.type)) {
+        if (event.isTrusted === true) { lastTrusted = Date.now(); }
+        return;
+      }
       agentInput(event);
       var now = Date.now(), type = event.type;
       if (!done) { pointer(event, now); }
@@ -970,7 +982,7 @@
             if (typingTimes.length === 3 && clock - typingTimes[0] > 0 && clock - typingTimes[0] <= 5) { burst = true; }
           }
           if (!/^password$/i.test(field.type)) {
-            if (rapidField !== field || rapidTimes.length && (clock <= rapidTimes[rapidTimes.length - 1] || clock - rapidTimes[rapidTimes.length - 1] > 1000)) { rapidField = field; rapidTimes = []; }
+            if (rapidField !== field || rapidTimes.length && (clock < rapidTimes[rapidTimes.length - 1] || clock - rapidTimes[rapidTimes.length - 1] > 1000)) { rapidField = field; rapidTimes = []; }
             rapidTimes.push(clock);
             if (rapidTimes.length > 12) { rapidTimes.shift(); }
             if (rapidTimes.length === 12) {
@@ -995,7 +1007,7 @@
         if (done && untrustedControl) { add('UC', 2, 'interaction'); }
         late(); return;
       }
-      late();
+      if (/^(pointerdown|click|keydown|beforeinput|focusin)$/.test(type)) { late(); }
       if (done) { return; }
       if ((event.isTrusted === true || event.isTrusted === undefined) && type !== 'pointercancel') { active = true; }
       if (/^(mousemove|pointerdown|touchstart)$/.test(event.type) && event.isTrusted === false) { synthetic = true; }
@@ -1066,6 +1078,7 @@
     function noop() {}
     try {
       for (i = 0; i < events.length; i++) {
+        if (events[i] === 'pointermove' && (mobile || embedded || !(chromium || desktop))) { continue; }
         if (!addListener(inputTarget, events[i], interact, listenerOptions)) { observesInput = false; }
       }
       canHide = addListener(w, 'pagehide', hide, listenerOptions); addListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions);
