@@ -2,8 +2,9 @@
 
 ## 1.6.0 — 2026-11-26
 
-- Add observed CP, KT and TG as zero-weight direct suspicious rules, preserving automated/declaration and B7 server precedence; no operator inference; qualifying CP/KT/TG seed one-document CS provenance.
-- Keep bounded input timing and UC observation after ordinary final; scan callable own tool globals at load, interaction and up to 120 one-second polls until pagehide.
+- Score CP and KT at 2 points in the interaction family; direct suspicious and CS require CP+KT together or namespaced TG alone. Tighten CP target, trajectory and desktop guards and KT length/distribution/password guards.
+- Accept safe Codex/browser-use own data properties, retaining function-only Puppeteer ARIA and rejecting generic ARIA alone. Check exact names only on discrete input; enumerate prefixes only in bounded, visibility-aware backoff polling. Trim listeners after final/exhaustion and release DOM references on pagehide.
+- Preserve ordinary-final consent state across late escalation; replay the current publication after reentrant consumers. Save late UC provenance consistently and mark carry saved only after successful storage. Document sticky GTM replay metadata.
 - Allow one late human → suspicious final (`traffic_replay: late`), independent of consent replay; new frozen snapshot and sticky metadata clearing. Existing GTM DLV/detail and final trigger accept late; Vanilla must deduplicate consent only.
 - Extend synthetic log regressions, negative controls, registry observed lifecycle, documentation and 1.6.0 build artifacts.
 

@@ -1805,9 +1805,9 @@
       "kind": "code",
       "code": "CP",
       "family": "behaviour",
-      "check": "Chromium only: at least two trusted mouse pointerdowns with buttons > 0, pressure 0, within 2 px of element rect centre, preceded by trusted mouse pointermove within 15 ms. Compatibility mousedown never doubles a pointerdown.",
-      "weight": 0,
-      "hardness": "direct-suspicious",
+      "check": "Desktop Chromium only (no mobile UA-CH or touch with coarse pointer): two trusted mouse pointerdowns, buttons >0, pressure 0, within 2 px of the nearest interactive ancestor centre (at least 24x16 px), after a mouse pointermove within 15 ms and at most two moves in the preceding 150 ms. Targets must differ or be at least 40 px apart. Two interaction points; direct suspicious and CS only with KT in the same document.",
+      "weight": 2,
+      "hardness": "soft",
       "status": "observed",
       "lastChecked": "2026-11-26",
       "sources": [
@@ -1825,16 +1825,17 @@
       ],
       "falsePositives": [
         "Remote desktops, pen/tablet mouse emulation and text expansion/password-manager key injection may imitate this pattern; IME and paste excluded."
-      ]
+      ],
+      "scoringFamily": "interaction"
     },
     {
       "id": "KT",
       "kind": "code",
       "code": "KT",
       "family": "behaviour",
-      "check": "Eight trusted non-composing non-repeat unmodified keydowns paired with insertText on one control; seven positive intervals <=1000 ms, median <5 ms. Paste, replacement/autofill, IME and invalid clocks reset the window.",
-      "weight": 0,
-      "hardness": "direct-suspicious",
+      "check": "At least twelve trusted non-composing non-repeat unmodified keydowns paired with trusted insertText on one non-password control; at least 90% of eleven positive intervals <5 ms, each <=1000 ms. Paste, replacement/autofill, IME and invalid clocks reset the window. Two interaction points; direct suspicious and CS only with CP in the same document.",
+      "weight": 2,
+      "hardness": "soft",
       "status": "observed",
       "lastChecked": "2026-11-26",
       "sources": [
@@ -1852,14 +1853,15 @@
       ],
       "falsePositives": [
         "Remote desktops, pen/tablet mouse emulation and text expansion/password-manager key injection may imitate this pattern; IME and paste excluded."
-      ]
+      ],
+      "scoringFamily": "interaction"
     },
     {
       "id": "TG",
       "kind": "code",
       "code": "TG",
       "family": "environment",
-      "check": "Own callable window data properties only, with GL/PW host guards: puppeteer___ariaQuerySelector, __ariaQuerySelector, puppeteer___ariaQuerySelectorAll, __ariaQuerySelectorAll, __codexPlaywrightInjected, __browserUseClipboardBridge or prefix __browserUseClipboard_. Checked at load, visible input and at most 120 one-second polls, stopped on pagehide.",
+      "check": "Own data properties: puppeteer___ariaQuerySelector(All) must be functions; generic __ariaQuerySelector(All) alone is insufficient. __codexPlaywrightInjected, __browserUseClipboardBridge and __browserUseClipboard_<hex> accept boolean, number, string, function or plain object, never getters, DOM nodes, null or undefined. Exact names at startup and discrete input; prefix enumeration only in polling (including initial scan). Poll delays 1,2,4,8,15,30,60 seconds, paused while hidden and stopped when TG or escalation/carry is exhausted. TG alone directly suspicious and CS.",
       "weight": 0,
       "hardness": "direct-suspicious",
       "status": "observed",

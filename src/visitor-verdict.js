@@ -192,9 +192,11 @@
     var ua = n.userAgent || '', mobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua) ||
       (n.maxTouchPoints > 1 && /Macintosh/i.test(ua));
     var embedded = /; wv\)|WebView|FBAN|FBAV|Instagram/i.test(ua);
+    mobile = mobile || !!(n.userAgentData && n.userAgentData.mobile);
+    try { mobile = mobile || n.maxTouchPoints > 0 && w.matchMedia('(pointer: coarse)').matches; } catch (ignore) {}
     var desktop = !mobile && !embedded && /Chrome\//i.test(ua);
     var chromium = false, hasBrands = false, brands = n.userAgentData && n.userAgentData.brands, i;
-    var events = 'mousedown mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin input change'.split(' ');
+    var events = 'mousemove pointermove pointerdown pointercancel pointerup touchstart touchmove touchend touchcancel scroll keydown keyup wheel click focusin input change'.split(' ');
     // Bounded transient state only: no trajectories, rates or input objects retained.
     var move = null, clicked = null, pointerKind = '', downAt = 0, teleport = false;
     var tpPages = 0, pageTime = Math.floor(Date.now() / 100) * 100;
@@ -310,52 +312,108 @@
       var names = '__playwright__binding__ __playwright__binding__controller__ __pwInitScripts'.split(' ');
       for (var j = 0; j < names.length; j++) { if (shape(w, names[j])) { add('PW', 100); } }
     }
-    // Keep only bounded timing samples, never text or a pointer trajectory.
-    var cdpClicks = 0, cdpMove = null, cdpDown = null, rapid = false, toolGlobal = false;
-    var rapidField = null, rapidTimes = [], latePublished = false, ended = false, toolTimer = null, toolScans = 0, toolScanAt = -Infinity, agentCarrySaved = false;
-    function tools() {
+    // Bounded transient samples; targets never leave this closure.
+    var cdpClicks = 0, cdpMove = null, cdpMoves = [], cdpDown = null, cdpTarget = null, cdpPoint = null;
+    var rapid = false, toolGlobal = false;
+    var rapidField = null, rapidTimes = [], latePublished = false, ended = false, toolTimer = null, toolScans = 0, agentCarrySaved = false, inputTrimmed = false, inputStopped = false;
+    var toolNames = ['puppeteer___ariaQuerySelector', 'puppeteer___ariaQuerySelectorAll', '__codexPlaywrightInjected', '__browserUseClipboardBridge'];
+    var toolDelays = [1000, 2000, 4000, 8000, 15000, 30000, 60000];
+    function toolValue(name, callable) {
+      if (!own.call(w, name)) { return false; }
+      if (callable) { return shape(w, name); }
+      try {
+        var prop = Object.getOwnPropertyDescriptor(w, name), value = prop && prop.value, type = typeof value;
+        return type === 'boolean' || type === 'number' || type === 'string' ||
+          (type === 'function' || type === 'object' && tag.call(value) === '[object Object]') && shapeValue(value);
+      } catch (ignore) { return false; }
+    }
+    function tools(enumerate) {
       if (toolGlobal || ended) { return; }
       try {
-        var names = 'puppeteer___ariaQuerySelector __ariaQuerySelector puppeteer___ariaQuerySelectorAll __ariaQuerySelectorAll __codexPlaywrightInjected __browserUseClipboardBridge'.split(' ');
-        // Prefix enumeration is throttled even during high-rate pointer streams.
-        var now = Date.now();
-        if (now - toolScanAt >= 1000) { names = names.concat(Object.getOwnPropertyNames(w)); toolScanAt = now; }
-        for (var j = 0; j < names.length; j++) {
-          if (/^(?:puppeteer___ariaQuerySelector(?:All)?|__ariaQuerySelector(?:All)?|__codexPlaywrightInjected|__browserUseClipboardBridge|__browserUseClipboard_.+)$/.test(names[j]) && shape(w, names[j])) {
-            toolGlobal = true; add('TG', 0); break;
+        var j, names;
+        for (j = 0; j < toolNames.length; j++) {
+          if (toolValue(toolNames[j], j < 2)) { toolGlobal = true; break; }
+        }
+        if (!toolGlobal && enumerate) {
+          names = Object.getOwnPropertyNames(w);
+          for (j = 0; j < names.length; j++) {
+            if (names[j].indexOf('__browserUseClipboard_') === 0 &&
+                /^__browserUseClipboard_[0-9a-f]+$/i.test(names[j]) && toolValue(names[j], false)) { toolGlobal = true; break; }
           }
         }
+        if (toolGlobal) { add('TG', 0); w.clearTimeout(toolTimer); toolTimer = null; }
       } catch (ignore) {}
+    }
+    function exhausted() {
+      return ended || latest === 'automated' || latest === 'declared_agent' || latePublished ||
+        latest === 'suspicious' && agentCarrySaved;
+    }
+    function scheduleTools() {
+      if (!canHide || toolTimer !== null || toolGlobal || exhausted() ||
+          d.visibilityState === 'hidden' || toolScans >= toolDelays.length) { return; }
+      toolTimer = w.setTimeout(pollTools, toolDelays[toolScans]);
     }
     function pollTools() {
       toolTimer = null;
-      tools(); late();
-      if (!ended && !toolGlobal && ++toolScans < 120 && canHide) { toolTimer = w.setTimeout(pollTools, 1000); }
+      if (exhausted() || d.visibilityState === 'hidden') { return; }
+      toolScans++; tools(true); late(); scheduleTools();
+    }
+    function directAgent() { return toolGlobal || cdpClicks >= 2 && rapid; }
+    function trimInput() {
+      if (exhausted()) { w.clearTimeout(toolTimer); toolTimer = null; }
+      if (!done || inputStopped || inputTrimmed && !exhausted()) { return; }
+      inputTrimmed = true; inputStopped = exhausted();
+      for (var j = 0; j < events.length; j++) {
+        if (exhausted() || /^(mousemove|pointerup|pointercancel|touchmove|touchend|touchcancel|wheel|scroll)$/.test(events[j])) {
+          removeListener(inputTarget, events[j], interact, listenerOptions);
+        }
+      }
+      if (exhausted()) {
+        w.clearTimeout(toolTimer); toolTimer = null;
+        typingField = keyField = rapidField = cdpTarget = null;
+        typingTimes = []; rapidTimes = []; cdpMoves = []; cdpMove = cdpDown = cdpPoint = keyTime = null;
+      }
     }
     function late() {
       if (finalPublished && !latePublished && latest === 'human' && suspicious()) { publish('final', true); }
-      // A page already suspicious (e.g. AW) can acquire fresh carry evidence
-      // without another class publication. Persist it at most once.
-      if (finalPublished && latest === 'suspicious' && !agentCarrySaved && (cdpClicks >= 2 || rapid || toolGlobal)) {
-        agentCarrySaved = true; save(provenance(latest));
+      if (finalPublished && latest === 'suspicious' && !agentCarrySaved) {
+        var proof = provenance(latest);
+        if (proof.direct === true && save(proof)) { agentCarrySaved = true; }
       }
+      trimInput();
     }
     function agentInput(event) {
-      tools();
+      if (/^(pointerdown|click|keydown|input|change|focusin)$/.test(event.type)) { tools(false); }
       var clock = event.timeStamp;
       if (event.type === 'pointermove' && event.isTrusted === true && event.pointerType === 'mouse' &&
-          typeof clock === 'number' && isFinite(clock)) { cdpMove = clock; }
-      if (event.type === 'pointerdown' && (chromium || desktop) && event.isTrusted === true &&
+          typeof clock === 'number' && isFinite(clock)) {
+        cdpMove = clock; cdpMoves.push(clock);
+        while (cdpMoves.length > 3 || cdpMoves.length && clock - cdpMoves[0] > 150) { cdpMoves.shift(); }
+      }
+      if (event.type === 'pointerdown' && !mobile && !embedded && (chromium || desktop) && event.isTrusted === true &&
           event.pointerType === 'mouse' && event.buttons > 0 && event.pressure === 0 &&
           typeof clock === 'number' && isFinite(clock) && cdpMove !== null && clock >= cdpMove && clock - cdpMove <= 15 &&
           cdpDown !== clock) {
+        while (cdpMoves.length && clock - cdpMoves[0] > 150) { cdpMoves.shift(); }
+        if (cdpMoves.length > 2) { return; }
         try {
-          var target = event.target, rect = target && target.nodeType === 1 && target.getBoundingClientRect();
-          if (rect && rect.width > 0 && rect.height > 0 &&
+          var target = event.target;
+          while (target && target.nodeType === 1) {
+            if (/^(BUTTON|A|SELECT|LABEL)$/i.test(target.tagName) ||
+                /^INPUT$/i.test(target.tagName) && /^(button|submit|checkbox|radio)$/i.test(target.type) ||
+                target.getAttribute && target.getAttribute('role') === 'button') { break; }
+            target = target.parentElement;
+          }
+          var rect = target && target.nodeType === 1 && target.getBoundingClientRect();
+          if (rect && rect.width >= 24 && rect.height >= 16 &&
               Math.sqrt(Math.pow(event.clientX - (rect.left + rect.width / 2), 2) +
               Math.pow(event.clientY - (rect.top + rect.height / 2), 2)) <= 2) {
-            cdpDown = clock; cdpClicks = Math.min(2, cdpClicks + 1);
-            if (cdpClicks === 2) { add('CP', 0); }
+            cdpDown = clock;
+            if (!cdpTarget || cdpTarget !== target || distance(cdpPoint, event.clientX, event.clientY) >= 1600) {
+              cdpClicks = Math.min(2, cdpClicks + 1);
+              cdpTarget = target; cdpPoint = {x: event.clientX, y: event.clientY};
+            }
+            if (cdpClicks === 2) { add('CP', 2, 'interaction'); }
           }
         } catch (ignore) {}
       }
@@ -509,8 +567,8 @@
         if (withoutDirect && strongAW && family === 'automationEnvironment') { continue; }
         if (/^(geometry|language|plugins|graphics|chrome|permissions|automationEnvironment)$/.test(family)) { env++; }
       }
-      // UB and strong AW never prove carry alone; qualifying CP/KT/TG use explicit provenance.
-      return !withoutDirect && (workerBrands || strongAW || cdpClicks >= 2 || rapid || toolGlobal) || total >= config.suspiciousThreshold && count >= 3 &&
+      // UB and strong AW never prove carry alone; TG or CP+KT use explicit provenance.
+      return !withoutDirect && (workerBrands || strongAW || directAgent()) || total >= config.suspiciousThreshold && count >= 3 &&
         (families.pointer || signals.indexOf('SY') !== -1 ||
         (env >= 2 && (families.interaction || families.navigation)));
     }
@@ -584,6 +642,8 @@
           }
           if (replay) {
             if (analyticsGranted) {
+              replay = copyPublication(lastPublication);
+              replay.traffic_phase = 'final'; replay.traffic_replay = 'consent';
               if (!pushPublication(replay)) { consentReplayed = false; analyticsGranted = false; }
             }
             else { consentReplayed = false; }
@@ -605,7 +665,7 @@
           typeof total !== 'number' || !isFinite(total)) { return initial; }
       // Mark before any consumer callback can reenter. Never read public state.
       if (phase === 'initial') { initialPublished = true; initial = result; }
-      else if (phase === 'final') { if (isLate) { latePublished = true; } finalPublished = true; finalWhileGranted = analyticsGranted; }
+      else if (phase === 'final') { if (isLate) { latePublished = true; } finalPublished = true; if (!isLate) { finalWhileGranted = analyticsGranted; } }
       else { agentPublished = true; }
       latest = result;
       var state = {'class': result, score: total, phase: phase, version: version,
@@ -626,16 +686,17 @@
       // provenance, so a carried class cannot seed another grace document.
       // A marker seen at load is stored at once, as later phases are.
       if (phase !== 'initial' || marked) {
-        if (result === 'suspicious' && (cdpClicks >= 2 || rapid || toolGlobal)) { agentCarrySaved = true; }
-        save(provenance(result));
+        var proof = provenance(result);
+        if (save(proof) && result === 'suspicious' && proof.direct === true) { agentCarrySaved = true; }
       }
       if (config.replayOnConsent) { lastPublication = copyPublication(event); }
       pushPublication(event);
+      trimInput();
       return result;
     }
     function provenance(result) {
       // Preserve the reported class; only fresh evidence seeds another grace page.
-      if (result === 'suspicious') { return cdpClicks >= 2 || rapid || toolGlobal || suspicious(true) ? {value: result, direct: true} : result; }
+      if (result === 'suspicious') { return directAgent() || suspicious(true) ? {value: result, direct: true} : result; }
       // Only direct hard evidence stores automated. A direct declaration stores
       // declared_agent even when carried CA made this document automated.
       // Only a marker seen in this document renews the stored operator.
@@ -811,7 +872,7 @@
       }
       names = null;
     } catch (ignore) {}
-    playwright(); tools(); geometry();
+    playwright(); tools(true); geometry();
     var screen = w.screen || {};
     if ((screen.width === 800 && screen.height === 600) ||
         (screen.width === 1280 && screen.height === 720 && w.innerWidth === 1280 && w.innerHeight === 720)) { add('GS', 1, 'geometry'); }
@@ -902,19 +963,22 @@
         var clock = keyField === field ? keyTime : null;
         keyField = null; keyTime = null;
         if (type === 'input' && control && event.isTrusted === true && event.inputType === 'insertText' && !event.isComposing && clock !== null) {
-          if (typingField !== field) { typingField = field; typingTimes = []; }
-          typingTimes.push(clock);
-          if (typingTimes.length > 3) { typingTimes.shift(); }
-          if (typingTimes.length === 3 && clock - typingTimes[0] > 0 && clock - typingTimes[0] <= 5) { burst = true; }
-          if (rapidField !== field || rapidTimes.length && (clock <= rapidTimes[rapidTimes.length - 1] || clock - rapidTimes[rapidTimes.length - 1] > 1000)) { rapidField = field; rapidTimes = []; }
-          rapidTimes.push(clock);
-          if (rapidTimes.length > 8) { rapidTimes.shift(); }
-          if (rapidTimes.length === 8) {
-            var intervals = [];
-            for (var k = 1; k < rapidTimes.length; k++) { intervals.push(rapidTimes[k] - rapidTimes[k - 1]); }
-            intervals.sort(function (a, b) { return a - b; });
-            if (intervals[3] < 5) { rapid = true; add('KT', 0); }
+          if (!done) {
+            if (typingField !== field) { typingField = field; typingTimes = []; }
+            typingTimes.push(clock);
+            if (typingTimes.length > 3) { typingTimes.shift(); }
+            if (typingTimes.length === 3 && clock - typingTimes[0] > 0 && clock - typingTimes[0] <= 5) { burst = true; }
           }
+          if (!/^password$/i.test(field.type)) {
+            if (rapidField !== field || rapidTimes.length && (clock <= rapidTimes[rapidTimes.length - 1] || clock - rapidTimes[rapidTimes.length - 1] > 1000)) { rapidField = field; rapidTimes = []; }
+            rapidTimes.push(clock);
+            if (rapidTimes.length > 12) { rapidTimes.shift(); }
+            if (rapidTimes.length === 12) {
+              var quick = 0;
+              for (var k = 1; k < rapidTimes.length; k++) { if (rapidTimes[k] - rapidTimes[k - 1] < 5) { quick++; } }
+              if (quick / 11 >= 0.9) { rapid = true; add('KT', 2, 'interaction'); }
+            }
+          } else { rapidField = null; rapidTimes = []; }
         } else if (type === 'input') { typingField = null; typingTimes = []; rapidField = null; rapidTimes = []; }
         if (type === 'change' && field && !field.disabled && !field.readOnly &&
             (name === 'SELECT' || name === 'INPUT' && /^(checkbox|radio)$/i.test(field.type)) &&
@@ -943,11 +1007,12 @@
     function cleanup() {
       exposure(); stopWorker();
       if (ended || !canHide) {
-        rapidField = null; rapidTimes = []; cdpMove = cdpDown = null;
+        typingField = keyField = rapidField = cdpTarget = null; keyTime = cdpPoint = null;
+        typingTimes = []; rapidTimes = []; cdpMoves = []; cdpMove = cdpDown = null;
         for (i = 0; i < events.length; i++) { removeListener(inputTarget, events[i], interact, listenerOptions); }
         w.clearTimeout(toolTimer);
       }
-      if (!observer) { removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); }
+      if (ended || !canHide) { removeListener(visibilityTarget, 'visibilitychange', visibility, listenerOptions); }
       // Live marker/WebMCP watches keep pagehide until they disconnect.
       if (ended && !observer && !webmcpWatching) { removeListener(w, 'pagehide', hide, listenerOptions); }
     }
@@ -980,6 +1045,10 @@
       var becameHidden = wasVisible && d.visibilityState === 'hidden';
       wasVisible = d.visibilityState !== 'hidden';
       pointerKind = ''; keyField = null; keyTime = null; typingField = null; typingTimes = [];
+      rapidField = cdpTarget = null; rapidTimes = []; cdpMoves = []; cdpMove = cdpDown = cdpPoint = null; cdpClicks = 0;
+      // Completed CP evidence persists; only the unfinished gesture is reset.
+      if (signals.indexOf('CP') !== -1) { cdpClicks = 2; }
+      if (!wasVisible) { w.clearTimeout(toolTimer); toolTimer = null; } else { scheduleTools(); }
       if (wasVisible && observer && !marked) { check(); }
       if (done) { return; }
       exposure();
@@ -1009,7 +1078,7 @@
       if (operator) { mark(operator); }
       check(); watch();
       initial = publish('initial'); ua = ''; brands = null;
-      if (canHide && !ended) { toolTimer = w.setTimeout(pollTools, 1000); }
+      scheduleTools();
       // Check again once watching: a consumer of the initial push may have added a marker.
       startWorker();
       operator = marker(); if (operator && !marked) { mark(operator); }

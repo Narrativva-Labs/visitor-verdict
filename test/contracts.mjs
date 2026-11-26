@@ -2780,18 +2780,18 @@ export async function runContracts(detectorSource) {
     f.emit('pagehide');
     assert.deepEqual(Object.keys(f.listeners).filter(n=>n!=='visitor-verdict:claim'), []);
   });
-  const agentTarget = {nodeType: 1, tagName: 'INPUT', getBoundingClientRect: () => ({left: 0, top: 0, width: 100, height: 20})};
-  function cp(f, {pressure = 0, x = 50, gap = 2, count = 2, pointerType = 'mouse', isTrusted = true} = {}) {
+  const agentTarget = {nodeType: 1, tagName: 'INPUT', type: 'button', getBoundingClientRect: () => ({left: 0, top: 0, width: 100, height: 20})};
+  function cp(f, {pressure = 0, x = 50, gap = 2, count = 2, same = false, target = agentTarget, moves = 1, pointerType = 'mouse', isTrusted = true} = {}) {
     for (let i = 0; i < count; i++) {
       const timeStamp = 100 + i * 100;
-      f.emit('pointermove', {isTrusted, pointerType, timeStamp});
-      f.emit('pointerdown', {target: agentTarget, isTrusted, pointerType, buttons: 1, pressure, clientX: x, clientY: 10, timeStamp: timeStamp + gap});
+      for (let j = 0; j < moves; j++) f.emit('pointermove', {isTrusted, pointerType, timeStamp: timeStamp - j});
+      f.emit('pointerdown', {target: same ? target : {...target, ...(target.parentElement ? {parentElement:{...target.parentElement}} : {})}, isTrusted, pointerType, buttons: 1, pressure, clientX: x, clientY: 10, timeStamp: timeStamp + gap});
       f.emit('mousedown', {target: agentTarget, isTrusted, buttons: 1, clientX: x, clientY: 10, timeStamp: timeStamp + gap});
     }
   }
-  function kt(f, mode = 'fast', count = 8) {
+  function kt(f, mode = 'fast', count = 12, field = agentTarget) {
     for (let i = 0; i < count; i++) {
-      const target = agentTarget;
+      const target = field;
       f.emit('keydown', {target, isTrusted: mode !== 'untrusted', isComposing: mode === 'ime', keyCode: mode === 'ime229' ? 229 : 65,
         timeStamp: 10 + i * (mode === 'human' ? 79 : mode === 'pause' ? 1001 : 1)});
       f.emit('input', {target, isTrusted: true, isComposing: mode === 'ime',
@@ -2803,43 +2803,42 @@ export async function runContracts(detectorSource) {
       const f = fixture({config: {debug: true}, modify: ({navigator}) => {if (mode === 'firefox') navigator.userAgent = 'Firefox/150';}});
       cp(f, opts); f.advance(8000);
       assert.equal(f.signals.includes('CP'), mode === 'yes', mode);
-      assert.equal(f.window.__visitorVerdict.class, mode === 'yes' ? 'suspicious' : 'human', mode);
+      assert.equal(f.window.__visitorVerdict.class, 'human', mode);
     }
   });
-  await test('KT: eight paired keys, human pace, IME, paste/autofill, trust, long gaps', () => {
+  await test('KT: twelve paired keys, human pace, IME, paste/autofill, trust, long gaps', () => {
     for (const mode of ['fast','human','ime','ime229','paste','autofill','untrusted','pause','seven']) {
       const f = fixture({config: {debug: true}});
-      kt(f, mode, mode === 'seven' ? 7 : 8); f.advance(8000);
+      kt(f, mode, mode === 'seven' ? 7 : 12); f.advance(8000);
       assert.equal(f.signals.includes('KT'), mode === 'fast', mode);
-      assert.equal(f.window.__visitorVerdict.class, mode === 'fast' ? 'suspicious' : 'human', mode);
+      assert.equal(f.window.__visitorVerdict.class, 'human', mode);
     }
   });
   const toolNames = ['puppeteer___ariaQuerySelector','__ariaQuerySelector','puppeteer___ariaQuerySelectorAll','__ariaQuerySelectorAll',
     '__codexPlaywrightInjected','__browserUseClipboard_deadbeef','__browserUseClipboardBridge'];
-  await test('TG: exact own callable properties only; initial, poll and late interaction', () => {
-    for (const name of toolNames) for (const mode of ['function','data','getter','dom','inherited']) {
+  await test('TG: namespaced own data properties and Puppeteer functions; initial, poll and late interaction', () => {
+    for (const name of toolNames) for (const mode of ['function','data','boolean','string','number','null','undefined','array','getter','dom','inherited']) {
       let reads = 0;
       const f = fixture({config: {debug: true}, modify: ({window}) => {
         if (mode === 'getter') Object.defineProperty(window, name, {get() {reads++; return () => {};}});
         else if (mode === 'inherited') Object.setPrototypeOf(window, {[name]: () => {}});
-        else window[name] = mode === 'function' ? () => {} : mode === 'dom' ? {nodeType: 1} : {};
+        else window[name] = mode === 'function' ? () => {} : mode === 'dom' ? {nodeType: 1} : mode === 'boolean' ? true : mode === 'string' ? 'yes' : mode === 'number' ? 1 : mode === 'null' ? null : mode === 'undefined' ? undefined : mode === 'array' ? [] : {};
       }});
-      assert.equal(f.signals.includes('TG'), mode === 'function', name + ' ' + mode); assert.equal(reads, 0);
+      assert.equal(f.signals.includes('TG'), !name.startsWith('__aria') && (mode === 'function' || !name.startsWith('puppeteer') && ['data','boolean','string','number'].includes(mode)), name + ' ' + mode); assert.equal(reads, 0);
     }
     const f = fixture({config: {debug: true}}); f.advance(8000);
-    f.window.__ariaQuerySelector = () => {}; f.advance(1000);
+    f.window.__codexPlaywrightInjected = true; f.emit('click');
     assert.equal(publications(f).at(-1).traffic_replay, 'late');
     f.emit('pagehide'); assert.equal(f.timers.size, 0);
     f.window.__ariaQuerySelectorAll = () => {}; f.advance(2000); assert.equal(publications(f).length, 3);
   });
   await test('Late: once, frozen snapshot, consent independent, CS next initial then expiry', () => {
-    for (const signal of ['CP','KT','TG']) for (const consentFirst of [true,false]) {
+    for (const signal of ['CP+KT','TG']) for (const consentFirst of [true,false]) {
       const f = fixture({config: {debug: true}});
       f.advance(8000); const before = f.window.__visitorVerdict;
       if (consentFirst) f.window.dataLayer.push(consent('granted'));
-      if (signal === 'CP') cp(f);
-      else if (signal === 'KT') kt(f);
-      else { f.window.__codexPlaywrightInjected = () => {}; f.emit('scroll', {isTrusted: true}); }
+      if (signal === 'CP+KT') { cp(f); kt(f); }
+      else { f.window.__codexPlaywrightInjected = () => {}; f.emit('click', {isTrusted: true}); }
       const after = f.window.__visitorVerdict;
       assert.equal(after.class, 'suspicious'); assert.notEqual(before, after); assert.ok(Object.isFrozen(after)); assert.equal(before.class, 'human');
       cp(f); kt(f); f.advance(2000);
@@ -2859,13 +2858,13 @@ export async function runContracts(detectorSource) {
   await test('Late: no extra publication for suspicious, automated or declared; later DM clears late metadata', () => {
     for (const kind of ['automated','declared_agent','suspicious']) {
       const f = fixture({modify: ({navigator}) => {if (kind === 'automated') navigator.webdriver = true; if (kind === 'declared_agent') navigator.userAgent = 'ChatGPT-User';}});
-      if (kind === 'suspicious') cp(f);
+      if (kind === 'suspicious') { cp(f); kt(f); }
       f.advance(8000); const before = publications(f).length;
       cp(f); kt(f); f.window.__codexPlaywrightInjected = () => {}; f.emit('scroll');
       assert.equal(publications(f).length, before); assert.equal(f.window.__visitorVerdict.class, kind);
     }
     const dom = markerDOM(), f = fixture({modify: dom.modify});
-    f.advance(8000); cp(f); dom.insert('codex-agent-overlay-root');
+    f.advance(8000); cp(f); kt(f); dom.insert('codex-agent-overlay-root');
     assert.equal(f.window.__visitorVerdict.class, 'declared_agent'); assert.equal(publications(f).at(-1).traffic_replay, undefined);
   });
   await test('UC: after final updates ordinary gate once, without becoming a direct signal', () => {
@@ -2881,19 +2880,118 @@ export async function runContracts(detectorSource) {
     assert.equal(g.window.__visitorVerdict.class, 'human');
   });
   await test('Agent carry: already suspicious AW acquires fresh provenance without another publication', () => {
-    for (const signal of ['CP','KT','TG']) {
+    for (const signal of ['CP+KT','TG']) {
       const f = fixture({modify: automationProfile});
       f.emit('scroll', {isTrusted:true}); f.advance(8000);
       assert.equal(f.window.__visitorVerdict.class, 'suspicious');
       assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'suspicious');
       const before = publications(f).length;
-      if (signal === 'CP') cp(f);
-      else if (signal === 'KT') kt(f);
-      else { f.window.__codexPlaywrightInjected = () => {}; f.emit('scroll', {isTrusted:true}); }
+      if (signal === 'CP+KT') { cp(f); kt(f); }
+      else { f.window.__codexPlaywrightInjected = () => {}; f.emit('click', {isTrusted:true}); }
       assert.equal(publications(f).length, before);
       assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass, {value:'suspicious',direct:true});
       const next = fixture({store:f.store}); assert.equal(next.window.__visitorVerdict.class, 'suspicious'); assert.ok(next.signals.includes('CS'));
     }
+  });
+  await test('Late UC: independent provenance on strong AW and retry after failed save', () => {
+    const f = fixture({modify: objects => {
+      automationProfile(objects);
+      objects.navigator.languages=[]; objects.navigator.language='';
+      objects.store.set('visitor_verdict',JSON.stringify({timestamps:[9000,9500]}));
+    }});
+    f.emit('click',{isTrusted:true}); f.advance(8000);
+    assert.equal(f.window.__visitorVerdict.class,'suspicious');
+    assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass,'suspicious');
+    const setItem = f.window.sessionStorage.setItem;
+    f.window.sessionStorage.setItem = () => {throw Error('temporary denial');};
+    const target={tagName:'SELECT',getClientRects:()=>[{width:100,height:20}]};
+    f.emit('change',{target,isTrusted:false});
+    assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass,'suspicious');
+    assert.ok(f.listeners.change,'failed save must retain carry observation');
+    f.window.sessionStorage.setItem=setItem;
+    f.emit('change',{target,isTrusted:false});
+    assert.deepEqual(JSON.parse(f.store.get('visitor_verdict')).lastClass,{value:'suspicious',direct:true});
+    assert.equal(publications(f).length,2);
+    assert.equal(f.listeners.change,undefined,'successful save exhausts observation');
+  });
+  await test('Visibility resets incomplete KT and CP without a marker observer', () => {
+    const f=fixture({config:{finalOnHidden:false,debug:true}});
+    kt(f,'fast',6); cp(f,{count:1});
+    f.document.visibilityState='hidden'; f.emit('visibilitychange');
+    f.document.visibilityState='visible'; f.emit('visibilitychange');
+    kt(f,'fast',6); cp(f,{count:1}); f.advance(8000);
+    assert.equal(f.signals.includes('CP'),false); assert.equal(f.signals.includes('KT'),false);
+    assert.ok(f.listeners.visibilitychange);
+    f.emit('pagehide'); assert.equal(f.listeners.visibilitychange,undefined);
+  });
+  await test('CP guards: small targets, repeated target, smooth movement, mobile and ancestors', () => {
+    for (const mode of ['small','same','smooth','mobile','touch','ancestor']) {
+      const f = fixture({modify: ({navigator, window}) => {
+        if (mode === 'mobile') navigator.userAgentData = {mobile:true, brands:[{brand:'Chromium'}]};
+        if (mode === 'touch') { navigator.maxTouchPoints = 1; window.matchMedia = () => ({matches:true}); }
+      }});
+      let target = {...agentTarget};
+      if (mode === 'small') target.getBoundingClientRect = () => ({left:43,top:3,width:14,height:14});
+      if (mode === 'ancestor') target = {nodeType:1,tagName:'SPAN',parentElement:target};
+      cp(f, {target, same:mode === 'same', moves:mode === 'smooth' ? 3 : 1}); f.advance(8000);
+      assert.equal(f.signals.includes('CP'), mode === 'ancestor', mode);
+      assert.equal(JSON.parse(f.store.get('visitor_verdict')).lastClass, 'human');
+    }
+  });
+  await test('KT guards: password, five-character expansion, interval proportion and CP corroboration', () => {
+    for (const mode of ['password','expander','mixed','fast']) {
+      const f = fixture();
+      const field = {...agentTarget, type:mode === 'password' ? 'password' : 'text'};
+      if (mode === 'mixed') {
+        for (let i=0;i<12;i++) {
+          f.emit('keydown', {target:field,isTrusted:true,timeStamp:10+i+(i>4 ? (i-4)*100 : 0)});
+          f.emit('input', {target:field,isTrusted:true,inputType:'insertText'});
+        }
+      } else kt(f, 'fast', mode === 'expander' ? 5 : 12, field);
+      cp(f); f.advance(8000);
+      assert.equal(f.signals.includes('KT'), mode === 'fast', mode);
+      assert.equal(f.window.__visitorVerdict.class, mode === 'fast' ? 'suspicious' : 'human', mode);
+    }
+  });
+  await test('B8: reentrant late during grant replays current publication; granted final remains granted', () => {
+    let f, trigger = false;
+    f = fixture({modify: ({window}) => {
+      window.dataLayer.push = function (...items) {
+        const result = Array.prototype.push.apply(this, items);
+        if (trigger && items.some(x => x?.[0] === 'consent')) {
+          trigger = false; window.__codexPlaywrightInjected = true; f.emit('click');
+        }
+        return result;
+      };
+    }});
+    f.advance(8000); trigger = true; f.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(f).at(-1).traffic_class, 'suspicious');
+    assert.equal(publications(f).at(-1).traffic_replay, 'consent');
+    const g = fixture(); g.window.dataLayer.push(consent('granted')); g.advance(8000);
+    g.window.dataLayer.push(consent('denied')); g.window.__codexPlaywrightInjected = true; g.emit('click');
+    g.window.dataLayer.push(consent('granted'));
+    assert.equal(publications(g).filter(x => x.traffic_replay === 'consent').length, 0);
+  });
+  await test('Tools performance: movement does not probe globals; polling backs off, pauses and stops', () => {
+    const f = fixture();
+    vm.runInContext(`var probes=0, enumerations=0; var desc=Object.getOwnPropertyDescriptor, names=Object.getOwnPropertyNames;
+      Object.getOwnPropertyDescriptor=function(o,n){if(o===window) probes++; return desc(o,n);};
+      Object.getOwnPropertyNames=function(o){if(o===window) enumerations++; return names(o);};`, f.context);
+    for (const type of ['mousemove','pointermove','scroll','wheel','touchmove']) for(let i=0;i<100;i++) f.emit(type);
+    assert.equal(vm.runInContext('probes+enumerations',f.context),0);
+    for (const delay of [1000,2000,4000,8000,15000,30000,60000]) f.advance(delay);
+    assert.equal(vm.runInContext('enumerations',f.context),7);
+    f.advance(100000); assert.equal(vm.runInContext('enumerations',f.context),7);
+    const beforeMovement=vm.runInContext('probes',f.context);
+    f.window.__codexPlaywrightInjected=true;
+    for(const type of ['mousemove','pointermove','scroll','wheel','touchmove']) f.emit(type);
+    assert.equal(f.window.__visitorVerdict.class,'human');
+    assert.equal(vm.runInContext('probes',f.context),beforeMovement);
+    const g=fixture(); g.document.visibilityState='hidden'; g.emit('visibilitychange'); g.advance(100000);
+    assert.equal(g.timers.size,0);
+    g.document.visibilityState='visible'; g.emit('visibilitychange'); assert.ok(g.timers.size>0);
+    g.window.__codexPlaywrightInjected=true; g.emit('click'); assert.equal(g.timers.size,0);
+    for(const name of ['mousemove','pointermove','keydown','input','scroll','wheel']) assert.equal(g.listeners[name],undefined,name);
   });
   await test('Owner logs: reproduce pointer timing/geometry after final; agents suspicious, human human', async () => {
     for (const [file, expected] of [['beh-1-antigravity.json','suspicious'],['beh-2-chatgpt.jsonl','suspicious'],['beh-3-clovek.json','human']]) {
@@ -2906,6 +3004,23 @@ export async function runContracts(detectorSource) {
         f.emit('pointermove', {isTrusted:true, pointerType:'mouse', timeStamp:row.t - row.sinceMoveMs});
         f.emit('pointerdown', {...row, clientX:0, clientY:0, target, timeStamp:row.t});
       }
+      // Sanitized log-derived own names and paired key timestamps; values were
+      // not recorded, so use allowed representative data shapes, not identity.
+      const evidence = JSON.parse(await readFile(new URL('./fixtures/agent-driven-tools-keys.json', import.meta.url),'utf8'))[file];
+      for(const timeStamp of evidence.pairedKeyTimes) {
+        f.emit('keydown',{target:agentTarget,isTrusted:true,timeStamp});
+        f.emit('input',{target:agentTarget,isTrusted:true,inputType:'insertText'});
+      }
+      // CP+KT already escalates the ChatGPT trace. Check TG independently too.
+      const globals = fixture({modify:({window})=>{
+        for(const name of evidence.globals) window[name]=name.startsWith('puppeteer') ? () => {} : true;
+      }});
+      assert.equal(globals.signals.includes('TG'), expected === 'suspicious',file);
+      for(const name of evidence.globals) f.window[name]=name.startsWith('puppeteer') ? () => {} : true;
+      if(file === 'beh-2-chatgpt.jsonl') {
+        assert.ok(f.signals.includes('CP')); assert.ok(f.signals.includes('KT'));
+      }
+      f.emit('click');
       assert.equal(f.window.__visitorVerdict.class, expected, file);
     }
   });

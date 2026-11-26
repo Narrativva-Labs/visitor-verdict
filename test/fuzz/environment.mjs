@@ -251,8 +251,9 @@ if (spec.race === 'visibility') {
 advance(4000001);
 if (spec.lateTool) {
   window.__codexPlaywrightInjected = function () {};
-  dispatch(document, 'scroll', {isTrusted:true});
-  dispatch(document, 'scroll', {isTrusted:true});
+  // Tool globals are checked on discrete input; scroll is intentionally inert.
+  dispatch(document, 'click', {isTrusted:true});
+  dispatch(document, 'click', {isTrusted:true});
 }
 if (spec.agentAfterReplay) { exerciseConsent(); placeMarker('codex-agent-overlay-root', rootNode); }
 if (spec.marker === 'after-final') { placeMarker('claude-phantom-cursor', bodyNode); placeMarker('claude-phantom-cursor', bodyNode); }
